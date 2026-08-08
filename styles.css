@@ -1,0 +1,466 @@
+:root{
+  --bg:#171a1f; --panel:#1e222a; --panel2:#252b34; --line:#323a46;
+  --text:#e9e7df; --muted:#8b93a1; --accent:#58b8d6; --accent-ink:#0c1a20;
+  --warn:#e0764f; --paper:#fbf9f3; --bed:#475161; --paper-edge:#5b6472;
+  --mono:'IBM Plex Mono',ui-monospace,monospace; --disp:'Space Grotesk',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--disp);font-size:14px;
+  display:grid;grid-template-rows:54px 1fr 30px;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- header ---------- */
+header{display:flex;align-items:center;justify-content:space-between;
+  position:relative;z-index:2;
+  padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand .mark{color:var(--accent);font-size:18px;transform:translateY(1px)}
+.brand .name{font-weight:700;letter-spacing:.22em;font-size:15px}
+.brand .sub{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.actions{display:flex;gap:22px;align-items:center}
+.actGroup{display:flex;gap:8px;align-items:center}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:6px;
+  padding:7px 14px;cursor:pointer;font-weight:600;font-size:13px;letter-spacing:.02em}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.1);color:var(--accent-ink)}
+.btn.toggle{color:var(--muted)}
+.addToLayoutBtn{width:224px;text-align:center}
+#genRow{display:flex;align-items:center;gap:8px;margin:0 0 8px}
+#genRow .switchWrap{flex:none}
+#genRow #genBtn{flex:1;text-align:center}
+#genExportFloat #exportBtn{width:100%;text-align:center}
+/* Model file info — 3D viewport, under the axis gizmo, right-justified.
+   H shortcut (see panel-controls.js) hides it outright, no animation. */
+#modelInfoFloat{position:absolute;top:112px;right:12px;z-index:2;
+  max-width:200px;text-align:right;pointer-events:none}
+#addToLayoutMsg{width:224px;text-align:center;font-family:var(--mono);font-size:11px;
+  color:var(--accent);height:14px;line-height:14px;margin-top:-4px;
+  opacity:0;transition:opacity .25s;pointer-events:none}
+#addToLayoutMsg.show{opacity:1}
+.btn.toggle.active{background:rgba(88,184,214,.16);border-color:var(--accent);color:var(--accent)}
+/* pill switches — an unambiguous on/off affordance: track + sliding knob.
+   'active' slides the knob right and lights the track (same class the JS
+   already toggled on the old button styling). */
+.pillToggle{position:relative;flex:none;width:34px;height:18px;border-radius:9px;
+  border:1px solid var(--line);background:rgba(255,255,255,.07);cursor:pointer;padding:0;
+  transition:background .15s,border-color .15s}
+.pillToggle::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;
+  border-radius:50%;background:var(--muted);transition:left .15s,background .15s}
+.pillToggle:hover{border-color:var(--muted)}
+.pillToggle.active{background:rgba(88,184,214,.28);border-color:var(--accent)}
+.pillToggle.active::after{left:18px;background:var(--accent)}
+.switchWrap{display:flex;align-items:center;gap:6px;font-family:var(--mono);
+  font-size:11px;color:var(--muted);user-select:none}
+.switchWrap>span{cursor:pointer}
+/* projection row: mode names flank the switch, active side lit */
+.projRow{display:flex;align-items:center;justify-content:center;gap:8px;margin:2px 0 6px}
+.projLbl{font-size:10.5px;color:var(--muted);cursor:pointer;transition:color .15s}
+.projLbl.active{color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:default;pointer-events:none}
+
+/* ---------- main split ---------- */
+main{display:grid;grid-template-columns:1fr 1fr 322px;min-height:0;position:relative}
+@media (max-width:1100px){
+  main{grid-template-columns:1fr 1fr;grid-template-rows:1fr auto}
+  #panel{grid-column:1 / -1;max-height:38vh}
+  #panelResizeHandle{display:none}
+}
+/* Positioned relative to <main> (not #panel, which has overflow-y:auto) —
+   inside #panel it would scroll away with the settings list whenever it's
+   taller than the viewport. `right` is kept in sync with the panel's
+   current width by the drag script (offset by half its own width, so the
+   handle is centered ON the boundary line rather than sitting flush
+   against one side of it) — 318px here just matches that same math for
+   the initial 322px default, before any drag has happened. */
+#panelResizeHandle{position:absolute;top:0;bottom:0;right:318px;width:8px;
+  cursor:ew-resize;z-index:20;touch-action:none}
+#panelResizeHandle::after{content:'';position:absolute;left:3px;top:0;bottom:0;width:2px;
+  background:transparent;transition:background .1s}
+#panelResizeHandle:hover::after,#panelResizeHandle.dragging::after{background:var(--accent)}
+body.resizingPanel{cursor:ew-resize;user-select:none}
+body.resizingPanel #viewport3d,body.resizingPanel #paperPane{pointer-events:none}
+/* Layout tab: the 3D viewport shows nothing useful (generation is fully
+   paused while it's active — see activeTab gating in panel-controls.js),
+   so it's hidden outright and the 2D pane takes over its space too,
+   spanning both of the first two grid tracks instead of just its own. */
+body.layoutMode #viewport3d{display:none}
+body.layoutMode #paperPane{grid-column:1 / 3}
+section,aside{position:relative;min-width:0;min-height:0}
+#viewport3d{border-right:1px solid var(--line);background:#12151a;position:relative}
+#viewport3d canvas{display:block}
+.paneLabel{position:absolute;left:10px;bottom:8px;font-family:var(--mono);font-size:10px;
+  color:var(--muted);letter-spacing:.14em;text-transform:uppercase;pointer-events:none;
+  background:rgba(20,23,29,.55);padding:2px 7px;border-radius:4px;
+  max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* corner reset/recenter buttons — small square icon buttons sitting just
+   above each pane's bottom-left hint label; same frosted treatment as the
+   floating panels above them */
+.cornerBtn{position:absolute;left:10px;bottom:36px;z-index:2;
+  width:26px;height:26px;display:flex;align-items:center;justify-content:center;
+  background:rgba(23,26,31,.62);border:1px solid rgba(255,255,255,.09);border-radius:6px;
+  color:var(--muted);cursor:pointer;padding:0;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.cornerBtn:hover{border-color:var(--accent);color:var(--accent)}
+.cornerBtn svg{display:block}
+
+/* floating panels — frosted glass over a viewport, pure CSS (backdrop-filter),
+   no extra dependency; falls back to a plain translucent panel automatically
+   wherever backdrop-filter isn't supported. #camFloat + #rotateFloat stack
+   vertically over the 3D view (in #camPanelStack, so #rotateFloat always
+   sits right below #camFloat regardless of its content height — no guessed
+   pixel offset to keep in sync), #genExportFloat sits alone over the 2D
+   paper view — same visual treatment on all three. */
+#camPanelStack{position:absolute;top:12px;left:12px;z-index:2;
+  display:flex;flex-direction:column;gap:10px;width:224px;
+  transition:transform .25s ease}
+/* Mirrors #camPanelStack exactly, over the 2D pane instead of the 3D one:
+   #genExportFloat + #blocksFloat (when the Layout tab is active) stack
+   vertically with no guessed pixel offset between them. */
+#paperPanelStack{position:absolute;top:12px;left:12px;z-index:2;
+  display:flex;flex-direction:column;gap:10px;width:224px;
+  transition:transform .25s ease}
+/* H keyboard shortcut (see panel-controls.js) — slides both panel stacks
+   left, leaving a small sliver visible as a cue that they're still
+   there, just tucked away. Same class applied to both, toggled together. */
+#camPanelStack.panelsHidden,#paperPanelStack.panelsHidden{transform:translateX(-100%)}
+#camFloat,#rotateFloat,#viewsFloat,#genExportFloat{width:224px;
+  background:rgba(23,26,31,.58);border:1px solid rgba(255,255,255,.09);
+  border-radius:10px;padding:12px 12px 10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+  -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
+#blocksFloat{width:270px;
+  background:rgba(23,26,31,.58);border:1px solid rgba(255,255,255,.09);
+  border-radius:10px;padding:12px 12px 10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.35);
+  -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
+/* camFloat/rotateFloat labels are all 1-3 characters (FOV, X, Y, Z) — a much
+   narrower label column than a settings-style row needs (room for something
+   like "Orientation") hands the freed width straight to the slider track,
+   giving more physical pixels per degree of rotation range for finer
+   default drag control. */
+#camFloat .ctl,#rotateFloat .ctl{grid-template-columns:22px 1fr 34px;margin:6px 0}
+#camFloat .ctl.ctlWideLabel{grid-template-columns:64px 1fr 34px}
+#camFloat .ctl label,#rotateFloat .ctl label{font-size:11px}
+#camFloat .vpLabel,#rotateFloat .vpLabel,#viewsFloat .vpLabel,#blocksFloat .vpLabel{margin:7px 0 4px}
+#rotateFloat .vpLabel:first-child{margin-top:0}
+#camFloat select{width:100%}
+#blocksFloat .vpLabel:first-child{margin:0}
+
+/* Saved views panel — header row puts the label and add button on one line
+   (vpLabel's own margin handles the vertical spacing, same as every other
+   panel header), the list below is a simple scrollable stack of rows so an
+   unbounded number of saved views can't push the rest of the 3D viewport's
+   UI around or grow the panel past the viewport height. */
+.svHeaderRow{display:flex;align-items:center;justify-content:space-between}
+.svHeaderRow .vpLabel{margin:0}
+.addViewBtn{width:22px;height:22px;display:flex;align-items:center;justify-content:center;
+  background:var(--panel2);border:1px solid var(--line);border-radius:5px;
+  color:var(--muted);cursor:pointer;padding:0;font-size:15px;line-height:1}
+.addViewBtn:hover{border-color:var(--accent);color:var(--accent)}
+.svHeaderBtns{display:flex;align-items:center;gap:6px}
+#clearBlocksBtn{width:auto;padding:0 10px;font-size:11px;font-weight:600;letter-spacing:.02em}
+#duplicateBlockBtn{width:auto;padding:0 10px;font-size:11px;font-weight:600;letter-spacing:.02em}
+#duplicateBlockBtn:disabled{opacity:.45;cursor:default;pointer-events:none}
+#viewsList,#blocksList{max-height:500px;overflow-y:auto;margin-top:10px}
+#blocksList{position:relative}
+/* Empty state: center the header row (name + button) within whatever
+   height the panel has, instead of it sitting flush against the top
+   padding with visible dead space below. The (empty) list itself is
+   hidden outright so its own margin-top doesn't throw off the centering. */
+#viewsFloat.svEmpty,#blocksFloat.svEmpty{display:flex;flex-direction:column;justify-content:center}
+#viewsFloat.svEmpty #viewsList,#blocksFloat.svEmpty #blocksList{display:none}
+.savedView{display:grid;grid-template-columns:1fr 22px 22px;align-items:center;gap:5px;
+  padding:4px 6px;border-bottom:1px dashed rgba(255,255,255,.05)}
+/* Layout's blocksList rows have one more button (Lock, between Eye and
+   Delete) than the base .savedView template accounts for — Saved Views
+   (#viewsList, Update+Delete) and the layer-visibility context menu both
+   still only need theirs, so this widens the grid ONLY for #blocksList
+   rather than changing the shared base rule out from under them. */
+#blocksList .savedView{grid-template-columns:18px 1fr 22px 22px 22px}
+#blocksList .svDragHandle{width:18px;height:22px;display:flex;align-items:center;justify-content:center;
+  cursor:grab;color:var(--muted);touch-action:none}
+#blocksList .svDragHandle:hover{color:var(--text)}
+#blocksList .savedView.svDragging{opacity:.4}
+#blocksList .svInsertLine{position:absolute;left:6px;right:6px;height:2px;background:var(--accent);border-radius:1px;pointer-events:none}
+.savedView .svName{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:text;width:fit-content;max-width:100%}
+.savedView .svName[contenteditable="true"]{outline:none;-webkit-user-select:text;user-select:text;overflow:visible}
+.svBtn{width:22px;height:22px;display:flex;align-items:center;justify-content:center;
+  background:var(--panel2);border:1px solid var(--line);border-radius:5px;
+  color:var(--muted);cursor:pointer;padding:0;font-size:11px;line-height:1}
+.svBtn:hover{border-color:var(--accent);color:var(--accent)}
+.svBtn.svDelete:hover{border-color:var(--warn);color:var(--warn)}
+.svBtn.svLockActive{color:var(--accent)}
+.svBtn svg{display:block}
+.savedView.svRowHidden .svName{opacity:.45}
+.savedView.svRowSelected{background:rgba(88,184,214,.1);border-radius:4px}
+
+/* Layout canvas — margin guide (paper reference, bottom layer, same
+   dashed-line treatment as the Preview tab's own margin guide), selection
+   rectangle + corner handles (vector-effect:non-scaling-stroke is correct
+   here, unlike on plot content: these are UI chrome, meant to stay a
+   constant screen size regardless of zoom — handle SIZE itself is
+   computed in mm from the current zoom in JS, but stroke width doesn't
+   need to be), and snap guide lines. */
+/* Selection overlay lives in its OWN unclipped, viewport-fixed SVG now
+   (not nested inside #layoutPlot, which is clipped to the paper) — so a
+   block positioned partly or fully off the page still shows its selection
+   box/handles/gizmo, letting it be found and dragged back. Coordinates
+   drawn into it are plain screen pixels (via canvasMmToScreen), not mm, so
+   vector-effect:non-scaling-stroke isn't needed here — there's no zoom
+   transform on this SVG to counteract in the first place. */
+#layoutOverlaySvg{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:1}
+#previewOverlaySvg{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:1}
+.textureGizmo{fill:var(--accent);stroke:var(--accent-ink);stroke-width:1.5;
+  vector-effect:non-scaling-stroke;pointer-events:auto;cursor:grab}
+.textureGizmo:active{cursor:grabbing}
+.textureGizmoCross{stroke:var(--accent-ink);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
+.layoutMarginGuide{fill:none;stroke:#a49b86;stroke-width:1;stroke-dasharray:3 3;
+  vector-effect:non-scaling-stroke;pointer-events:none}
+.layoutSelRect{fill:none;stroke:var(--accent);stroke-width:1.4;stroke-dasharray:5 3;pointer-events:none}
+.layoutSelRectMember{fill:none;stroke:var(--accent);stroke-width:1;stroke-dasharray:2 2;opacity:.55;pointer-events:none}
+.layoutSelHandle{fill:var(--accent);stroke:var(--accent-ink);stroke-width:1;pointer-events:none}
+.layoutRotateConnector{stroke:var(--accent);stroke-width:1;stroke-dasharray:3 2;pointer-events:none;opacity:.75}
+.layoutRotateGizmo{fill:var(--accent);stroke:var(--accent-ink);stroke-width:1;pointer-events:none}
+.layoutSnapGuide{stroke:var(--accent);stroke-width:1;stroke-dasharray:2 2;
+  vector-effect:non-scaling-stroke;pointer-events:none;opacity:.85}
+#rotateAngleLabel,.dimLabel{position:fixed;display:none;
+  background:rgba(23,26,31,.92);color:var(--accent);font-family:var(--mono);
+  font-size:11px;padding:3px 8px;border-radius:4px;pointer-events:none;
+  white-space:nowrap;z-index:1;border:1px solid rgba(255,255,255,.09)}
+#rotateAngleLabel{transform:translate(-50%,-140%)}
+.dimLabel{transform:translate(-50%,-50%)}
+
+#layerContextMenu{position:fixed;width:192px;z-index:60;
+  background:rgba(23,26,31,.94);border:1px solid rgba(255,255,255,.09);
+  border-radius:8px;padding:8px 10px 6px;box-shadow:0 8px 24px rgba(0,0,0,.4);
+  -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
+#layerContextMenu.overrideActive{width:350px}
+#layerContextMenu .vpLabel{margin:0 0 4px}
+/* Name column is a fixed px (matching what 1fr already resolves to at the
+   base 180px menu width), not 1fr — a flexible column would change size
+   whenever the OTHER columns' total width changes (i.e. whenever Override
+   toggles), shifting the eye button that follows it even though nothing
+   about that button itself changed. Fixed-width everywhere means toggling
+   Override only ever ADDS columns, never resizes the existing ones. */
+#layerContextMenuList .savedView{grid-template-columns:133px 22px}
+/* The spacer column (empty <span class="ctxSpacer">, inserted in the DOM
+   by openLayerContextMenu right after the eye button) shifts color/width/
+   dash rightward as a group, using space that would otherwise sit unused
+   after the dash dropdown — same total menu width as before, just
+   redistributed, and it doubles as a visual gap between the visibility
+   toggles and the rest of the per-layer settings. */
+#layerContextMenu.overrideActive #layerContextMenuList .savedView{grid-template-columns:133px 22px 10px 24px 56px 50px}
+#layerContextMenuList .svName{cursor:default}
+/* Native color-input rendering nests an inner swatch element with its own
+   default padding/border regardless of the outer input's own padding:0 —
+   left alone, that reads as a smaller box floating inside a larger one
+   instead of filling the whole container edge to edge. Zeroed out once,
+   globally, for every input[type=color] in the app (layer rows, page
+   color, and the layout-block color-override menu all share this same
+   fix, on top of whatever border-radius each context sets on the input
+   itself — 4px is what all three currently use, so it's safe to match
+   here directly rather than juggling border-radius:inherit through a
+   vendor shadow-pseudo-element's own inheritance chain). overflow:hidden
+   on the wrapper is a defensive belt-and-braces clip, in case a given
+   browser's own swatch corner-rounding doesn't quite line up.  */
+input[type=color]{padding:0}
+input[type=color]::-webkit-color-swatch-wrapper{padding:0;border-radius:4px;overflow:hidden}
+input[type=color]::-webkit-color-swatch{border:none;border-radius:4px}
+input[type=color]::-moz-color-swatch{border:none;border-radius:4px}
+#layerContextMenuList input[type="color"]{width:100%;height:20px;padding:0;border:1px solid var(--line);border-radius:4px;background:none}
+#layerContextMenuList input[type="number"]{width:100%;height:20px;padding:0 3px;border:1px solid var(--line);border-radius:4px;
+  background:var(--panel2);color:var(--text);font-size:11px}
+#layerContextMenuList select{width:100%;height:20px;padding:0 2px;border:1px solid var(--line);border-radius:4px;
+  background:var(--panel2);color:var(--text);font-size:11px}
+#layerContextOverrideRow{margin:6px 2px 2px;padding-top:6px}
+
+/* axis gizmo — top-right of the 3D viewport, Blender-style */
+#axisGizmo{position:absolute;top:12px;right:12px;z-index:2;
+  font-family:var(--mono);user-select:none}
+#axisGizmo .ball{cursor:pointer}
+#axisGizmo .ball:hover circle{stroke:#fff;stroke-width:1.4}
+#axisGizmo text{pointer-events:none;font-size:9.5px;font-weight:700}
+
+/* light direction gizmo — bottom-right of the 3D viewport, mirroring the
+   axis gizmo's top-right placement and frosted-free, canvas-native SVG
+   overlay approach. Static (doesn't follow camera orbit) by design: azimuth/
+   elevation are world-space, and a rotating ring would turn into an ellipse
+   from most camera angles, which is exactly the "genuinely tricky, skip it
+   for now" case this widget deliberately avoids. */
+#lightGizmo{position:absolute;bottom:12px;right:12px;z-index:2;
+  font-family:var(--mono);user-select:none}
+#lightGizmo .lgRing{fill:rgba(255,255,255,.02);stroke:var(--line);stroke-width:2.25}
+#lightGizmo .lgHit{fill:transparent;stroke:transparent;cursor:grab}
+#lightGizmo .lgHit:active{cursor:grabbing}
+#lightGizmo .lgTrackBg{stroke:var(--line);stroke-width:2.25;stroke-linecap:round}
+#lightGizmo .lgTrackFill{stroke:var(--accent);stroke-width:2.25;stroke-linecap:round;opacity:.55}
+#lightGizmo .lgNeedle{stroke:var(--accent);stroke-width:2.25;opacity:.5}
+/* pointer-events:none — the sun icon sits visually ON TOP of its hit-target
+   (drawn after it, so it isn't hidden underneath), but must be transparent
+   to the pointer itself: otherwise hovering/clicking exactly on the dot hits
+   the icon instead of the hit-target beneath, which has no listeners of its
+   own — cursor reverts to a plain arrow and dragging silently does nothing
+   right where a user's eye naturally aims. */
+#lightGizmo .lgSun{pointer-events:none}
+#lightGizmo .lgSun circle{fill:#ffd013}
+#lightGizmo .lgLbl{font-size:12px;letter-spacing:.08em;fill:var(--muted);text-transform:uppercase}
+
+/* ---------- paper pane (signature: screen vs paper) ---------- */
+#paperPane{border-right:1px solid var(--line);background:var(--bed);
+  position:relative;padding:10px;user-select:none;
+  overflow:hidden;touch-action:none}
+.sheet{background:var(--paper);border:1px solid var(--paper-edge);
+  box-shadow:0 2px 6px rgba(30,34,42,.18),0 16px 36px rgba(30,34,42,.14);
+  position:absolute;border-radius:1px}
+.sheet svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+.sheet.stale svg{opacity:.42;filter:saturate(.4)}
+#staleBadge{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:none;
+  font-family:var(--mono);font-size:11px;color:var(--warn);border:1px solid var(--warn);
+  background:rgba(23,26,31,.9);padding:4px 10px;border-radius:20px;pointer-events:none}
+#paperPane.stale #staleBadge{display:block}
+#progressWrap{position:absolute;top:0;left:0;right:0;height:3px;display:none}
+#paperPane.busy #progressWrap{display:block}
+#progressBar{height:100%;width:0;background:var(--accent);transition:width .12s linear}
+
+/* Preview/Layout tabs — top-right of the 2D pane, clear of genExportFloat/
+   blocksFloat (top-left) and the stale badge (top-center) */
+#paperTabs{position:absolute;top:12px;right:12px;z-index:3;display:flex;gap:4px}
+.paperTab{background:rgba(23,26,31,.62);border:1px solid rgba(255,255,255,.09);
+  border-radius:6px;color:var(--muted);cursor:pointer;padding:6px 12px;
+  font-family:var(--disp);font-size:12px;font-weight:600;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.paperTab:hover{border-color:var(--accent);color:var(--accent)}
+.paperTab:focus,.paperTab:focus-visible{outline:none}
+.paperTab.active{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+body.dragging #paperTabs{display:none}
+
+/* ---------- control panel ---------- */
+#panel{background:var(--panel);overflow-y:auto;padding-bottom:24px;position:relative;z-index:4}
+/* Pen/Cog settings-mode toggle — deliberately NOT the small slide-knob
+   .pillToggle used elsewhere: bigger, no sliding, just the clicked half
+   lit with the accent color while the other stays muted/grey. */
+.modeToggle{display:flex;height:40px;margin:14px 14px 0;padding:4px;gap:4px;
+  border:2px solid var(--accent);border-radius:20px;box-sizing:border-box}
+.modeToggleBtn{flex:1;display:flex;align-items:center;justify-content:center;
+  background:var(--panel2);border:none;padding:0;cursor:pointer;
+  color:var(--muted);border-radius:0;transition:background .15s,color .15s}
+.modeToggleBtn:first-child{border-radius:14px 0 0 14px}
+.modeToggleBtn:last-child{border-radius:0 14px 14px 0}
+.texTopTabBtn.roundLeft{border-radius:14px 0 0 14px}
+.texTopTabBtn.roundRight{border-radius:0 14px 14px 0}
+.modeToggleBtn:hover{color:var(--text)}
+.modeToggleBtn.active{background:var(--accent);color:var(--accent-ink)}
+.modeToggleBtn.active:hover{color:var(--accent-ink)}
+#panel h2{font-family:var(--mono);font-weight:500;font-size:10px;letter-spacing:.22em;
+  color:var(--muted);text-transform:uppercase;padding:14px 14px 8px;border-top:1px solid var(--line);
+  display:flex;justify-content:space-between;align-items:center}
+#panel h2:first-child{border-top:0}
+.sec{padding:0 14px}
+.subBox{border:1px solid var(--line);border-radius:8px;padding:2px 10px 6px;margin:10px 0;
+  background:rgba(255,255,255,.025)}
+.subBox .boxLabel{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--muted);
+  text-transform:uppercase;margin:7px 0 1px}
+.stat{font-family:var(--mono);font-size:11.5px;color:var(--muted);line-height:1.7}
+.stat b{color:var(--text);font-weight:500}
+.warnTxt{font-family:var(--mono);font-size:11px;color:var(--warn);line-height:1.5;margin-top:4px}
+
+.ctl{display:grid;grid-template-columns:86px 1fr 44px;align-items:center;gap:8px;margin:7px 0}
+.ctl.ctlWideLabel{grid-template-columns:104px 1fr 44px}
+.ctl.ctlWideLabel label{white-space:nowrap}
+.ctl.ctlDisabled{opacity:.35;pointer-events:none}
+.vpLabel{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.12em;
+  text-transform:uppercase;margin:8px 0 4px}
+.vpGrid{display:grid;gap:4px}
+.vpGrid4{grid-template-columns:repeat(4,1fr)}
+.vpBtn{background:var(--panel2);border:1px solid var(--line);border-radius:5px;color:var(--text);
+  font-family:var(--mono);font-size:10px;padding:6px 2px;cursor:pointer;text-align:center}
+.vpBtn:hover{border-color:var(--accent);color:var(--accent)}
+.ctl label{font-size:12px;color:var(--muted)}
+.ctl .val{font-family:var(--mono);font-size:11px;text-align:right;color:var(--text);cursor:text}
+.ctl .val[contenteditable="true"]{outline:none;-webkit-user-select:text;user-select:text}
+input[type=range]{-webkit-appearance:none;appearance:none;height:3px;border-radius:2px;
+  background:var(--line);cursor:pointer;width:100%;min-width:0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;
+  border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;
+  background:var(--accent);border:2px solid var(--bg)}
+input[type=range]:disabled{opacity:.3;pointer-events:none}
+.chk{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:12.5px}
+.chk input{accent-color:var(--accent);width:14px;height:14px}
+select,input[type=number]{background:var(--panel2);border:1px solid var(--line);
+  border-radius:5px;padding:4px 6px;font-family:var(--mono);font-size:11.5px}
+input[type=number]{width:58px}
+
+/* Dash section (cog tab) — two user-editable 6-value patterns */
+.dashGroup{margin:10px 0}
+.dashGroupLabel{display:flex;align-items:center;justify-content:space-between;
+  font-size:11.5px;color:var(--text);margin-bottom:6px}
+.dashPreview{width:110px;height:10px;flex:none}
+.dashPreview line{stroke:var(--muted);stroke-width:2;fill:none}
+.dashFieldsRow{display:flex;gap:3px}
+.dashField{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px}
+.dashField input{width:100%;min-width:0;padding:3px 0;font-size:10.5px;text-align:center;
+  -moz-appearance:textfield}
+.dashField input::-webkit-outer-spin-button,.dashField input::-webkit-inner-spin-button{
+  -webkit-appearance:none;margin:0}
+.dashField span{font-size:8.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+
+/* Texture section (texture tab) — 3 min/max jitter ranges */
+.textureGroup{margin:10px 0}
+.textureGroupLabel{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--text);
+  margin-bottom:6px;cursor:pointer}
+.textureGroupLabel.textureGroupLabelSplit{justify-content:space-between;cursor:default}
+.textureGroupLabelMain{display:flex;align-items:center;gap:8px;cursor:pointer}
+.textureGroupLabel input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px}
+.textureGroupLabel.textureGroupTitle{cursor:default;font-weight:600}
+.texInlineChk{margin:0;font-size:11px;color:var(--muted);cursor:pointer}
+.textureFieldsWrap{transition:opacity .15s}
+.textureFieldsWrap.ctlDisabled{opacity:.35;pointer-events:none}
+.textureSectionSep{border:none;border-top:1px solid var(--line);margin:14px 0 10px}
+
+/* layer rows — pen swatch style */
+#hatchLayers{border-top:1px solid var(--line);margin-top:6px;padding-top:2px}
+.blendMultiply{isolation:isolate}
+.blendMultiply > g{mix-blend-mode:multiply}
+/* Layout mode's equivalent, but scoped to blend across ALL blocks rather
+   than only within each one individually. isolation:isolate on a PER-BLOCK
+   element (the old approach) creates its own separate blending boundary for
+   each block, so blend-mode inside it could never see anything outside
+   that one block — moving isolation up to the single shared container that
+   holds every block, and marking each individual layer's stroke group
+   (not the per-block wrapper) as the thing that blends, means every layer
+   of every block blends against everything drawn before it, block
+   boundaries included. */
+#layoutBlocksLayer.blendMultiplyLayout{isolation:isolate}
+#layoutBlocksLayer.blendMultiplyLayout .layoutLayerStroke{mix-blend-mode:multiply}
+.layer{display:grid;grid-template-columns:16px 50px 1fr 26px 56px 58px;align-items:center;
+  gap:6px;padding:5px 0;border-bottom:1px dashed rgba(255,255,255,.05)}
+.layer .nm{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.layer .nm.hid{color:var(--muted);font-size:11.5px;padding-left:8px}
+.layer input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px}
+.layer input[type=color]{width:24px;height:20px;border:1px solid var(--line);border-radius:4px;
+  background:none;padding:0;cursor:pointer}
+.layer input[type=number]{width:56px;padding:3px 4px;font-size:11px}
+.layer select{width:58px;padding:3px 3px;font-size:11px}
+.swatch{width:50px;height:14px;background:var(--paper);border-radius:2px;display:block}
+#pageColor{width:56px;height:24px;border:1px solid var(--line);border-radius:4px;background:none;cursor:pointer}
+.rowsHead{display:grid;grid-template-columns:16px 50px 1fr 26px 56px 58px;gap:6px;
+  font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;
+  text-transform:uppercase;padding:2px 0}
+
+/* ---------- footer ---------- */
+footer{display:flex;align-items:center;justify-content:space-between;padding:0 14px;
+  position:relative;z-index:2;
+  border-top:1px solid var(--line);background:var(--panel);font-family:var(--mono);
+  font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden}
+footer b{color:var(--text);font-weight:500}
+#dropHint{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  background:rgba(23,26,31,.8);font-family:var(--mono);color:var(--accent);z-index:5;
+  border:2px dashed var(--accent);pointer-events:none}
+body.dragging #dropHint{display:flex}
+body.dragging #camPanelStack,body.dragging #paperPanelStack,body.dragging #axisGizmo,body.dragging #lightGizmo,body.dragging .cornerBtn{display:none}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
