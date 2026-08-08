@@ -521,11 +521,10 @@ function rotateGizmoWorldPos(block){
 function primarySelectedBlock(){ return selectedBlocks.size === 1 ? [...selectedBlocks][0] : null; }
 function selectionAnyLocked(){ for (const b of selectedBlocks) if (b.locked) return true; return false; }
 // Union of every selected block's own world-space envelope — the group's
-// own axis-aligned bounding box. For selectedBlocks.size===1 this is
-// exactly that one block's own worldEnvelope() (a single envelope unioned
-// with nothing is itself), so every group-math function below that's built
-// on this is automatically correct for a single block too, with no
-// separate size===1 branch needed inside them.
+// own axis-aligned bounding box, freshly recomputed. Used ONLY to seed a
+// NEW selectionFrame when the selected SET itself changes — for drawing
+// the overlay and driving group interactions once a selection exists,
+// selectionFrame (below) is what's actually used, not this.
 function selectionEnvelope(){
   let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
   for (const b of selectedBlocks){
@@ -534,20 +533,43 @@ function selectionEnvelope(){
   }
   return { x0, y0, x1, y1 };
 }
+// The multi-select bounding box's own 4 world-space corners — a genuinely
+// separate, persistent piece of state from the individual blocks, NOT
+// recomputed fresh every frame the way selectionEnvelope() is. It starts
+// as a fresh axis-aligned box (via selectionEnvelope()) the moment the
+// selected SET changes, but from then on transforms RIGIDLY right
+// alongside the group during move/rotate/scale — including staying
+// rotated after a group rotate — and keeps that shape/orientation across
+// separate later gestures until the set itself changes again (a block
+// added to or removed from the selection). Corner order is always
+// [top-left, top-right, bottom-right, bottom-left] AT THE MOMENT IT WAS
+// (re)seeded — "top-left" etc. stop being literally true once the frame
+// has been rotated, but the ORDER (and therefore which edge is "the top
+// edge" for the rotate gizmo) is preserved through every rigid transform.
+let selectionFrame = null;
+function resetSelectionFrame(){
+  if (selectedBlocks.size <= 1){ selectionFrame = null; return; }
+  const env = selectionEnvelope();
+  selectionFrame = { corners: [[env.x0,env.y0],[env.x1,env.y0],[env.x1,env.y1],[env.x0,env.y1]] };
+}
 // Same "constant screen distance beyond top-center" idea as the single-
-// block rotateGizmoWorldPos, simplified: the group box is always axis-
-// aligned (it's a bounding box of possibly-differently-rotated members,
-// not a rotated shape itself), so "up" is always exactly [0,-1] in world
-// space — no need for the rotated-topcenter-relative-to-center trick the
-// single-block version uses to follow an arbitrary rotation.
-function groupRotateGizmoWorldPos(env){
-  const cx = (env.x0 + env.x1) / 2;
-  const topCenterWorld = [cx, env.y0];
+// block rotateGizmoWorldPos — generalized from an axis-aligned env to an
+// arbitrary (possibly rotated) frame by using corners[0]/[1] (the frame's
+// own "top edge", in whatever orientation it currently has) instead of
+// assuming world-up is always the box's own up.
+function groupRotateGizmoWorldPos(frame){
+  const c = frame.corners;
+  const topCenter = [(c[0][0]+c[1][0])/2, (c[0][1]+c[1][1])/2];
+  const center = [(c[0][0]+c[2][0])/2, (c[0][1]+c[2][1])/2];
+  const dx = topCenter[0]-center[0], dy = topCenter[1]-center[1];
+  const len = Math.max(1e-6, Math.hypot(dx,dy));
+  const ux = dx/len, uy = dy/len;
   const offsetMm = ROTATE_GIZMO_OFFSET_PX * mmPerScreenPx();
-  return [topCenterWorld[0], topCenterWorld[1] - offsetMm, topCenterWorld[0], topCenterWorld[1]];
+  return [topCenter[0]+ux*offsetMm, topCenter[1]+uy*offsetMm, topCenter[0], topCenter[1]];
 }
 function setSelection(blocksArr){
   selectedBlocks = new Set(blocksArr);
+  resetSelectionFrame();
   updateSelectionOverlay();
   refreshSelectionHighlight();
   syncDuplicateBlockBtn();
@@ -610,8 +632,10 @@ function updateSelectionOverlay(){
     return;
   }
   // Multi-select: each member's own (possibly rotated) outline, thin, no
-  // handles — just "here's what's included" — plus one axis-aligned box
-  // around the whole group carrying the actual handles/gizmo.
+  // handles — just "here's what's included" — plus the group's own
+  // selectionFrame box (see its own comment: axis-aligned only until the
+  // first group rotate, after which it stays in that rotated orientation)
+  // carrying the actual handles/gizmo.
   for (const b of selectedBlocks){
     const corners = blockCorners(b).map(([wx, wy]) => canvasMmToScreen(wx, wy));
     const p = document.createElementNS(SVG_NS, 'path');
@@ -619,22 +643,27 @@ function updateSelectionOverlay(){
     p.setAttribute('d', 'M' + corners.map(pt => pt[0] + ',' + pt[1]).join('L') + 'Z');
     ov.appendChild(p);
   }
-  const env = selectionEnvelope();
-  const corners = [[env.x0,env.y0],[env.x1,env.y0],[env.x1,env.y1],[env.x0,env.y1]].map(([wx,wy]) => canvasMmToScreen(wx,wy));
+  const frameWorld = selectionFrame.corners;
+  const corners = frameWorld.map(([wx,wy]) => canvasMmToScreen(wx,wy));
   const rectPath = document.createElementNS(SVG_NS, 'path');
   rectPath.setAttribute('class', 'layoutSelRect');
   rectPath.setAttribute('d', 'M' + corners.map(p => p[0] + ',' + p[1]).join('L') + 'Z');
   ov.appendChild(rectPath);
   if (selectionAnyLocked()) return;   // outline(s) only — same rule as a single locked block
+  // Handle squares rotate to match the frame's own current edge angle (the
+  // corners[0]->corners[1] "top edge," whatever orientation it's actually
+  // in right now), same visual language as a single block's own rotated
+  // handles — not left axis-aligned once the frame itself is rotated.
+  const frameAngleDeg = Math.atan2(frameWorld[1][1]-frameWorld[0][1], frameWorld[1][0]-frameWorld[0][0]) * 180/Math.PI;
   for (const [cx, cy] of corners){
     const sq = document.createElementNS(SVG_NS, 'rect');
     sq.setAttribute('class', 'layoutSelHandle');
     sq.setAttribute('x', cx - HANDLE_PX/2); sq.setAttribute('y', cy - HANDLE_PX/2);
     sq.setAttribute('width', HANDLE_PX); sq.setAttribute('height', HANDLE_PX);
-    // no rotation transform — the group box is always axis-aligned
+    sq.setAttribute('transform', 'rotate(' + frameAngleDeg + ' ' + cx + ' ' + cy + ')');
     ov.appendChild(sq);
   }
-  const [gwx, gwy, twx, twy] = groupRotateGizmoWorldPos(env);
+  const [gwx, gwy, twx, twy] = groupRotateGizmoWorldPos({ corners: frameWorld });
   const [gx, gy] = canvasMmToScreen(gwx, gwy), [tx, ty] = canvasMmToScreen(twx, twy);
   const connector = document.createElementNS(SVG_NS, 'line');
   connector.setAttribute('class', 'layoutRotateConnector');
@@ -872,10 +901,16 @@ function hideDimensionLabels(){
 }
 
 /* ================= hit testing ================= */
+// Locked blocks are click-through — not selectable, not right-clickable,
+// never picked up here at all, as if they were transparent to interaction
+// (their drawn geometry stays fully visible, just not interactive). Both
+// the canvas click-select path AND the right-click context-menu path route
+// through this same function, so excluding locked blocks here is the one
+// change that covers both.
 function hitTestBlockBody(wx, wy){
   for (let i = blocks.length - 1; i >= 0; i--){
     const b = blocks[i];
-    if (!b.visible) continue;
+    if (!b.visible || b.locked) continue;
     const [lx, ly] = worldToLocal(b, wx, wy);
     if (lx >= b.bboxLocal.x0 && lx <= b.bboxLocal.x1 && ly >= b.bboxLocal.y0 && ly <= b.bboxLocal.y1){
       return b;
@@ -898,11 +933,10 @@ function hitTest(wx, wy){
       }
     }
   } else if (selectedBlocks.size > 1 && !selectionAnyLocked() && [...selectedBlocks].every(b => b.visible)){
-    const env = selectionEnvelope();
-    const [gx, gy] = groupRotateGizmoWorldPos(env);
+    const [gx, gy] = groupRotateGizmoWorldPos(selectionFrame);
     const gizmoHitMm = ROTATE_GIZMO_HIT_PX * mmPerScreenPx();
     if (Math.hypot(wx - gx, wy - gy) <= gizmoHitMm) return { type: 'rotateGroup' };
-    const corners = [[env.x0,env.y0],[env.x1,env.y0],[env.x1,env.y1],[env.x0,env.y1]];
+    const corners = selectionFrame.corners;
     const handleHitMm = HANDLE_HIT_PX * mmPerScreenPx();
     for (let i = 0; i < 4; i++){
       const dist = Math.hypot(wx - corners[i][0], wy - corners[i][1]);
@@ -996,7 +1030,8 @@ $('paperPane').addEventListener('pointerdown', e => {
     if (selectedBlocks.size && !selectionAnyLocked()){
       const startEnv = selectionEnvelope();
       const members = [...selectedBlocks].map(b => ({ block: b, startX: b.x, startY: b.y }));
-      interaction = { mode: 'move', members, startEnv, startWorld: [wx, wy], moved: false };
+      interaction = { mode: 'move', members, startEnv, startWorld: [wx, wy], moved: false,
+        startFrameCorners: selectedBlocks.size > 1 ? selectionFrame.corners.map(c => c.slice()) : null };
     }
   } else if (hit.type === 'scale'){
     const corners = blockCorners(hit.block);
@@ -1036,8 +1071,7 @@ $('paperPane').addEventListener('pointerdown', e => {
     $('paperPane').style.cursor = 'default';
     lastCursor = 'default';
   } else if (hit.type === 'scaleGroup'){
-    const env = selectionEnvelope();
-    const envCorners = [[env.x0,env.y0],[env.x1,env.y0],[env.x1,env.y1],[env.x0,env.y1]];
+    const envCorners = selectionFrame.corners;
     const anchorIdx = (hit.cornerIndex + 2) % 4;
     const anchorWorld = envCorners[anchorIdx];
     const draggedWorld = envCorners[hit.cornerIndex];
@@ -1050,13 +1084,15 @@ $('paperPane').addEventListener('pointerdown', e => {
     for (const b of selectedBlocks) for (const c of blockCorners(b)) corners.push([c[0]-anchorWorld[0], c[1]-anchorWorld[1]]);
     const minStartScale = Math.min(...members.map(m => m.startScale));
     interaction = { mode: 'scaleGroup', anchorWorld, startDist, members,
-      corners, minStartScale, excludeSet: new Set(selectedBlocks) };
+      corners, minStartScale, excludeSet: new Set(selectedBlocks),
+      startFrameCorners: envCorners.map(c => c.slice()) };
   } else if (hit.type === 'rotateGroup'){
-    const env = selectionEnvelope();
-    const pivot = [(env.x0+env.x1)/2, (env.y0+env.y1)/2];
+    const c = selectionFrame.corners;
+    const pivot = [(c[0][0]+c[2][0])/2, (c[0][1]+c[2][1])/2];   // diagonal midpoint — the frame's own center, rotated or not
     const startAngle = Math.atan2(wy - pivot[1], wx - pivot[0]) * 180/Math.PI;
     const members = [...selectedBlocks].map(b => ({ block: b, startX: b.x, startY: b.y, startRotationDeg: b.rotationDeg }));
-    interaction = { mode: 'rotateGroup', pivot, startAngle, members };
+    interaction = { mode: 'rotateGroup', pivot, startAngle, members,
+      startFrameCorners: c.map(pt => pt.slice()) };
     $('paperPane').style.cursor = 'default';
     lastCursor = 'default';
   }
@@ -1096,6 +1132,9 @@ $('paperPane').addEventListener('pointermove', e => {
       m.block.y = m.startY + finalDy;
       updateBlockTransform(m.block);
     }
+    if (interaction.startFrameCorners){
+      selectionFrame.corners = interaction.startFrameCorners.map(([x,y]) => [x+finalDx, y+finalDy]);
+    }
     drawSnapGuides({ guideX, guideY, guideXRange, guideYRange });
   } else if (interaction.mode === 'rotate'){
     const b = interaction.block;
@@ -1123,6 +1162,14 @@ $('paperPane').addEventListener('pointermove', e => {
       m.block.y = py + (dx*sin + dy*cos);
       updateBlockTransform(m.block);
     }
+    // The selection box itself rotates rigidly right along with the group
+    // — not recomputed as a fresh axis-aligned union — and this rotated
+    // shape is what persists in selectionFrame for subsequent gestures,
+    // until the selected SET itself changes (see resetSelectionFrame).
+    selectionFrame.corners = interaction.startFrameCorners.map(([x,y]) => {
+      const dx = x - px, dy = y - py;
+      return [px + (dx*cos - dy*sin), py + (dx*sin + dy*cos)];
+    });
     showRotateLabel(((snappedDelta % 360) + 360) % 360, e.clientX, e.clientY);
   } else if (interaction.mode === 'scale' || interaction.mode === 'scaleGroup'){
     const curDist = Math.hypot(wx - interaction.anchorWorld[0], wy - interaction.anchorWorld[1]);
@@ -1139,6 +1186,9 @@ $('paperPane').addEventListener('pointermove', e => {
       updateBlockTransform(m.block);
       updateBlockStyle(m.block);
       updateDimensionLabels(m.block);
+    }
+    if (interaction.mode === 'scaleGroup'){
+      selectionFrame.corners = interaction.startFrameCorners.map(([x,y]) => [ax + (x-ax)*k, ay + (y-ay)*k]);
     }
   }
   updateSelectionOverlay();
@@ -1415,8 +1465,19 @@ function renderBlocksList(){
         ) + '</button>' +
       '<button type="button" class="svBtn svDelete" title="Delete layer" aria-label="Delete ' + block.name + '">&#10005;</button>';
     row.querySelector('.svDragHandle').addEventListener('pointerdown', e => startBlockDrag(e, block, row));
+    // Shift+click is also the browser's native "extend text selection"
+    // gesture — without this, shift-selecting rows in quick succession
+    // also highlights the row's own text (name/buttons) as a side effect.
+    // preventDefault on mousedown (before any selection is even started)
+    // is the standard fix; excludes the same interactive sub-elements the
+    // click handler below already excludes, so button presses and the
+    // drag handle keep their own normal behavior.
+    row.addEventListener('mousedown', e => {
+      if (e.shiftKey && !e.target.closest('button') && !e.target.closest('.svDragHandle')) e.preventDefault();
+    });
     row.addEventListener('click', e => {
       if (e.target.closest('button') || e.target.closest('.svDragHandle')) return;   // Eye/Lock/Delete/drag clicks bubble here too — don't also select
+      if (block.locked) return;   // never selectable, same rule as the canvas — see hitTestBlockBody
       // Same shift-click-toggles / plain-click-replaces rule as the canvas
       // (see the pointerdown handler there) — deliberately NOT the deferred
       // collapse-on-drag refinement, since a list row click can't "drag the
@@ -1435,7 +1496,9 @@ function renderBlocksList(){
     });
     row.querySelector('.svLock').addEventListener('click', () => {
       block.locked = !block.locked;
-      if (selectedBlocks.has(block)) updateSelectionOverlay();   // handles/gizmo appear or disappear immediately
+      // Locked blocks are never selectable at all — deselect immediately
+      // rather than leave a now-locked block lingering in the selection.
+      if (block.locked) deselectBlock(block); else if (selectedBlocks.has(block)) updateSelectionOverlay();
       renderBlocksList();
     });
     row.querySelector('.svDelete').addEventListener('click', () => {
