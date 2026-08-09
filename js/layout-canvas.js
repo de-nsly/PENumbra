@@ -438,7 +438,11 @@ function updateBlockStyle(block){
     const widthMm = ov ? ov.width : +layerEls[L.key].wid.value;
     const dashKey = ov ? ov.dash : layerEls[L.key].dash.value;
     const width = widthMm / combinedScale;
-    const dash = scaledDash(dashKey, width);
+    // Dash/gap are true mm lengths, independent of pen width — scale by the
+    // same mm->local-unit factor as width above, NOT by width itself (see
+    // scaledDash's own comment in main.js), or dash length would come out
+    // proportional to widthMm instead of the literal mm value typed.
+    const dash = scaledDash(dashKey, 1 / combinedScale);
     g.setAttribute('stroke', color);
     g.setAttribute('stroke-width', width);
     if (dash) g.setAttribute('stroke-dasharray', dash); else g.removeAttribute('stroke-dasharray');
@@ -462,6 +466,55 @@ function renderLayoutCanvas(){
     else { updateBlockTransform(b); updateBlockStyle(b); }
   }
 }
+
+/* ================= "Rotate layers with page" (Page settings) =================
+   In-session-only convenience, off by default: when checked, flipping
+   Orientation between Portrait/Landscape rigidly carries every block's
+   position AND rotation along with the page, exactly as if a physical
+   sheet had been picked up and given a quarter turn. Left unchecked (the
+   old, default behavior), a block's (x,y) is simply never touched by an
+   orientation change — which, since the Layout coordinate system is always
+   anchored to the page's OWN top-left corner, reads as "stays near the old
+   top-left corner" once the page's own shape swaps out from under it.
+   Nothing here is persisted per-block or in the .pen file (see scene-io.js's
+   save path) — it's a one-shot transform applied at the moment orientation
+   changes, same as if the user had manually rotated/moved each block. */
+function rotateBlocksForOrientationFlip(){
+  if (!blocks.length) return;
+  const nowLandscape = $('orient').value === 'landscape';
+  const [pl, ps] = PAPERS[$('paperSize').value];
+  const newW = nowLandscape ? pl : ps, newH = nowLandscape ? ps : pl;
+  // Portrait and Landscape are always exactly width/height swapped, so the
+  // page's PRE-flip dimensions are just the post-flip ones swapped back —
+  // no need to have cached the previous orientation separately.
+  const oldW = newH, oldH = newW;
+  // Portrait->Landscape is a physical counter-clockwise turn (a portrait
+  // sheet's top-left corner ends up at the landscape sheet's bottom-left
+  // corner); Landscape->Portrait is the exact reverse turn. This app's
+  // rotationDeg/SVG rotate() convention is positive=clockwise (see the
+  // rotate/rotateGroup interaction handlers above), so CCW here is -90.
+  const deltaDeg = nowLandscape ? -90 : 90;
+  const rad = deltaDeg * Math.PI/180, cos = Math.cos(rad), sin = Math.sin(rad);
+  const oldCx = oldW/2, oldCy = oldH/2, newCx = newW/2, newCy = newH/2;
+  const rotatePoint = (x, y) => {
+    const dx = x - oldCx, dy = y - oldCy;
+    return [newCx + (dx*cos - dy*sin), newCy + (dx*sin + dy*cos)];
+  };
+  for (const b of blocks){
+    [b.x, b.y] = rotatePoint(b.x, b.y);
+    b.rotationDeg = ((b.rotationDeg + deltaDeg) % 360 + 360) % 360;
+    if (b.dom) updateBlockTransform(b);
+  }
+  // The multi-select bounding frame is its own persistent piece of state
+  // (see selectionFrame's own comment) — carry it along rigidly too, same
+  // as every block, so a current group selection doesn't end up pointing
+  // at stale coordinates relative to the blocks it's supposed to enclose.
+  if (selectionFrame) selectionFrame.corners = selectionFrame.corners.map(([x,y]) => rotatePoint(x,y));
+  updateSelectionOverlay();
+}
+$('orient').addEventListener('input', () => {
+  if ($('rotateBlocksWithPage').checked) rotateBlocksForOrientationFlip();
+});
 
 /* ================= geometry helpers =================
    Transform model: world = (x,y) + R(rotationDeg) * S(scale) * (local - center),
@@ -557,6 +610,15 @@ function resetSelectionFrame(){
 // arbitrary (possibly rotated) frame by using corners[0]/[1] (the frame's
 // own "top edge", in whatever orientation it currently has) instead of
 // assuming world-up is always the box's own up.
+// The frame's own current "top edge" (corners[0]->corners[1]) angle, in
+// degrees — 0 for a freshly (re)seeded axis-aligned frame, and whatever it
+// rotated to after a group rotate gesture (see selectionFrame's own
+// comment). Shared by the overlay's handle-square rotation and the resize
+// cursor lookup so both agree on the frame's current orientation.
+function selectionFrameAngleDeg(frame){
+  const c = frame.corners;
+  return Math.atan2(c[1][1]-c[0][1], c[1][0]-c[0][0]) * 180/Math.PI;
+}
 function groupRotateGizmoWorldPos(frame){
   const c = frame.corners;
   const topCenter = [(c[0][0]+c[1][0])/2, (c[0][1]+c[1][1])/2];
@@ -654,7 +716,7 @@ function updateSelectionOverlay(){
   // corners[0]->corners[1] "top edge," whatever orientation it's actually
   // in right now), same visual language as a single block's own rotated
   // handles — not left axis-aligned once the frame itself is rotated.
-  const frameAngleDeg = Math.atan2(frameWorld[1][1]-frameWorld[0][1], frameWorld[1][0]-frameWorld[0][0]) * 180/Math.PI;
+  const frameAngleDeg = selectionFrameAngleDeg(selectionFrame);
   for (const [cx, cy] of corners){
     const sq = document.createElementNS(SVG_NS, 'rect');
     sq.setAttribute('class', 'layoutSelHandle');
@@ -967,7 +1029,10 @@ function updateHoverCursor(wx, wy){
   const hit = hitTest(wx, wy);
   const cursor = !hit ? 'default'
     : hit.type === 'scale' ? cornerCursorForRotation(hit.cornerIndex, hit.block.rotationDeg)
-    : hit.type === 'scaleGroup' ? cornerCursorForRotation(hit.cornerIndex, 0)   // group box is always axis-aligned
+    // group box starts axis-aligned but stays rigidly rotated after a group
+    // rotate gesture (see selectionFrame's own comment) — use its actual
+    // current angle, same as the handle squares themselves already do.
+    : hit.type === 'scaleGroup' ? cornerCursorForRotation(hit.cornerIndex, selectionFrameAngleDeg(selectionFrame))
     : hit.type === 'rotate' || hit.type === 'rotateGroup' ? CURSOR_ROTATE
     : hit.block.locked ? 'default'
     : 'move';

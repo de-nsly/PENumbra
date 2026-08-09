@@ -35,15 +35,17 @@ const LAYERS = [
   { key:'h3', name:'Deep shadow',         on:false, solve:true,  color:'#2c5aa8', width:0.2, dash:'solid', host:'hatchLayers' },
   { key:'cr', name:'Circles',             on:false, solve:true,  color:'#2c5aa8', width:0.2, dash:'solid', host:'hatchLayers' },
 ];
-// Dash/gap lengths expressed as multiples of the CURRENT stroke width,
-// rather than fixed lengths — at a fixed absolute gap, a thick stroke's
-// round line-cap eats most of that gap visually, making dashes look nearly
-// solid (the exact problem this fixes). Since stroke-width varies by
-// context (a small swatch preview icon vs. the actual paper content vs. a
-// scaled Layout block all compute their own effective width), each caller
-// computes its own dasharray via scaledDash(key, widthInThatContext) using
-// whatever width value is actually correct there, rather than one shared
-// pre-baked string.
+// Dash/gap lengths are true mm values (same units as the layer W[mm]
+// field), independent of whatever layer/pen width happens to be using
+// them — a 10mm dash is 10mm on the plotted page whether the pen is
+// 0.15mm or 1.2mm wide. Since path coordinates live in solver-px space and
+// only land at physical size once multiplied through the paper's own
+// mm-per-px transform (or a Layout block's mm-per-local-unit one), each
+// caller computes its own dasharray via scaledDash(key, pxPerMmInThatContext)
+// — the SAME px-per-mm conversion factor it already applies to that
+// context's stroke width — rather than one shared pre-baked string. Do NOT
+// pass the stroke width itself here; that would make dash length scale
+// with pen width instead of being the literal mm value the user typed.
 const DASH_RATIOS = { solid: null, D1: [3.5, 2.5, 0, 0, 0, 0], D2: [0.5, 2.5, 0, 0, 0, 0] };
 // DASH_KEYS is the growable, ordered list of active dash slots — 'solid'
 // is implicit and always offered first in any dropdown, so it's not part
@@ -62,12 +64,15 @@ function trimTrailingZeroPairs(arr){
   while (end >= 4 && arr[end-1] === 0 && arr[end-2] === 0) end -= 2;
   return arr.slice(0, end);
 }
-function scaledDash(key, widthPx){
+// pxPerMm: how many of this context's local units correspond to 1mm — the
+// SAME factor that context divided a mm width by to get its own local-unit
+// stroke-width (i.e. pass 1/scale, never the stroke-width itself).
+function scaledDash(key, pxPerMm){
   const r = DASH_RATIOS[key];
   if (!r) return '';
   const trimmed = trimTrailingZeroPairs(r);
   if (trimmed[0] <= 0) return '';   // first dash itself is 0 — nothing to draw a pattern with, treat as solid
-  const w = Math.max(1e-6, widthPx);
+  const w = Math.max(1e-6, pxPerMm);
   return trimmed.map(v => (v*w).toFixed(3)).join(' ');
 }
 

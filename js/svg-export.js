@@ -148,16 +148,16 @@ function applyLayerStyle(key){
     // regardless of how much the model happens to be scaled to fit the
     // current paper. (Deliberately NOT vector-effect:non-scaling-stroke —
     // that cancels the transform entirely, which also kills the zoom/pan
-    // scaling that's supposed to stay intact.) The dasharray is derived
-    // from this SAME pre-divided width, so dash/gap lengths scale through
-    // the transform right alongside stroke-width and land at the correct
-    // true-mm-proportional size too, not just a fixed px pattern that
-    // happened to look right at one particular zoom/fit.
+    // scaling that's supposed to stay intact.)
     const layout = computePaperLayout();
     const scale = layout ? layout.scale : 1;
-    const gWidth = s.width / Math.max(1e-6, scale);
+    const pxPerMm = 1 / Math.max(1e-6, scale);
+    const gWidth = s.width * pxPerMm;
     g.setAttribute('stroke-width', gWidth);
-    const dash = scaledDash(s.dash, gWidth);
+    // Dash/gap are true mm lengths (DASH_RATIOS), independent of pen width —
+    // scale by the SAME mm->px factor as the width above, NOT by gWidth
+    // itself, or a 10mm dash would come out as 10x-the-pen-width instead.
+    const dash = scaledDash(s.dash, pxPerMm);
     if (dash) g.setAttribute('stroke-dasharray', dash); else g.removeAttribute('stroke-dasharray');
     g.style.display = s.on ? '' : 'none';
   }

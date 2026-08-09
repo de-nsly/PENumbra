@@ -352,6 +352,17 @@ function applyImportedScene(data){
   savedViewCounter = Number.isFinite(data.savedViewCounter) ? data.savedViewCounter : 0;
   renderSavedViews();
   // Same fallback for layout blocks (a later addition than Saved Views).
+  // A scene import always REPLACES the block list wholesale (unlike loading
+  // a bare STL/OBJ, which leaves existing blocks alone) — so the outgoing
+  // blocks' own persistent DOM (see createBlockDom's PERFORMANCE ARCHITECTURE
+  // comment up top) and any selection referencing them must be torn down
+  // explicitly here. Just reassigning `blocks` would orphan their <g> trees
+  // in #layoutBlocksLayer forever: renderLayoutCanvas only ever creates DOM
+  // for blocks that lack one, it never removes DOM for blocks no longer in
+  // the array, leaving stale shapes visible but unselectable/undeletable.
+  clearSelection();
+  closeLayerContextMenu();
+  for (const b of blocks) removeBlockDom(b);
   blocks = Array.isArray(data.blocks) ? data.blocks : [];
   blockCounter = Number.isFinite(data.blockCounter) ? data.blockCounter : 0;
   renderBlocksList();

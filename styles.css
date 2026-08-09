@@ -16,7 +16,7 @@ header{display:flex;align-items:center;justify-content:space-between;
   position:relative;z-index:2;
   padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel)}
 .brand{display:flex;align-items:baseline;gap:10px}
-.brand .mark{color:var(--accent);font-size:18px;transform:translateY(1px)}
+.brand .mark{color:var(--accent);flex:none;transform:translateY(2px)}
 .brand .name{font-weight:700;letter-spacing:.22em;font-size:15px}
 .brand .sub{font-family:var(--mono);font-size:11px;color:var(--muted)}
 .actions{display:flex;gap:22px;align-items:center}
