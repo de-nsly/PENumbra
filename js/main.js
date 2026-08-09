@@ -75,6 +75,23 @@ function scaledDash(key, pxPerMm){
   const w = Math.max(1e-6, pxPerMm);
   return trimmed.map(v => (v*w).toFixed(3)).join(' ');
 }
+// Fraction of a dashed stroke's length that's actually "ink" (pen-down),
+// e.g. D1's 3.5-on/2.5-off pattern is 3.5/6 =~ 0.583. Since DASH_RATIOS
+// values are absolute mm (see the comment above scaledDash — deliberately
+// NOT scaled by stroke width), this ratio is width-independent: it's a
+// straight sum of on-lengths over on+off, with no px/mm conversion needed.
+// Used by the stats readout as a length-only approximation of actual pen
+// travel, not a literal geometric split like splitDashedPathD does at
+// export time.
+function dashOnFraction(key){
+  const r = DASH_RATIOS[key];
+  if (!r) return 1;                       // solid
+  const t = trimTrailingZeroPairs(r);
+  if (t[0] <= 0) return 1;                // degenerate pattern — scaledDash also treats this as solid
+  let on = 0, total = 0;
+  for (let i = 0; i < t.length; i += 2){ on += t[i]; total += t[i] + t[i+1]; }
+  return total > 1e-9 ? on / total : 1;
+}
 
 /* ================= per-layer texture settings =================
    Builds the 4 per-layer texture-settings tabs (H1/H2/H3/Circles) by

@@ -49,7 +49,7 @@ for (const L of LAYERS){
   // than 'input' (fires per keystroke) — reformatting mid-typing would fight
   // the user for control of the field while they're still entering a value
   wid.addEventListener('change', () => { wid.value = fmtWidth(+wid.value); });
-  dash.addEventListener('change', restyle);
+  dash.addEventListener('change', () => { restyle(); refreshStatusR(); });
   chk.addEventListener('change', () => { L.solve ? markStale() : applyLayerStyle(L.key); });
   applyLayerStyle(L.key);
 }
@@ -84,6 +84,7 @@ function buildDashFields(key){
       DASH_RATIOS[key][i] = Math.max(0, +input.value || 0);
       refreshDashPreview(key);
       for (const L of LAYERS) applyLayerStyle(L.key);
+      refreshStatusR();
     });
   });
   refreshDashPreview(key);
@@ -262,6 +263,7 @@ function renderPaper(){
     resetPv(); renderPaper();
     markStale();   // paper scale now feeds the mm→px hatch-spacing conversion
     if (typeof syncLayoutPaperFrame === 'function') syncLayoutPaperFrame();
+    refreshStatusR();   // mm figure depends on paper scale — keep it in step with the just-retransformed drawing
   }));
 // Purely cosmetic (the --paper CSS custom property backs both #sheet and
 // #layoutSheet's background, per .sheet in styles.css, so Preview and
@@ -441,9 +443,20 @@ function simplifyCollinear(pts, closed, tol=SIMPLIFY_COLLINEAR_TOL){
 // (matching the convention splitSelfTouching/mergeAdjacentTouching already
 // use elsewhere in this file) — the closing segment's length is added
 // separately here instead.
+// stats.segments counts one per actual "L" pen-stroke drawn between two
+// points (pts.length-1) — the SAME convention computeDStats uses when it
+// counts L/C tokens in a frozen block's d-string (the implicit closing
+// edge of a closed path, added via a trailing Z, contributes length but
+// not its own segment — matching computeDStats there too). Deliberately
+// NOT the raw pre-chain/pre-simplify segment count the worker originally
+// emitted — that would count every tiny sub-segment the chaining/collinear-
+// simplify passes below just finished merging away, which is exactly the
+// mismatch a saved Layout block (built from the post-processing d-string)
+// doesn't have.
 function accumulatePathStats(stats, pts, closed){
   stats.paths++;
   if (closed) stats.closedPaths++;
+  stats.segments += pts.length - 1;
   let len = 0;
   for (let i=1;i<pts.length;i++) len += Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]);
   if (closed) len += Math.hypot(pts[0][0]-pts[pts.length-1][0], pts[0][1]-pts[pts.length-1][1]);
@@ -1540,19 +1553,25 @@ function onResult(m){
   const CHAIN_LAYERS = { sv:1, sh:1, so:1, iv:1, ih:1 };
   const SEQ_CHAIN_LAYERS = { cv:1, ch:1 };
 
-  let total = 0;
   // Tracks the FINAL, post-processing picture — one entry per actual pen
   // stroke (subpath) in the rendered SVG, not per raw 2-point input
-  // segment like `total` above. `pts` passed to accumulatePathStats never
-  // repeats the closing point for a closed path (matching the convention
-  // splitSelfTouching/mergeAdjacentTouching already use elsewhere in this
-  // file) — the closing segment's length is added separately here instead.
-  const pathStats = { paths: 0, closedPaths: 0, lenPx: 0 };
+  // segment. `pts` passed to accumulatePathStats never repeats the closing
+  // point for a closed path (matching the convention splitSelfTouching/
+  // mergeAdjacentTouching already use elsewhere in this file) — the closing
+  // segment's length is added separately here instead.
+  const pathStats = { paths: 0, closedPaths: 0, segments: 0, lenPx: 0 };
+  // Per-layer RAW (dash-independent) length, so the dash "ink fraction"
+  // (see dashOnFraction in main.js) can be reapplied later using whatever
+  // dash is selected AT READ TIME, not whatever it was at solve time —
+  // otherwise the cached lastLiveStats mm figure would go stale the moment
+  // the user changes a dash setting without re-generating. See refreshStatusR.
+  const rawLenByLayer = {};
   // Paint order is the REVERSE of the hierarchy in LAYERS: the highest-
   // priority layer (Scene outline, first in LAYERS) must end up LAST in the
   // SVG so it paints on top, and the lowest (Deep shadow, last in LAYERS)
   // paints first/underneath everything else.
   for (const L of LAYERS.slice().reverse()){
+    const lenBefore = pathStats.lenPx;
     if (L.key === 'cr'){
       if (!layerStyle('cr').on || !m.circlePatternSegs || !m.circlePatternSegs.length) continue;
       const layout = computePaperLayout();
@@ -1577,7 +1596,6 @@ function onResult(m){
       // in the Circles per-layer clone — see data-skipforcircles).
       const wobbleOn = $(texId('texWobbleOn', 'cr')).checked;
       const d = [];
-      let segCount = 0;
       if (wobbleOn){
         // Wobble displaces points along the arc, so the result is no longer
         // a circle — falls back to the original dense-polyline path, same
@@ -1595,7 +1613,6 @@ function onResult(m){
           const maxGapPx = (+$(texId('texGapsMax', 'cr')).value || 2) * mmToPx;
           polylines = applyHatchGaps(polylines, minLenPx, maxGapPx);
         }
-        segCount = polylines.reduce((s,p) => s + p.length/2 - 1, 0);
         for (const poly of polylines){
           const pts = []; for (let i=0;i<poly.length;i+=2) pts.push([poly[i],poly[i+1]]);
           const closed = pts.length>2 && Math.hypot(pts[0][0]-pts[pts.length-1][0], pts[0][1]-pts[pts.length-1][1]) < 0.02;
@@ -1619,6 +1636,7 @@ function onResult(m){
           const sweep = Math.abs(piece.u1 - piece.u0) * 2 * Math.PI;   // u is a fraction of a full turn, not radians
           pathStats.paths++;
           if (Math.abs(sweep - 2*Math.PI) < 1e-4) pathStats.closedPaths++;
+          pathStats.segments += segs.length;   // one per emitted C token, matching computeDStats
           pathStats.lenPx += piece.radius * sweep;
           d.push('M', segs[0].p0[0].toFixed(2), segs[0].p0[1].toFixed(2));
           for (const seg of segs){
@@ -1626,10 +1644,8 @@ function onResult(m){
                         seg.c2[0].toFixed(2), seg.c2[1].toFixed(2),
                         seg.p3[0].toFixed(2), seg.p3[1].toFixed(2));
           }
-          segCount += segs.length;
         }
       }
-      total += segCount;
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       g.id = 'g_cr';
       g.setAttribute('fill', 'none');
@@ -1639,11 +1655,20 @@ function onResult(m){
       p.setAttribute('d', d.join(' '));
       g.appendChild(p);
       content.appendChild(g);
+      rawLenByLayer[L.key] = pathStats.lenPx - lenBefore;
       continue;
     }
     const segs = m.groups[L.key];
     if (!segs || !segs.length) continue;
-    total += segs.length / 4;
+    // The 'd' string/DOM group is always built regardless of this layer's
+    // on/off checkbox (display:none just hides it visually — see
+    // applyLayerStyle — and freezeCurrentGeneration relies on the geometry
+    // still being there so a layer switched off before "Add to Layout" can
+    // be re-enabled per-block later). Stats, though, should only count what's
+    // actually visible right now — matching computeLayoutStats, which only
+    // sums a block's layers that are currently layerVisible — so an off
+    // layer's contribution is deliberately excluded from pathStats below.
+    const layerOn = layerStyle(L.key).on;
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.id = 'g_' + L.key;
     g.setAttribute('fill', 'none');
@@ -1672,7 +1697,7 @@ function onResult(m){
           protectedPoints: null,
         };
       }
-      d.push(buildChainedPathD(segs, pathStats, relayCleanupTol, silMergeOpts));
+      d.push(buildChainedPathD(segs, layerOn ? pathStats : null, relayCleanupTol, silMergeOpts));
     } else if (SEQ_CHAIN_LAYERS[L.key]){
       // 1) local, topology-trusting merge of array-adjacent touching pieces
       // 2) screen-space fallback that mops up whatever (1) couldn't place —
@@ -1684,7 +1709,7 @@ function onResult(m){
       for (const chain of mergeCreaseScreenSpace(mergeAdjacentTouching(segs)))
         for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed)){
           const pts = simplifyCollinear(rawPts, closed);
-          accumulatePathStats(pathStats, pts, closed);
+          if (layerOn) accumulatePathStats(pathStats, pts, closed);
           d.push('M', pts[0][0].toFixed(2), pts[0][1].toFixed(2));
           for (let i=1;i<pts.length;i++) d.push('L', pts[i][0].toFixed(2), pts[i][1].toFixed(2));
           if (closed) d.push('Z');
@@ -1741,7 +1766,7 @@ function onResult(m){
       for (const poly of polylines){
         const pts = []; for (let i=0;i<poly.length;i+=2) pts.push([poly[i],poly[i+1]]);
         const closed = pts.length>2 && Math.hypot(pts[0][0]-pts[pts.length-1][0], pts[0][1]-pts[pts.length-1][1]) < 0.02;
-        accumulatePathStats(pathStats, closed ? pts.slice(0,-1) : pts, closed);
+        if (layerOn) accumulatePathStats(pathStats, closed ? pts.slice(0,-1) : pts, closed);
         d.push('M', poly[0].toFixed(2), poly[1].toFixed(2));
         for (let i = 2; i < poly.length; i += 2) d.push('L', poly[i].toFixed(2), poly[i+1].toFixed(2));
       }
@@ -1751,17 +1776,54 @@ function onResult(m){
     g.appendChild(p);
     content.appendChild(g);
     applyLayerStyle(L.key);
+    rawLenByLayer[L.key] = pathStats.lenPx - lenBefore;
   }
   if (firstEverGen) resetPv();          // first drawing ever shown: fit the whole page
   renderPaper();                        // regenerating an existing view keeps the user's pan/zoom
   const outlineWarn = (m.counts.outlineTooComplex ? ' · scene outline skipped (too complex)' : '') +
     (m.counts.shadowCapped ? ' · shadow budget hit (partial)' : '');
-  const layout = computePaperLayout();
-  const lenMm = layout ? pathStats.lenPx * layout.scale : pathStats.lenPx;
-  $('statusR').textContent = total.toLocaleString() + ' segments · ' +
-    pathStats.paths.toLocaleString() + ' paths (' + pathStats.closedPaths.toLocaleString() + ' closed) · ' +
-    lenMm.toLocaleString(undefined, {maximumFractionDigits:0}) + ' mm · ' + m.ms + ' ms' +
-    (m.counts.hatchCapped ? ' · hatch capped' : '') + outlineWarn;
+  lastLiveStats = {
+    segments: pathStats.segments, paths: pathStats.paths, closedPaths: pathStats.closedPaths,
+    rawLenByLayer, ms: m.ms,
+    hatchCapped: m.counts.hatchCapped, outlineWarn,
+  };
+  refreshStatusR();
+}
+// Bottom-right stats readout — reflects whichever tab is actually showing
+// geometry right now (live preview vs. Layout), not just whatever last
+// finished solving. Live-preview segment/path counts and per-layer RAW
+// (dash-independent, PAPER-SCALE-independent) lengths are cached in
+// lastLiveStats by onResult (only recomputed on an actual solve); the mm
+// figure re-applies each layer's CURRENT dash setting AND the CURRENT
+// paper layout scale to that raw length every call. Paper size/orientation/
+// margin changes retransform the on-screen drawing immediately (see
+// renderPaper(), called straight from the ['paperSize',...] input handler)
+// but only mark the solve stale rather than re-running it synchronously —
+// caching layout.scale at solve time would leave the readout showing the
+// PREVIOUS paper scale even once the visible drawing (and a freshly-frozen
+// Layout block, which reads paper layout fresh at freeze time) has already
+// moved to the new one. Layout numbers are recomputed fresh every call via
+// computeLayoutStats since block/layer visibility (and dash) can change at
+// any time without a solve. Call this any time the active tab, the set of
+// visible blocks/layers, any dash setting, or the paper layout changes.
+let lastLiveStats = null;
+function refreshStatusR(){
+  if (activeTab === 'layout'){
+    const s = computeLayoutStats();
+    $('statusR').textContent = s.segments.toLocaleString() + ' segments · ' +
+      s.paths.toLocaleString() + ' paths (' + s.closedPaths.toLocaleString() + ' closed) · ' +
+      s.lenMm.toLocaleString(undefined, {maximumFractionDigits:0}) + ' mm';
+  } else if (lastLiveStats){
+    const s = lastLiveStats;
+    const layout = computePaperLayout();
+    const scaleNow = layout ? layout.scale : 1;
+    let lenMm = 0;
+    for (const key in s.rawLenByLayer) lenMm += s.rawLenByLayer[key] * dashOnFraction(layerStyle(key).dash) * scaleNow;
+    $('statusR').textContent = s.segments.toLocaleString() + ' segments · ' +
+      s.paths.toLocaleString() + ' paths (' + s.closedPaths.toLocaleString() + ' closed) · ' +
+      lenMm.toLocaleString(undefined, {maximumFractionDigits:0}) + ' mm · ' + s.ms + ' ms' +
+      (s.hatchCapped ? ' · hatch capped' : '') + s.outlineWarn;
+  }
 }
 
 /* ================= file loading ================= */
@@ -1796,6 +1858,65 @@ function parseSubpathsD(d){
     }
   }
   return subpaths;
+}
+// Layout-tab equivalent of the inline segment/path accumulation onResult
+// does per-layer via accumulatePathStats — Layout only has each block's
+// already-frozen, already-merged d-string to work from (not the raw
+// per-edge segments), so it needs its own self-contained walk over the
+// d-string tokens instead. Handles M/L/Z (everything but Circles) and C
+// (Circles layer, emitted as cubic-Bezier arcs — see arcToBezierSegments)
+// tokens. Arc length for C is approximated by sampling the cubic Bezier at
+// a handful of points, which is plenty accurate for a stats readout.
+// inkFraction: fraction of the geometric length that's actually pen-down
+// for this d-string's dash setting (see dashOnFraction in main.js) —
+// applied as a flat multiplier at the end since it's uniform across the
+// whole d-string (one dash setting per layer, not per-segment).
+const D_STATS_BEZIER_SAMPLES = 8;
+function computeDStats(d, inkFraction){
+  const out = { segments: 0, paths: 0, closedPaths: 0, lenPx: 0 };
+  const tokens = d.trim().split(/\s+/);
+  let cur = null, start = null;
+  for (let i = 0; i < tokens.length; ){
+    const t = tokens[i];
+    if (t === 'M'){
+      cur = [parseFloat(tokens[i+1]), parseFloat(tokens[i+2])];
+      start = cur;
+      out.paths++;
+      i += 3;
+    } else if (t === 'L'){
+      const p = [parseFloat(tokens[i+1]), parseFloat(tokens[i+2])];
+      out.segments++;
+      out.lenPx += Math.hypot(p[0]-cur[0], p[1]-cur[1]);
+      cur = p;
+      i += 3;
+    } else if (t === 'C'){
+      const c1 = [parseFloat(tokens[i+1]), parseFloat(tokens[i+2])];
+      const c2 = [parseFloat(tokens[i+3]), parseFloat(tokens[i+4])];
+      const p3 = [parseFloat(tokens[i+5]), parseFloat(tokens[i+6])];
+      out.segments++;
+      let prev = cur;
+      for (let s = 1; s <= D_STATS_BEZIER_SAMPLES; s++){
+        const u = s / D_STATS_BEZIER_SAMPLES, v = 1 - u;
+        const x = v*v*v*cur[0] + 3*v*v*u*c1[0] + 3*v*u*u*c2[0] + u*u*u*p3[0];
+        const y = v*v*v*cur[1] + 3*v*v*u*c1[1] + 3*v*u*u*c2[1] + u*u*u*p3[1];
+        out.lenPx += Math.hypot(x-prev[0], y-prev[1]);
+        prev = [x, y];
+      }
+      cur = p3;
+      i += 7;
+    } else if (t === 'Z' || t === 'z'){
+      if (cur && start && (cur[0] !== start[0] || cur[1] !== start[1])){
+        out.lenPx += Math.hypot(start[0]-cur[0], start[1]-cur[1]);
+      }
+      out.closedPaths++;
+      cur = start;
+      i += 1;
+    } else {
+      i += 1;   // unexpected token — skip defensively rather than throw
+    }
+  }
+  out.lenPx *= (inkFraction === undefined ? 1 : inkFraction);
+  return out;
 }
 // Splits a dashed path into real geometry: only the "on" portions of the
 // dash/gap pattern survive, each as its own M...L... subpath, so a plotter

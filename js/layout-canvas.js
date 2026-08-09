@@ -189,6 +189,7 @@ document.querySelectorAll('.paperTab').forEach(btn => {
     resetPv(); applyPv();
     if (tab === 'layout') renderLayoutCanvas();
     else markStale();
+    refreshStatusR();
   });
 });
 
@@ -310,6 +311,7 @@ function freezeCurrentGeneration(){
   blocks.push(block);
   createBlockDom(block);
   renderBlocksList();
+  refreshStatusR();
   $('statusL').textContent = 'saved ' + block.name;
   showAddToLayoutMsg(block.name + ' added to layout');
 }
@@ -347,6 +349,7 @@ function duplicateBlock(block){
   blocks.push(dup);
   createBlockDom(dup);
   renderBlocksList();
+  refreshStatusR();
   selectBlock(dup);
   $('statusL').textContent = 'duplicated ' + dup.name;
   showAddToLayoutMsg(dup.name + ' added to layout');
@@ -465,6 +468,31 @@ function renderLayoutCanvas(){
     if (!b.dom) createBlockDom(b);
     else { updateBlockTransform(b); updateBlockStyle(b); }
   }
+}
+// Feeds refreshStatusR() (svg-export.js) — sums computeDStats() over every
+// visible layer of every visible block, skipping a hidden block entirely
+// and, within a visible block, skipping any individual layer hidden via
+// the right-click layer menu (block.layerVisible). freezeScale (px->mm at
+// freeze time) combined with the block's own current on-page scale is the
+// same combinedScale math updateBlockTransform already uses.
+function computeLayoutStats(){
+  const out = { segments: 0, paths: 0, closedPaths: 0, lenMm: 0 };
+  for (const block of blocks){
+    if (!block.visible) continue;
+    for (const L of LAYERS){
+      if (!block.layerVisible[L.key]) continue;
+      const d = block.layerPaths[L.key];
+      if (!d) continue;
+      // Same override-vs-live dash resolution updateBlockStyle already uses.
+      const dashKey = (block.override && block.overrideStyle[L.key]) ? block.overrideStyle[L.key].dash : layerEls[L.key].dash.value;
+      const s = computeDStats(d, dashOnFraction(dashKey));
+      out.segments += s.segments;
+      out.paths += s.paths;
+      out.closedPaths += s.closedPaths;
+      out.lenMm += s.lenPx * block.freezeScale * block.scale;
+    }
+  }
+  return out;
 }
 
 /* ================= "Rotate layers with page" (Page settings) =================
@@ -1265,6 +1293,7 @@ function endInteraction(){
   // move interaction (locked groups can't be transformed at all), so
   // gating this behind "interaction exists" would silently skip the
   // collapse for exactly that case.
+  const hadInteraction = !!interaction;   // a scale drag changes on-page length — refresh stats once it settles
   if (pendingCollapseTo && !(interaction && interaction.mode === 'move' && interaction.moved)){
     setSelection([pendingCollapseTo]);
   }
@@ -1274,6 +1303,7 @@ function endInteraction(){
   clearSnapGuides();
   hideRotateLabel();
   hideDimensionLabels();
+  if (hadInteraction) refreshStatusR();
 }
 $('paperPane').addEventListener('pointerup', endInteraction);
 $('paperPane').addEventListener('pointercancel', endInteraction);
@@ -1338,6 +1368,7 @@ function openLayerContextMenu(block, clientX, clientY){
     row.querySelector('.svEye').addEventListener('click', () => {
       block.layerVisible[L.key] = !block.layerVisible[L.key];
       updateBlockStyle(block);
+      refreshStatusR();
       openLayerContextMenu(block, clientX, clientY);   // cheap full rebuild — refreshes the toggled icon
     });
     if (block.override){
@@ -1347,7 +1378,7 @@ function openLayerContextMenu(block, clientX, clientY){
       colorInput.addEventListener('input', () => { st.color = colorInput.value; updateBlockStyle(block); });
       widthInput.addEventListener('input', () => { st.width = Math.max(0.1, +widthInput.value || 0.1); updateBlockStyle(block); });
       widthInput.addEventListener('change', () => { widthInput.value = fmtWidth(+widthInput.value); });
-      dashSelect.addEventListener('change', () => { st.dash = dashSelect.value; updateBlockStyle(block); });
+      dashSelect.addEventListener('change', () => { st.dash = dashSelect.value; updateBlockStyle(block); refreshStatusR(); });
     }
     list.appendChild(row);
   }
@@ -1364,6 +1395,7 @@ $('layerContextOverrideChk').addEventListener('change', e => {
   if (!contextMenuBlock) return;
   contextMenuBlock.override = e.target.checked;
   updateBlockStyle(contextMenuBlock);
+  refreshStatusR();   // switches which dash (live panel vs. this block's own override) governs the ink length
   openLayerContextMenu(contextMenuBlock, contextMenuPos.x, contextMenuPos.y);   // rebuild to show/hide the expanded controls
 });
 function closeLayerContextMenu(){
@@ -1557,6 +1589,7 @@ function renderBlocksList(){
       block.visible = !block.visible;
       if (!block.visible) deselectBlock(block);
       updateBlockTransform(block);
+      refreshStatusR();
       renderBlocksList();
     });
     row.querySelector('.svLock').addEventListener('click', () => {
@@ -1572,6 +1605,7 @@ function renderBlocksList(){
       deselectBlock(block);
       if (contextMenuBlock === block) closeLayerContextMenu();
       removeBlockDom(block);
+      refreshStatusR();
       renderBlocksList();
     });
     list.appendChild(row);
@@ -1587,6 +1621,7 @@ $('clearBlocksBtn').addEventListener('click', () => {
   blocks = [];
   selectBlock(null);
   closeLayerContextMenu();
+  refreshStatusR();
   renderBlocksList();
 });
 

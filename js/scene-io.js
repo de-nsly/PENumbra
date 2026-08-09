@@ -367,6 +367,7 @@ function applyImportedScene(data){
   blockCounter = Number.isFinite(data.blockCounter) ? data.blockCounter : 0;
   renderBlocksList();
   if (activeTab === 'layout') renderLayoutCanvas();
+  refreshStatusR();
   resetPv();                     // new scene's content — fit the whole page, like a first-ever generate
 }
 

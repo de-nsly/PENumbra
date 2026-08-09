@@ -2742,10 +2742,21 @@ function generate(cam, S, shadingBuffer){
       if (rotateAt>0) ordered = pieces.slice(rotateAt).concat(pieces.slice(0,rotateAt));
     }
     let curState=null, runPts=[];
+    // Gated per sub-layer's own checkbox, same as Contour's sv/sh flush
+    // below — cv/ch used to both fill unconditionally once wantC allowed
+    // crease topology to be built at all (whichever of the two was on),
+    // which meant a hidden-crease layer left off could still end up full
+    // of frozen geometry in a saved Layout block. That's not just wasted
+    // work: a block only ever stores POST-ink-avoidance geometry, so if
+    // the user later re-enables that stale ch data on a block whose
+    // Silhouette visibility they've since changed, it can't reflect
+    // whatever Silhouette would have clipped away — it's either
+    // accidentally still right or silently wrong, with no way to tell.
+    // Not computing it when off removes that trap entirely.
     const flushRun = () => {
       if (runPts.length>=2){
-        const arr = curState==='v' ? groups.cv : groups.ch;
-        for (let i=0;i+1<runPts.length;i++)
+        const arr = curState==='v' ? (layerOn.cv ? groups.cv : null) : (layerOn.ch ? groups.ch : null);
+        if (arr) for (let i=0;i+1<runPts.length;i++)
           emit(arr, runPts[i][0],runPts[i][1], runPts[i+1][0],runPts[i+1][1], 0, 1);
       }
       runPts=[];
