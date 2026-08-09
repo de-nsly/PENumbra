@@ -11,6 +11,26 @@ body{background:var(--bg);color:var(--text);font-family:var(--disp);font-size:14
 button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
+/* ---------- scrollbars ---------- */
+/* Firefox: native shape/size kept as-is (scrollbar-width left at its
+   default 'auto'), just recolored — thumb accent, track transparent. */
+*{scrollbar-color:var(--accent) transparent}
+/* WebKit/Chromium: same idea. Track/corner/buttons all transparent so
+   only the thumb reads as accent-colored; native width/height/radius are
+   left untouched (no ::-webkit-scrollbar size override) since the
+   default shape is already fine — only color changes. The up/down/
+   left/right arrow glyphs themselves can't be recolored via CSS (no
+   such pseudo-element exists), so the arrow buttons are drawn as plain
+   accent-colored triangles on a transparent button box instead. */
+::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{background-color:var(--accent);border-radius:8px}
+::-webkit-scrollbar-thumb:hover{background-color:var(--accent);filter:brightness(1.15)}
+::-webkit-scrollbar-button{background-color:var(--accent)}
+::-webkit-scrollbar-button:vertical:start{clip-path:polygon(50% 25%, 20% 75%, 80% 75%)}
+::-webkit-scrollbar-button:vertical:end{clip-path:polygon(50% 75%, 20% 25%, 80% 25%)}
+::-webkit-scrollbar-button:horizontal:start{clip-path:polygon(25% 50%, 75% 20%, 75% 80%)}
+::-webkit-scrollbar-button:horizontal:end{clip-path:polygon(75% 50%, 25% 20%, 25% 80%)}
+
 /* ---------- header ---------- */
 header{display:flex;align-items:center;justify-content:space-between;
   position:relative;z-index:2;
@@ -21,6 +41,46 @@ header{display:flex;align-items:center;justify-content:space-between;
 .brand .sub{font-family:var(--mono);font-size:11px;color:var(--muted)}
 .actions{display:flex;gap:22px;align-items:center}
 .actGroup{display:flex;gap:8px;align-items:center}
+.aboutBtn{flex:none;width:26px;height:26px;border-radius:50%;background:var(--panel2);
+  border:1px solid var(--line);color:var(--muted);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;
+  font-family:var(--disp);line-height:1;padding:0}
+.aboutBtn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---------- about / shortcuts modal ---------- */
+.aboutOverlay{position:fixed;inset:0;z-index:50;background:rgba(10,12,15,.55);
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  display:flex;align-items:center;justify-content:center}
+.aboutOverlay[hidden]{display:none}
+.aboutModal{width:580px;max-width:92vw;max-height:85vh;overflow-y:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);padding:20px 22px 18px}
+.aboutHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.aboutTitle{font-weight:700;letter-spacing:.22em;font-size:13px;color:var(--muted)}
+.aboutClose{flex:none;width:24px;height:24px;border-radius:50%;background:transparent;
+  border:1px solid var(--line);color:var(--muted);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:11px;padding:0}
+.aboutClose:hover{border-color:var(--accent);color:var(--accent)}
+.aboutLogoRow{display:flex;align-items:center;justify-content:center;gap:12px;
+  margin:6px 0 22px}
+.aboutLogoMark{width:34px;height:34px;flex:none}
+.aboutLogoName{font-weight:700;letter-spacing:.24em;font-size:24px}
+.aboutSectionTitle{text-align:center;font-family:var(--mono);font-size:11px;
+  text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin-bottom:14px}
+.aboutShortcuts{display:flex;flex-direction:column;gap:16px}
+.aboutShortcutGroup h3{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--accent);margin-bottom:7px;font-weight:600}
+.aboutShortcutRow{display:flex;align-items:center;gap:12px;font-size:12.5px;
+  color:var(--text);padding:3px 0}
+.aboutShortcutRow .aboutKeys{flex:none;display:flex;align-items:center;gap:3px;
+  flex-wrap:nowrap;width:180px;color:var(--muted);font-family:var(--mono);font-size:11.5px}
+.aboutShortcutRow kbd{font-family:var(--mono);font-size:10.5px;background:var(--panel2);
+  border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;
+  padding:2px 6px;color:var(--text)}
+.aboutFooter{margin-top:20px;padding-top:14px;border-top:1px solid var(--line);
+  text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.aboutFooter a{color:var(--accent);text-decoration:none}
+.aboutFooter a:hover{text-decoration:underline}
 .btn{background:var(--panel2);border:1px solid var(--line);border-radius:6px;
   padding:7px 14px;cursor:pointer;font-weight:600;font-size:13px;letter-spacing:.02em}
 .btn:hover{border-color:var(--accent);color:var(--accent)}
@@ -389,8 +449,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
 input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;
   background:var(--accent);border:2px solid var(--bg)}
 input[type=range]:disabled{opacity:.3;pointer-events:none}
+input[type=checkbox]{-webkit-appearance:none;-moz-appearance:none;appearance:none;margin:0;flex:none;
+  border:1.8px solid var(--accent);border-radius:50%;background:transparent;
+  cursor:pointer;box-sizing:border-box}
+input[type=checkbox]:checked{background:radial-gradient(circle, var(--accent) 4.0px, transparent 4.5px)}
 .chk{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:12.5px}
-.chk input{accent-color:var(--accent);width:14px;height:14px}
+.chk input{width:16px;height:16px}
 select,input[type=number]{background:var(--panel2);border:1px solid var(--line);
   border-radius:5px;padding:4px 6px;font-family:var(--mono);font-size:11.5px}
 input[type=number]{width:58px}
@@ -415,7 +479,7 @@ input[type=number]{width:58px}
   margin-bottom:6px;cursor:pointer}
 .textureGroupLabel.textureGroupLabelSplit{justify-content:space-between;cursor:default}
 .textureGroupLabelMain{display:flex;align-items:center;gap:8px;cursor:pointer}
-.textureGroupLabel input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px}
+.textureGroupLabel input[type=checkbox]{width:15px;height:15px}
 .textureGroupLabel.textureGroupTitle{cursor:default;font-weight:600}
 .texInlineChk{margin:0;font-size:11px;color:var(--muted);cursor:pointer}
 .textureFieldsWrap{transition:opacity .15s}
@@ -441,7 +505,7 @@ input[type=number]{width:58px}
   gap:6px;padding:5px 0;border-bottom:1px dashed rgba(255,255,255,.05)}
 .layer .nm{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .layer .nm.hid{color:var(--muted);font-size:11.5px;padding-left:8px}
-.layer input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px}
+.layer input[type=checkbox]{width:15px;height:15px}
 .layer input[type=color]{width:24px;height:20px;border:1px solid var(--line);border-radius:4px;
   background:none;padding:0;cursor:pointer}
 .layer input[type=number]{width:56px;padding:3px 4px;font-size:11px}

@@ -16,6 +16,7 @@
     <span class="sub">hidden-line plotter studio · stl/obj → svg</span>
   </div>
   <div class="actions">
+    <button class="aboutBtn" id="aboutBtn" type="button" title="About PENumbra / keyboard shortcuts" aria-label="About PENumbra">?</button>
     <input type="file" id="fileInput" accept=".stl,.obj,.pen" hidden>
     <span class="actGroup">
       <button class="btn" id="loadBtn">Load STL / OBJ</button>
@@ -213,6 +214,10 @@
           <label for="pageColor">Page color</label>
           <input type="color" id="pageColor" value="#fbf9f3" style="grid-column:2/3">
         </div>
+      </div>
+
+      <h2>Margins</h2>
+      <div class="sec">
         <label class="chk"><input type="checkbox" id="marginIndependent"> Independent margins</label>
         <div class="ctl" id="marginSingleRow">
           <label for="marginMm">Margin</label>
@@ -612,6 +617,58 @@
   <span id="statusL">loading…</span>
   <span id="statusR"></span>
 </footer>
+
+<div id="aboutOverlay" class="aboutOverlay" hidden>
+  <div class="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+    <div class="aboutHead">
+      <span class="aboutTitle" id="aboutTitle">ABOUT</span>
+      <button class="aboutClose" id="aboutCloseBtn" type="button" aria-label="Close">✕</button>
+    </div>
+    <div class="aboutLogoRow">
+      <img class="aboutLogoMark" src="./favicon.svg" alt="" aria-hidden="true">
+      <span class="aboutLogoName">PENumbra</span>
+    </div>
+    <div class="aboutSectionTitle">Shortcuts / controls</div>
+    <div class="aboutShortcuts">
+      <div class="aboutShortcutGroup">
+        <h3>Anywhere</h3>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>H</kbd></span><span>Show / hide the floating UI panels</span></div>
+      </div>
+      <div class="aboutShortcutGroup">
+        <h3>3D viewport (cursor over the 3D pane)</h3>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span><span>Pan the camera</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Drag</span><span>Orbit the camera</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+drag</span><span>Pan the camera</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Wheel</span><span>Zoom in / out</span></div>
+      </div>
+      <div class="aboutShortcutGroup">
+        <h3>2D pane — Preview &amp; Layout tabs</h3>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Drag empty space</span><span>Pan the view</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Wheel</span><span>Zoom in / out</span></div>
+      </div>
+      <div class="aboutShortcutGroup">
+        <h3>Layout tab</h3>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span><span>Nudge the selected layer(s) by 0.5&nbsp;mm</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+<kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span><span>Nudge the selected layer(s) by 5&nbsp;mm</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Esc</kbd></span><span>Close the right-click layer menu</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Click a layer</span><span>Select it</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+click</span><span>Add / remove a layer from the selection</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+drag</span><span>Constrain the move to one axis</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Right-click a layer</span><span>Open the layer menu</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Drag a layer's handle in the list</span><span>Reorder layers</span></div>
+      </div>
+      <div class="aboutShortcutGroup">
+        <h3>Editing a value or name (after double-click)</h3>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Enter</kbd></span><span>Confirm the edit</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Esc</kbd></span><span>Cancel the edit</span></div>
+      </div>
+    </div>
+    <div class="aboutFooter">
+      <div>&copy; 2026 de-nsly</div>
+      <a href="https://github.com/de-nsly/PENumbra" target="_blank" rel="noopener">https://github.com/de-nsly/PENumbra</a>
+    </div>
+  </div>
+</div>
 
 <!-- ============================================================
      WORKER: parsers · weld · adjacency · hidden-line solver · hatch

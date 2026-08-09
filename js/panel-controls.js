@@ -502,6 +502,23 @@ document.addEventListener('keydown', e => {
   $('modelInfoFloat').style.display = panelsHidden ? 'none' : '';
 });
 
+/* ================= about / shortcuts modal =================
+   Plain show/hide of a fixed-position overlay — no focus trap or
+   animation, just hidden attribute toggling. Closes on the X button,
+   clicking the dimmed backdrop outside the card, or Escape (checked
+   here rather than folded into the H-panel-toggle listener above
+   since it must fire regardless of what's focused, including while
+   the modal itself holds focus). */
+const aboutOverlay = $('aboutOverlay');
+function openAbout(){ aboutOverlay.hidden = false; }
+function closeAbout(){ aboutOverlay.hidden = true; }
+$('aboutBtn').addEventListener('click', openAbout);
+$('aboutCloseBtn').addEventListener('click', closeAbout);
+aboutOverlay.addEventListener('click', e => { if (e.target === aboutOverlay) closeAbout(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !aboutOverlay.hidden) closeAbout();
+});
+
 /* ================= pen/cog settings-mode toggle =================
    Two tabs for the same right-hand panel: "pen" (everything line/hatch/
    shadow related — the default) and "cog" (general settings — currently
