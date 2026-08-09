@@ -9,6 +9,8 @@ browser.
 
 **Try it live: [de-nsly.github.io/PENumbra](https://de-nsly.github.io/PENumbra/)**
 
+![PENumbra](docs/PENumbra_UI.png)
+
 ## What it does
 
 - **Hidden-line removal**: computes visible vs. hidden edges (silhouette, contour, crease) from any angle
@@ -28,4 +30,4 @@ server. Drag and drop an STL/OBJ file onto the page, or load the built-in demo s
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+GPL-3.0 — see [LICENSE](LICENSE).
