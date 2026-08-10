@@ -87,18 +87,72 @@ pane2.addEventListener('wheel', e => {
   applyPv(layout);
 }, { passive: false });
 let panDrag = false, plx = 0, ply = 0;
+// Touch pans with TWO fingers, not one — a single finger is left free for
+// other touch interaction (tap-select, etc.) rather than immediately
+// panning like a mouse-drag would. Tracked separately from the mouse/pen
+// middle-button path below since touch delivers one pointerdown/up PER
+// finger, each with its own pointerId, rather than a single button state.
+const touchPointers = new Map();   // pointerId -> {x,y}, active touch contacts only
+function touchMidpoint(){
+  let sx = 0, sy = 0;
+  for (const p of touchPointers.values()){ sx += p.x; sy += p.y; }
+  return [sx / touchPointers.size, sy / touchPointers.size];
+}
+// Called after touchPointers changes (finger added or removed) — resyncs
+// the pan reference point to the new midpoint whenever 2+ fingers are down,
+// so a 3rd finger landing (or one of 3 lifting back to 2) doesn't cause the
+// view to jump by the midpoint's shift, and stops panning cleanly once
+// fewer than 2 fingers remain.
+function syncTouchPan(){
+  if (touchPointers.size >= 2){
+    panDrag = true;
+    [plx, ply] = touchMidpoint();
+  } else {
+    panDrag = false;
+  }
+}
 pane2.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch'){
+    touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    pane2.setPointerCapture(e.pointerId);
+    syncTouchPan();
+    e.preventDefault();
+    return;
+  }
+  // Mouse/pen: only the middle button pans — left and right click no
+  // longer do, freeing them up for selection/context-menu use without an
+  // accidental drag.
+  if (e.button !== 1) return;
   panDrag = true; plx = e.clientX; ply = e.clientY;
   pane2.setPointerCapture(e.pointerId);
-  e.preventDefault();   // suppress the browser's default text-selection drag behavior
+  e.preventDefault();   // suppress the browser's default middle-click autoscroll behavior
 });
 pane2.addEventListener('pointermove', e => {
+  if (e.pointerType === 'touch'){
+    if (!touchPointers.has(e.pointerId)) return;
+    touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!panDrag) return;
+    const [cx, cy] = touchMidpoint();
+    pv.tx += cx - plx; pv.ty += cy - ply;
+    plx = cx; ply = cy;
+    applyPv();
+    return;
+  }
   if (!panDrag) return;
   pv.tx += e.clientX - plx; pv.ty += e.clientY - ply;
   plx = e.clientX; ply = e.clientY;
   applyPv();
 });
-pane2.addEventListener('pointerup', () => panDrag = false);
+function endPanPointer(e){
+  if (e.pointerType === 'touch'){
+    touchPointers.delete(e.pointerId);
+    syncTouchPan();
+    return;
+  }
+  panDrag = false;
+}
+pane2.addEventListener('pointerup', endPanPointer);
+pane2.addEventListener('pointercancel', endPanPointer);
 // The reset button sits on top of the pannable/zoomable pane — swallow its
 // own pointerdown so it never reaches pane2's handler above and triggers a
 // pan-drag + pointer-capture on what's really a button click. Pointer
@@ -108,7 +162,7 @@ pane2.addEventListener('pointerup', () => panDrag = false);
 // against, for the same reason.
 ['pointerdown','wheel'].forEach(t => $('reset2dBtn').addEventListener(t, e => e.stopPropagation()));
 $('reset2dBtn').addEventListener('click', () => {
-  resetPv(); applyPv();
+  resetPvFitWithRulers(); applyPv();
 });
 
 /* ================= texture pattern gizmo =================
@@ -309,5 +363,42 @@ function updateRuler(layout){
   label.setAttribute('fill', PAGE_LABEL_COLOR);
   label.textContent = $('paperSize').value;
   ov.appendChild(label);
+}
+
+// Reset-view fit — deliberately separate from baseSheetSize's own plain
+// page fit (used everywhere else pv.z=1 is the reference scale): the Reset
+// button is specifically supposed to bring the WHOLE view back into frame,
+// and the ruler (drawn only above/left of the page, see updateRuler above)
+// sits outside the page's own box, so fitting the bare page alone can leave
+// its ticks/labels clipped off the top/left edge of the pane. Margin
+// estimates are deliberately generous (assumes the longest tick label
+// across every supported paper size, ~4 digits) rather than exact — a
+// little extra breathing room is harmless, clipping isn't.
+const RULER_FIT_LABEL_CHARS = 4;          // "1189" — the longest tick label across PAPERS
+const RULER_FIT_CHAR_WIDTH_EM = 0.6;      // generous monospace-ish width estimate relative to font-size
+function rulerFitMarginMm(){
+  return {
+    left: RULER_GAP_MM + RULER_TICK_10MM + RULER_LABEL_GAP_MM
+      + RULER_FIT_LABEL_CHARS * RULER_FIT_CHAR_WIDTH_EM * RULER_LABEL_FONT_MM,
+    top: RULER_GAP_MM + RULER_TICK_10MM + RULER_LABEL_GAP_TOP_MM + RULER_LABEL_FONT_MM * 0.6,
+  };
+}
+function resetPvFitWithRulers(){
+  const layout = currentLayoutDims();
+  if (!layout){ resetPv(); return; }
+  const margin = rulerFitMarginMm();
+  const pane = $('paperPane');
+  const availW = Math.max(20, pane.clientWidth - 20), availH = Math.max(20, pane.clientHeight - 20);
+  const scale = Math.min(availW / (layout.paperW + margin.left), availH / (layout.paperH + margin.top));
+  const base = baseSheetSize(layout);
+  const baseScale = base.w / layout.paperW;     // the scale baseSheetSize's own z=1 fit represents
+  pv.z = scale / baseScale;
+  // Shifts the page right/down by half the ruler margin so the page+ruler
+  // BOUNDING BOX ends up centered in the pane, not just the bare page —
+  // since the ruler only extends outward on the top/left, centering the
+  // page alone would crowd the ruler against one side while leaving unused
+  // empty space on the opposite side.
+  pv.tx = (margin.left * scale) / 2;
+  pv.ty = (margin.top * scale) / 2;
 }
 

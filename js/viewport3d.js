@@ -337,8 +337,8 @@ function drawGizmo(){
    markStale/updateLight/label-text logic that listener already does. */
 const lgSvg = $('lightGizmo');
 const LG = {
-  cx: 60, cy: 84, r: 54,                 // azimuth ring — diameter == track length
-  tx: 162, ty0: 30, ty1: 138,            // elevation track: x, top y, bottom y (length 108 == 2*r)
+  cx: 70, cy: 95, r: 54,                 // azimuth ring — diameter == track length
+  tx: 170, ty0: 41, ty1: 149,            // elevation track: x, top y, bottom y (length 108 == 2*r)
   azMin: 0, azMax: 360, elMin: 0, elMax: 90,
 };
 function lgToSvgPoint(clientX, clientY){
@@ -393,13 +393,13 @@ let lgAzNeedle, lgAzSun, lgElFill, lgElSun;
     return g;
   };
   // azimuth ring
-  lgSvg.appendChild(mk('text', { class:'lgLbl', x:LG.cx, y:16, 'text-anchor':'middle' })).textContent = 'Azimuth';
+  lgSvg.appendChild(mk('text', { class:'lgLbl', x:LG.cx, y:25, 'text-anchor':'middle' })).textContent = 'Azimuth';
   lgSvg.appendChild(mk('circle', { class:'lgRing', cx:LG.cx, cy:LG.cy, r:LG.r }));
   lgAzNeedle = lgSvg.appendChild(mk('line', { class:'lgNeedle', x1:LG.cx, y1:LG.cy, x2:LG.cx, y2:LG.cy+LG.r }));
   const lgAzHit = lgSvg.appendChild(mk('circle', { class:'lgHit', cx:LG.cx, cy:LG.cy, r:LG.r+9 }));
   lgAzSun = lgSvg.appendChild(sun('lgSun'));
   // elevation gauge
-  lgSvg.appendChild(mk('text', { class:'lgLbl', x:LG.tx, y:16, 'text-anchor':'middle' })).textContent = 'Elev.';
+  lgSvg.appendChild(mk('text', { class:'lgLbl', x:LG.tx, y:25, 'text-anchor':'middle' })).textContent = 'Elev.';
   lgSvg.appendChild(mk('line', { class:'lgTrackBg', x1:LG.tx, y1:LG.ty0, x2:LG.tx, y2:LG.ty1 }));
   lgElFill = lgSvg.appendChild(mk('line', { class:'lgTrackFill', x1:LG.tx, y1:LG.ty1, x2:LG.tx, y2:LG.ty1 }));
   const lgElHit = lgSvg.appendChild(mk('rect', { class:'lgHit', x:LG.tx-15, y:LG.ty0-12, width:30, height:LG.ty1-LG.ty0+24 }));

@@ -3,6 +3,8 @@
   --text:#e9e7df; --muted:#8b93a1; --accent:#58b8d6; --accent-ink:#0c1a20;
   --warn:#e0764f; --paper:#fbf9f3; --bed:#475161; --paper-edge:#5b6472;
   --mono:'IBM Plex Mono',ui-monospace,monospace; --disp:'Space Grotesk',system-ui,sans-serif;
+  --guide-color:#4a4436;   /* overwritten in JS (updateGuideColor) to keep contrast with the current page color */
+  --sel-color:#58b8d6;     /* overwritten in JS (updateSelColor) to the ink color once the page color gets too close to --accent */
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
@@ -151,15 +153,10 @@ body.layoutMode #paperPane{grid-column:1 / 3}
 section,aside{position:relative;min-width:0;min-height:0}
 #viewport3d{border-right:1px solid var(--line);background:#12151a;position:relative}
 #viewport3d canvas{display:block}
-.paneLabel{position:absolute;left:10px;bottom:8px;font-family:var(--mono);font-size:10px;
-  color:var(--muted);letter-spacing:.14em;text-transform:uppercase;pointer-events:none;
-  background:rgba(20,23,29,.55);padding:2px 7px;border-radius:4px;
-  max-width:calc(100% - 20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-/* corner reset/recenter buttons — small square icon buttons sitting just
-   above each pane's bottom-left hint label; same frosted treatment as the
-   floating panels above them */
-.cornerBtn{position:absolute;left:10px;bottom:36px;z-index:2;
+/* corner reset/recenter buttons — small square icon buttons sitting in
+   each pane's bottom-left corner; same frosted treatment as the floating
+   panels above them */
+.cornerBtn{position:absolute;left:10px;bottom:8px;z-index:2;
   width:26px;height:26px;display:flex;align-items:center;justify-content:center;
   background:rgba(23,26,31,.62);border:1px solid rgba(255,255,255,.09);border-radius:6px;
   color:var(--muted);cursor:pointer;padding:0;
@@ -278,15 +275,25 @@ section,aside{position:relative;min-width:0;min-height:0}
   vector-effect:non-scaling-stroke;pointer-events:auto;cursor:grab}
 .textureGizmo:active{cursor:grabbing}
 .textureGizmoCross{stroke:var(--accent-ink);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
-.layoutMarginGuide{fill:none;stroke:#a49b86;stroke-width:1;stroke-dasharray:3 3;
+.layoutMarginGuide{fill:none;stroke:var(--guide-color);stroke-width:1;stroke-dasharray:3 3;
   vector-effect:non-scaling-stroke;pointer-events:none}
-.layoutSelRect{fill:none;stroke:var(--accent);stroke-width:1.4;stroke-dasharray:5 3;pointer-events:none}
-.layoutSelRectMember{fill:none;stroke:var(--accent);stroke-width:1;stroke-dasharray:2 2;opacity:.55;pointer-events:none}
+.layoutGridGuide{stroke:var(--guide-color);stroke-width:1.6;stroke-dasharray:1 3;
+  vector-effect:non-scaling-stroke;pointer-events:none;opacity:.85}
+.pvMarginGuide{fill:none;stroke:var(--guide-color);stroke-width:0.7;stroke-dasharray:2 2;
+  vector-effect:non-scaling-stroke;pointer-events:none}
+.pvGridGuide{stroke:var(--guide-color);stroke-width:0.9;stroke-dasharray:1 2;
+  vector-effect:non-scaling-stroke;pointer-events:none;opacity:.85}
+.layoutSelRect{fill:none;stroke:var(--sel-color);stroke-width:1.4;stroke-dasharray:5 3;pointer-events:none}
+.layoutSelRectMember{fill:none;stroke:var(--sel-color);stroke-width:1;stroke-dasharray:2 2;opacity:.55;pointer-events:none}
 .layoutSelHandle{fill:var(--accent);stroke:var(--accent-ink);stroke-width:1;pointer-events:none}
-.layoutRotateConnector{stroke:var(--accent);stroke-width:1;stroke-dasharray:3 2;pointer-events:none;opacity:.75}
+.layoutRotateConnector{stroke:var(--sel-color);stroke-width:1;stroke-dasharray:3 2;pointer-events:none;opacity:.75}
 .layoutRotateGizmo{fill:var(--accent);stroke:var(--accent-ink);stroke-width:1;pointer-events:none}
 .layoutSnapGuide{stroke:var(--accent);stroke-width:1;stroke-dasharray:2 2;
   vector-effect:non-scaling-stroke;pointer-events:none;opacity:.85}
+.layoutAxisLockGuide{stroke-width:1;stroke-dasharray:4 3;
+  vector-effect:non-scaling-stroke;pointer-events:none;opacity:.85}
+.layoutAxisLockGuide-x{stroke:#e5484d}
+.layoutAxisLockGuide-y{stroke:#30a46c}
 #rotateAngleLabel,.dimLabel{position:fixed;display:none;
   background:rgba(23,26,31,.92);color:var(--accent);font-family:var(--mono);
   font-size:11px;padding:3px 8px;border-radius:4px;pointer-events:none;
@@ -351,7 +358,7 @@ input[type=color]::-moz-color-swatch{border:none;border-radius:4px}
    elevation are world-space, and a rotating ring would turn into an ellipse
    from most camera angles, which is exactly the "genuinely tricky, skip it
    for now" case this widget deliberately avoids. */
-#lightGizmo{position:absolute;bottom:12px;right:12px;z-index:2;
+#lightGizmo{position:absolute;bottom:0px;right:0px;z-index:2;
   font-family:var(--mono);user-select:none}
 #lightGizmo .lgRing{fill:rgba(255,255,255,.02);stroke:var(--line);stroke-width:2.25}
 #lightGizmo .lgHit{fill:transparent;stroke:transparent;cursor:grab}

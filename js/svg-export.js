@@ -238,16 +238,41 @@ function renderPaper(){
   if (!guide){
     guide = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     guide.id = 'marginGuide';
-    guide.setAttribute('fill', 'none');
-    guide.setAttribute('stroke', '#a49b86');
-    guide.setAttribute('stroke-width', '0.4');
-    guide.setAttribute('stroke-dasharray', '2 2');
-    guide.setAttribute('vector-effect', 'non-scaling-stroke');
+    guide.setAttribute('class', 'pvMarginGuide');
     $('plot').insertBefore(guide, $('plot').firstChild);
   }
   guide.setAttribute('x', layout.margin.left); guide.setAttribute('y', layout.margin.top);
   guide.setAttribute('width', Math.max(0, layout.paperW - layout.margin.left - layout.margin.right));
   guide.setAttribute('height', Math.max(0, layout.paperH - layout.margin.top - layout.margin.bottom));
+  // Guide Grid — same visual reference lines as the Layout tab (see
+  // gridGuidePositions in layout-canvas.js, the shared source of truth for
+  // where a guide actually sits), but display-only here: Preview has no
+  // interactive placement to snap, so this never feeds into any geometry
+  // or export math, just drawn for eyeballing composition against the model.
+  let gridGuides = document.getElementById('pvGridGuides');
+  if (!gridGuides){
+    gridGuides = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    gridGuides.id = 'pvGridGuides';
+    $('plot').insertBefore(gridGuides, $('plot').firstChild);
+  }
+  gridGuides.innerHTML = '';
+  if (typeof gridGuidePositions === 'function'){
+    const { xs, ys } = gridGuidePositions({ paperW: layout.paperW, paperH: layout.paperH, margin: layout.margin });
+    for (const x of xs){
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('class', 'pvGridGuide');
+      line.setAttribute('x1', x); line.setAttribute('x2', x);
+      line.setAttribute('y1', 0); line.setAttribute('y2', layout.paperH);
+      gridGuides.appendChild(line);
+    }
+    for (const y of ys){
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('class', 'pvGridGuide');
+      line.setAttribute('y1', y); line.setAttribute('y2', y);
+      line.setAttribute('x1', 0); line.setAttribute('x2', layout.paperW);
+      gridGuides.appendChild(line);
+    }
+  }
   applyPv(layout);
   // Stroke width is anchored to a true mm value via layout.scale (see
   // applyLayerStyle) — when the layout itself changes (paper size,
@@ -272,8 +297,64 @@ function renderPaper(){
 // this never needs resetPv()/renderPaper()/markStale().
 function applyPageColor(){
   document.documentElement.style.setProperty('--paper', $('pageColor').value);
+  updateGuideColor();
+  updateSelColor();
+}
+// Picks whichever of a near-black/near-white guide tone has the higher WCAG
+// contrast ratio against the current page color, so the margin/grid guides
+// (in both Preview and Layout — both read the same --guide-color custom
+// property, see .pvMarginGuide/.pvGridGuide/.layoutMarginGuide/
+// .layoutGridGuide in styles.css) never wash out against a similarly-toned
+// page, whatever color the user picks.
+const GUIDE_DARK = '#4a4436', GUIDE_LIGHT = '#f5f0e4';
+function hexToRgb(hex){
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c+c).join('');
+  const n = parseInt(hex, 16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+function relLuminance([r, g, b]){
+  const f = c => { c /= 255; return c <= 0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); };
+  return 0.2126*f(r) + 0.7152*f(g) + 0.0722*f(b);
+}
+function contrastRatio(hexA, hexB){
+  const lA = relLuminance(hexToRgb(hexA)) + 0.05, lB = relLuminance(hexToRgb(hexB)) + 0.05;
+  return lA > lB ? lA/lB : lB/lA;
+}
+function updateGuideColor(){
+  const bg = $('pageColor').value;
+  const guideColor = contrastRatio(bg, GUIDE_DARK) >= contrastRatio(bg, GUIDE_LIGHT) ? GUIDE_DARK : GUIDE_LIGHT;
+  document.documentElement.style.setProperty('--guide-color', guideColor);
+}
+// "redmean" perceptual RGB distance — deliberately NOT contrastRatio()
+// above: WCAG contrast is luminance-only, so a bright page color (like the
+// default off-white) already reads as "low contrast" against the bright
+// accent cyan even though the two are nowhere near the same HUE and the
+// accent is still perfectly visible on screen. What actually washes the
+// selection dashes out is the page color genuinely approaching the accent
+// color itself, which needs a real color-distance check, not a lightness one.
+function colorDistance(hexA, hexB){
+  const [r1,g1,b1] = hexToRgb(hexA), [r2,g2,b2] = hexToRgb(hexB);
+  const rmean = (r1+r2)/2, dr = r1-r2, dg = g1-g2, db = b1-b2;
+  return Math.sqrt((2 + rmean/256)*dr*dr + 4*dg*dg + (2 + (255-rmean)/256)*db*db);
+}
+// The Layout selection chrome (--sel-color, read by .layoutSelRect/
+// .layoutSelRectMember/.layoutRotateConnector) normally just uses the plain
+// accent color — it already reads fine against most page colors, so there's
+// no need to pick between two tones the way the guides above do. Only when
+// the page color actually drifts close to the accent color itself (the case
+// that genuinely washes the dashes out) does this swap to the same dark ink
+// already used for the handles' outline stroke, instead.
+const ACCENT_HEX = '#58b8d6', ACCENT_INK_HEX = '#0c1a20';
+const SEL_CLOSE_THRESHOLD = 140;   // redmean units out of a ~765 max — tuned so only genuinely near-accent hues trigger the swap
+function updateSelColor(){
+  const bg = $('pageColor').value;
+  const selColor = colorDistance(bg, ACCENT_HEX) < SEL_CLOSE_THRESHOLD ? ACCENT_INK_HEX : ACCENT_HEX;
+  document.documentElement.style.setProperty('--sel-color', selColor);
 }
 $('pageColor').addEventListener('input', applyPageColor);
+updateGuideColor();   // seed --guide-color for the default page color at boot, before any user edit fires applyPageColor
+updateSelColor();     // same, for --sel-color
 function syncMarginMode(){
   const on = $('marginIndependent').checked;
   $('marginSingleRow').style.display = on ? 'none' : '';
@@ -1778,7 +1859,7 @@ function onResult(m){
     applyLayerStyle(L.key);
     rawLenByLayer[L.key] = pathStats.lenPx - lenBefore;
   }
-  if (firstEverGen) resetPv();          // first drawing ever shown: fit the whole page
+  if (firstEverGen) resetPvFitWithRulers();   // first drawing ever shown: fit the whole page, rulers included
   renderPaper();                        // regenerating an existing view keeps the user's pan/zoom
   const outlineWarn = (m.counts.outlineTooComplex ? ' · scene outline skipped (too complex)' : '') +
     (m.counts.shadowCapped ? ' · shadow budget hit (partial)' : '');
@@ -1997,6 +2078,8 @@ $('exportBtn').addEventListener('click', () => {
   clone.setAttribute('viewBox', '0 0 ' + layout.paperW.toFixed(3) + ' ' + layout.paperH.toFixed(3));
   const guide = clone.querySelector('#marginGuide');
   if (guide) guide.remove();            // preview-only reference rect, not part of the plot
+  const pvGrid = clone.querySelector('#pvGridGuides');
+  if (pvGrid) pvGrid.remove();          // preview-only guide grid, not part of the plot
   clone.querySelectorAll('.blendMultiply').forEach(el => el.classList.remove('blendMultiply'));   // preview-only compositing, inert anyway with no stylesheet, but kept clean
   if (isLayout){
     // These are all Layout-tab-only UI chrome (selection box/handles/gizmo,
@@ -2006,7 +2089,7 @@ $('exportBtn').addEventListener('click', () => {
     // stylesheet: elements styled only via CSS classes (like the margin
     // guide's fill:none) would otherwise fall back to SVG's default black
     // fill in the standalone file instead of being invisible.
-    ['#layoutSelOverlay', '#layoutHitBg', '#layoutMarginGuide', '#layoutSnapGuides'].forEach(sel => {
+    ['#layoutSelOverlay', '#layoutHitBg', '#layoutMarginGuide', '#layoutGridGuides', '#layoutSnapGuides', '#layoutAxisGuides'].forEach(sel => {
       const el = clone.querySelector(sel);
       if (el) el.remove();
     });

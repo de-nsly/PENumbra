@@ -49,15 +49,6 @@ let interaction = null;               // {mode:'move'|'rotate'|'scale', ...} whi
 // Screen-pixel constants for handle/rotate-zone sizing and snap threshold —
 // converted to canvas-mm at whatever the CURRENT zoom is via mmPerScreenPx(),
 // so they feel the same regardless of how zoomed in/out the layout canvas is.
-// Custom SVG cursor for the rotate gizmo hover state — replaces the native
-// cursor:grab keyword, which has a known Chromium+Windows bug where the
-// cursor can render solid white with no outline. This is a user-provided
-// rotate/refresh icon (two circular arrows), given a white fill + dark
-// outline for contrast against any background, matching this app's cursor
-// conventions. Used for HOVER only — once a rotate drag actually starts,
-// the cursor switches to the plain default arrow instead (see the
-// pointerdown handler below), rather than a second custom "active" icon.
-const CURSOR_ROTATE = 'url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyOSIgaGVpZ2h0PSIyMiIgdmlld0JveD0iMCAwIDI5IDIyIj48ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwxLC0xLjk5NDU0NCwtNS4wMjg2OSkiIGZpbGw9IiNmZmZmZmYiIHN0cm9rZT0iIzE0MTQxNCIgc3Ryb2tlLXdpZHRoPSIwLjkiIHN0eWxlPSJmaWxsLXJ1bGU6ZXZlbm9kZDtjbGlwLXJ1bGU6ZXZlbm9kZDtzdHJva2UtbGluZWpvaW46cm91bmQ7c3Ryb2tlLW1pdGVybGltaXQ6MjsiPjxwYXRoIGQ9Ik05LjAxNiwxMi45MDRMMTEuNzE4LDExLjQ4OUMxMi41MzMsMTEuMDYzIDEzLjU0MSwxMS4zNzggMTMuOTY3LDEyLjE5M0MxNC4zOTQsMTMuMDA4IDE0LjA3OSwxNC4wMTYgMTMuMjY0LDE0LjQ0M0w3LjQ2OCwxNy40NzdDNi42NTMsMTcuOTAzIDUuNjQ1LDE3LjU4OCA1LjIxOSwxNi43NzNMMi4xODUsMTAuOTc4QzEuNzU4LDEwLjE2MyAyLjA3Myw5LjE1NSAyLjg4OCw4LjcyOEMzLjcwMyw4LjMwMSA0LjcxMSw4LjYxNyA1LjEzOCw5LjQzMkw2LjEsMTEuMjdDNy44NjgsNy41OCAxMS42MzgsNS4wMjkgMTYsNS4wMjlDMTkuMDgsNS4wMjkgMjEuODY1LDYuMyAyMy44NTgsOC4zNDZDMjQuNSw5LjAwNSAyNC40ODYsMTAuMDYxIDIzLjgyNywxMC43MDNDMjMuMTY4LDExLjM0NSAyMi4xMTIsMTEuMzMxIDIxLjQ3LDEwLjY3MkMyMC4wODMsOS4yNDggMTguMTQ0LDguMzYyIDE2LDguMzYyQzEyLjg4Niw4LjM2MiAxMC4yMDUsMTAuMjI5IDkuMDE2LDEyLjkwNFpNMjUuOSwyMC43M0MyNC4xMzIsMjQuNDIgMjAuMzYyLDI2Ljk3MSAxNiwyNi45NzFDMTIuOTIsMjYuOTcxIDEwLjEzNSwyNS43IDguMTQyLDIzLjY1NEM3LjUsMjIuOTk1IDcuNTE0LDIxLjkzOSA4LjE3MywyMS4yOTdDOC44MzIsMjAuNjU1IDkuODg4LDIwLjY2OSAxMC41MywyMS4zMjhDMTEuOTE3LDIyLjc1MiAxMy44NTYsMjMuNjM4IDE2LDIzLjYzOEMxOS4xMTQsMjMuNjM4IDIxLjc5NSwyMS43NzEgMjIuOTg0LDE5LjA5NkwyMC4yODIsMjAuNTExQzE5LjQ2NywyMC45MzcgMTguNDU5LDIwLjYyMiAxOC4wMzMsMTkuODA3QzE3LjYwNiwxOC45OTIgMTcuOTIxLDE3Ljk4NCAxOC43MzYsMTcuNTU3TDI0LjUzMiwxNC41MjNDMjUuMzQ3LDE0LjA5NyAyNi4zNTUsMTQuNDEyIDI2Ljc4MSwxNS4yMjdMMjkuODE1LDIxLjAyMkMzMC4yNDIsMjEuODM3IDI5LjkyNywyMi44NDUgMjkuMTEyLDIzLjI3MkMyOC4yOTcsMjMuNjk5IDI3LjI4OSwyMy4zODMgMjYuODYyLDIyLjU2OEwyNS45LDIwLjczWiIvPjwvZz48L3N2Zz4K") 15 11, pointer';
 const HANDLE_PX = 8;                  // visual size (side length) of each corner handle square
 const HANDLE_HIT_PX = 11;             // slightly larger than visual, for easier grabbing
 const ROTATE_GIZMO_OFFSET_PX = 24;    // distance from the top edge to the rotate gizmo circle
@@ -77,6 +68,22 @@ function computeLayoutPaperDims(){
   const paperW = landscape ? pl : ps, paperH = landscape ? ps : pl;
   const margin = getMargins();
   return { paperW, paperH, margin };
+}
+// Guide Grid mm positions — N guides on an axis split that axis into N+1
+// equal parts, so guide i (1-indexed) sits at i/(N+1) of the page's full
+// span, e.g. N=1 -> one guide at the midpoint, N=2 -> guides at the thirds.
+// Shared by drawing (syncLayoutGridGuides) and snapping (computeMoveSnap/
+// computeScaleSnap add these alongside the existing page-edge/margin/
+// center reference lines) so the two can never disagree about where a
+// guide actually sits.
+function gridGuidePositions(dims){
+  if (!$('gridGuideEnabled').checked) return { xs: [], ys: [] };
+  const nx = Math.max(0, Math.round(+$('gridGuideX').value || 0));
+  const ny = Math.max(0, Math.round(+$('gridGuideY').value || 0));
+  const xs = [], ys = [];
+  for (let i = 1; i <= nx; i++) xs.push(dims.paperW * i / (nx + 1));
+  for (let i = 1; i <= ny; i++) ys.push(dims.paperH * i / (ny + 1));
+  return { xs, ys };
 }
 
 // How many canvas-mm correspond to 1 on-screen CSS pixel, at the CURRENT
@@ -133,12 +140,18 @@ function initLayoutPlot(){
   guide.id = 'layoutMarginGuide';
   guide.setAttribute('class', 'layoutMarginGuide');
   svg.appendChild(guide);
+  const gridGuides = document.createElementNS(SVG_NS, 'g');
+  gridGuides.id = 'layoutGridGuides';
+  svg.appendChild(gridGuides);
   const blocksLayer = document.createElementNS(SVG_NS, 'g');
   blocksLayer.id = 'layoutBlocksLayer';
   svg.appendChild(blocksLayer);
   const snapGuides = document.createElementNS(SVG_NS, 'g');
   snapGuides.id = 'layoutSnapGuides';
   svg.appendChild(snapGuides);
+  const axisGuides = document.createElementNS(SVG_NS, 'g');
+  axisGuides.id = 'layoutAxisGuides';
+  svg.appendChild(axisGuides);
 }
 initLayoutPlot();
 
@@ -155,7 +168,35 @@ function syncLayoutPaperFrame(){
   guide.setAttribute('x', dims.margin.left); guide.setAttribute('y', dims.margin.top);
   guide.setAttribute('width', Math.max(0, dims.paperW - dims.margin.left - dims.margin.right));
   guide.setAttribute('height', Math.max(0, dims.paperH - dims.margin.top - dims.margin.bottom));
+  syncLayoutGridGuides(dims);
 }
+function syncLayoutGridGuides(dims){
+  dims = dims || computeLayoutPaperDims();
+  const g = $('layoutGridGuides');
+  g.innerHTML = '';
+  const { xs, ys } = gridGuidePositions(dims);
+  for (const x of xs){
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('class', 'layoutGridGuide');
+    line.setAttribute('x1', x); line.setAttribute('x2', x);
+    line.setAttribute('y1', 0); line.setAttribute('y2', dims.paperH);
+    g.appendChild(line);
+  }
+  for (const y of ys){
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('class', 'layoutGridGuide');
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('x1', 0); line.setAttribute('x2', dims.paperW);
+    g.appendChild(line);
+  }
+}
+['gridGuideEnabled','gridGuideX','gridGuideY'].forEach(id =>
+  $(id).addEventListener('input', () => {
+    syncLayoutPaperFrame();
+    // Preview draws the same guides (display-only there, see renderPaper in
+    // svg-export.js) — keep it in step even while Layout is the active tab.
+    if (typeof renderPaper === 'function') renderPaper();
+  }));
 
 /* ================= tab switching =================
    Preview and Layout are mutually exclusive — only one sheet is ever
@@ -172,9 +213,6 @@ document.querySelectorAll('.paperTab').forEach(btn => {
     activeTab = tab;
     document.querySelectorAll('.paperTab').forEach(b => b.classList.toggle('active', b === btn));
     document.body.classList.toggle('layoutMode', tab === 'layout');
-    $('paperPaneLabel').textContent = tab === 'layout'
-      ? 'Layout · drag pan · wheel zoom · right-click a layer to adjust individual layer visibility'
-      : '2D · drag pan · wheel zoom';
     closeLayerContextMenu();
     $('sheet').style.display = tab === 'preview' ? '' : 'none';
     $('layoutSheet').style.display = tab === 'layout' ? '' : 'none';
@@ -186,7 +224,7 @@ document.querySelectorAll('.paperTab').forEach(btn => {
     $('blocksFloat').style.display = tab === 'layout' ? '' : 'none';
     activeSheetId = tab === 'preview' ? 'sheet' : 'layoutSheet';
     if (tab === 'preview'){ $('paperPane').style.cursor = ''; lastCursor = null; }
-    resetPv(); applyPv();
+    resetPvFitWithRulers(); applyPv();
     if (tab === 'layout') renderLayoutCanvas();
     else markStale();
     refreshStatusR();
@@ -773,6 +811,48 @@ function refreshSelectionHighlight(){
   }
 }
 
+/* ================= marquee (rubber-band) select =================
+   Left-drag starting on empty canvas — same gesture as Illustrator/
+   Photoshop: any VISIBLE, UNLOCKED block whose envelope overlaps the
+   marquee rect (any amount counts) is selected, live, as the rect grows or
+   shrinks, using plain axis-aligned envelope overlap — the same box
+   worldEnvelope() already gives every other selection/snap computation in
+   this file, not exact rotated-shape intersection. Shift-drag is additive:
+   the live selection becomes preSelection (whatever was selected when the
+   drag started) UNION whatever's currently overlapping, so blocks selected
+   before the marquee began stay selected even once the marquee moves away
+   from them. */
+function marqueeRectWorld(interaction){
+  const [x0, y0] = interaction.startWorld, [x1, y1] = interaction.curWorld;
+  return { x0: Math.min(x0,x1), x1: Math.max(x0,x1), y0: Math.min(y0,y1), y1: Math.max(y0,y1) };
+}
+function envelopesOverlap(a, b){
+  return a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0;
+}
+function updateMarqueeSelection(interaction, additive){
+  const rect = marqueeRectWorld(interaction);
+  const next = new Set(additive ? interaction.preSelection : []);
+  for (const b of blocks){
+    if (!b.visible || b.locked) continue;
+    if (envelopesOverlap(rect, worldEnvelope(b))) next.add(b);
+  }
+  setSelection([...next]);
+}
+// Drawn AFTER updateSelectionOverlay() (called separately, once per
+// pointermove frame, right after the mode dispatch below) since that
+// function wipes and rebuilds #layoutOverlaySvg from scratch every time it
+// runs — appending the marquee rect here keeps it on top instead of having
+// it erased by the very selection-set change it just caused.
+function drawMarqueeRect(interaction){
+  const rect = marqueeRectWorld(interaction);
+  const corners = [[rect.x0,rect.y0],[rect.x1,rect.y0],[rect.x1,rect.y1],[rect.x0,rect.y1]]
+    .map(([wx, wy]) => canvasMmToScreen(wx, wy));
+  const rectPath = document.createElementNS(SVG_NS, 'path');
+  rectPath.setAttribute('class', 'layoutSelRect');   // same dashed/contrast-aware styling as the ordinary selection box
+  rectPath.setAttribute('d', 'M' + corners.map(p => p[0] + ',' + p[1]).join('L') + 'Z');
+  $('layoutOverlaySvg').appendChild(rectPath);
+}
+
 /* ================= snapping ================= */
 // Move-snapping, generalized to an arbitrary envelope + exclusion set —
 // used for both a single block (env = that block's own worldEnvelope(),
@@ -816,8 +896,9 @@ function computeMoveSnap(startEnv, excludeSet, dx, dy){
   // between two aligned elements (that reads as "page reference," distinct
   // from the shorter block-to-block alignment guides above).
   const dims = computeLayoutPaperDims();
-  const pageXRefs = [0, dims.margin.left, dims.paperW - dims.margin.right, dims.paperW, dims.paperW / 2];
-  const pageYRefs = [0, dims.margin.top, dims.paperH - dims.margin.bottom, dims.paperH, dims.paperH / 2];
+  const gridGuides = gridGuidePositions(dims);
+  const pageXRefs = [0, dims.margin.left, dims.paperW - dims.margin.right, dims.paperW, dims.paperW / 2, ...gridGuides.xs];
+  const pageYRefs = [0, dims.margin.top, dims.paperH - dims.margin.bottom, dims.paperH, dims.paperH / 2, ...gridGuides.ys];
   for (const myV of [env.x0, cx, env.x1]){
     for (const oV of pageXRefs){
       const d = oV - myV;
@@ -878,8 +959,9 @@ function computeScaleSnap(interaction, k){
     for (const v of [oe.x0, ocx, oe.x1]) xTargets.push({ value: v, range: [oe.y0, oe.y1] });
     for (const v of [oe.y0, ocy, oe.y1]) yTargets.push({ value: v, range: [oe.x0, oe.x1] });
   }
-  for (const v of [0, dims.margin.left, dims.paperW - dims.margin.right, dims.paperW, dims.paperW / 2]) xTargets.push({ value: v, range: [0, dims.paperH] });
-  for (const v of [0, dims.margin.top, dims.paperH - dims.margin.bottom, dims.paperH, dims.paperH / 2]) yTargets.push({ value: v, range: [0, dims.paperW] });
+  const gridGuides = gridGuidePositions(dims);
+  for (const v of [0, dims.margin.left, dims.paperW - dims.margin.right, dims.paperW, dims.paperW / 2, ...gridGuides.xs]) xTargets.push({ value: v, range: [0, dims.paperH] });
+  for (const v of [0, dims.margin.top, dims.paperH - dims.margin.bottom, dims.paperH, dims.paperH / 2, ...gridGuides.ys]) yTargets.push({ value: v, range: [0, dims.paperW] });
 
   // The most-constrained member (smallest startScale) sets the floor on k —
   // clamping the SHARED k once here, rather than each block's resulting
@@ -944,6 +1026,31 @@ function drawSnapGuides(snap){
   }
 }
 function clearSnapGuides(){ $('layoutSnapGuides').innerHTML = ''; }
+
+// Shift-drag axis-lock indicator — a full page-spanning line through the
+// selection's center on whichever axis the drag is currently constrained
+// to, distinct from drawSnapGuides()'s object/margin alignment guides
+// above. 'x' means movement is locked to the X axis (dragging
+// horizontally, so a horizontal line through the center); 'y' means
+// locked to the Y axis (a vertical line). Colors intentionally mirror the
+// axis-lock direction rather than reusing the accent color, so it reads
+// as a distinct kind of guide from ordinary snap alignment.
+function drawAxisLockGuide(axis, cx, cy){
+  const g = $('layoutAxisGuides');
+  g.innerHTML = '';
+  const dims = computeLayoutPaperDims();
+  const line = document.createElementNS(SVG_NS, 'line');
+  line.setAttribute('class', 'layoutAxisLockGuide layoutAxisLockGuide-' + axis);
+  if (axis === 'x'){
+    line.setAttribute('x1', 0); line.setAttribute('x2', dims.paperW);
+    line.setAttribute('y1', cy); line.setAttribute('y2', cy);
+  } else {
+    line.setAttribute('y1', 0); line.setAttribute('y2', dims.paperH);
+    line.setAttribute('x1', cx); line.setAttribute('x2', cx);
+  }
+  g.appendChild(line);
+}
+function clearAxisLockGuide(){ $('layoutAxisGuides').innerHTML = ''; }
 
 /* ================= rotate angle label ================= */
 function showRotateLabel(deg, clientX, clientY){
@@ -1061,7 +1168,7 @@ function updateHoverCursor(wx, wy){
     // rotate gesture (see selectionFrame's own comment) — use its actual
     // current angle, same as the handle squares themselves already do.
     : hit.type === 'scaleGroup' ? cornerCursorForRotation(hit.cornerIndex, selectionFrameAngleDeg(selectionFrame))
-    : hit.type === 'rotate' || hit.type === 'rotateGroup' ? CURSOR_ROTATE
+    : hit.type === 'rotate' || hit.type === 'rotateGroup' ? 'grab'
     : hit.block.locked ? 'default'
     : 'move';
   // Reassigning style.cursor on every pointermove even when the value hasn't
@@ -1098,8 +1205,15 @@ $('paperPane').addEventListener('pointerdown', e => {
   const [wx, wy] = screenToCanvasMm(e.clientX, e.clientY);
   const hit = hitTest(wx, wy);
   if (!hit){
-    if (!e.shiftKey) clearSelection();   // shift+click on empty space is a no-op, same as most design tools
-    return;                        // let it bubble — empty-space pan still works, on-page or off
+    // Marquee-select: deferred entirely to pointermove/pointerup below — a
+    // plain click with no drag still needs to behave as "clear selection
+    // unless shift", but that's only knowable once the gesture ends up
+    // without ever crossing the move threshold (see endInteraction).
+    e.preventDefault();
+    $('paperPane').setPointerCapture(e.pointerId);
+    interaction = { mode: 'marquee', startWorld: [wx, wy], curWorld: [wx, wy],
+      preSelection: new Set(selectedBlocks), moved: false };
+    return;
   }
   e.stopPropagation();
   e.preventDefault();
@@ -1146,9 +1260,16 @@ $('paperPane').addEventListener('pointerdown', e => {
     // measuring distance the way move-snapping does. Verified numerically
     // against a direct forward-transform computation, including on a
     // rotated block, before wiring this in.
+    // Scaled by the block's CURRENT scale here so V ends up in the same
+    // world-space-offset units computeScaleSnap expects (worldCorner_i(k) =
+    // anchorWorld + k*V_i) — matching how the scaleGroup path below builds
+    // its corners from blockCorners(), which already bakes in each block's
+    // own scale. Omitting this only breaks once block.scale != 1, i.e. from
+    // a block's second scale drag onward, since the first drag starts at
+    // scale 1 where the missing factor doesn't matter.
     const rad = hit.block.rotationDeg * Math.PI/180, cos = Math.cos(rad), sin = Math.sin(rad);
     const V = localCorners.map(([lx, ly]) => {
-      const dx = lx - anchorLocal[0], dy = ly - anchorLocal[1];
+      const dx = (lx - anchorLocal[0]) * hit.block.scale, dy = (ly - anchorLocal[1]) * hit.block.scale;
       return [dx*cos - dy*sin, dx*sin + dy*cos];
     });
     // corners here (world-space, anchor-relative) feed the same
@@ -1161,8 +1282,8 @@ $('paperPane').addEventListener('pointerdown', e => {
   } else if (hit.type === 'rotate'){
     const startAngle = Math.atan2(wy - hit.block.y, wx - hit.block.x) * 180/Math.PI;
     interaction = { mode: 'rotate', block: hit.block, startAngle, startRotation: hit.block.rotationDeg };
-    $('paperPane').style.cursor = 'default';
-    lastCursor = 'default';
+    $('paperPane').style.cursor = 'grabbing';
+    lastCursor = 'grabbing';
   } else if (hit.type === 'scaleGroup'){
     const envCorners = selectionFrame.corners;
     const anchorIdx = (hit.cornerIndex + 2) % 4;
@@ -1186,8 +1307,8 @@ $('paperPane').addEventListener('pointerdown', e => {
     const members = [...selectedBlocks].map(b => ({ block: b, startX: b.x, startY: b.y, startRotationDeg: b.rotationDeg }));
     interaction = { mode: 'rotateGroup', pivot, startAngle, members,
       startFrameCorners: c.map(pt => pt.slice()) };
-    $('paperPane').style.cursor = 'default';
-    lastCursor = 'default';
+    $('paperPane').style.cursor = 'grabbing';
+    lastCursor = 'grabbing';
   }
 }, { capture: true });
 $('paperPane').addEventListener('pointermove', e => {
@@ -1229,11 +1350,22 @@ $('paperPane').addEventListener('pointermove', e => {
       selectionFrame.corners = interaction.startFrameCorners.map(([x,y]) => [x+finalDx, y+finalDy]);
     }
     drawSnapGuides({ guideX, guideY, guideXRange, guideYRange });
+    if (e.shiftKey){
+      const cx = (interaction.startEnv.x0 + interaction.startEnv.x1) / 2 + finalDx;
+      const cy = (interaction.startEnv.y0 + interaction.startEnv.y1) / 2 + finalDy;
+      // dy===0 means the drag is constrained to move along the X axis
+      // (horizontal), so the indicator is a horizontal line through the
+      // selection's center — and the mirror for dx===0/Y.
+      drawAxisLockGuide(dy === 0 ? 'x' : 'y', cx, cy);
+    } else {
+      clearAxisLockGuide();
+    }
   } else if (interaction.mode === 'rotate'){
     const b = interaction.block;
     const curAngle = Math.atan2(wy - b.y, wx - b.x) * 180/Math.PI;
     const raw = interaction.startRotation + (curAngle - interaction.startAngle);
-    const snapped = Math.round(raw / 5) * 5;
+    const rotateStep = e.shiftKey ? 5 : 1;
+    const snapped = Math.round(raw / rotateStep) * rotateStep;
     b.rotationDeg = ((snapped % 360) + 360) % 360;
     updateBlockTransform(b);
     showRotateLabel(b.rotationDeg, e.clientX, e.clientY);
@@ -1245,7 +1377,8 @@ $('paperPane').addEventListener('pointermove', e => {
     // the spec discussion this was built from.
     const curAngle = Math.atan2(wy - interaction.pivot[1], wx - interaction.pivot[0]) * 180/Math.PI;
     const rawDelta = curAngle - interaction.startAngle;
-    const snappedDelta = Math.round(rawDelta / 5) * 5;
+    const rotateStep = e.shiftKey ? 5 : 1;
+    const snappedDelta = Math.round(rawDelta / rotateStep) * rotateStep;
     const rad = snappedDelta * Math.PI/180, cos = Math.cos(rad), sin = Math.sin(rad);
     const [px, py] = interaction.pivot;
     for (const m of interaction.members){
@@ -1283,10 +1416,22 @@ $('paperPane').addEventListener('pointermove', e => {
     if (interaction.mode === 'scaleGroup'){
       selectionFrame.corners = interaction.startFrameCorners.map(([x,y]) => [ax + (x-ax)*k, ay + (y-ay)*k]);
     }
+  } else if (interaction.mode === 'marquee'){
+    interaction.curWorld = [wx, wy];
+    if (!interaction.moved){
+      // Small screen-px move threshold (not a raw mm one, so it stays
+      // consistent across zoom levels) — below it, this still reads as a
+      // plain click rather than a drag, same idea as every other
+      // interaction mode's own .moved flag.
+      const dragPx = Math.hypot(wx - interaction.startWorld[0], wy - interaction.startWorld[1]) / mmPerScreenPx();
+      if (dragPx > 3) interaction.moved = true;
+    }
+    if (interaction.moved) updateMarqueeSelection(interaction, e.shiftKey);
   }
   updateSelectionOverlay();
+  if (interaction.mode === 'marquee' && interaction.moved) drawMarqueeRect(interaction);
 });
-function endInteraction(){
+function endInteraction(e){
   // Resolved independent of whether an interaction/drag was actually
   // created — clicking an already-selected member of a group that also
   // contains a locked block sets pendingCollapseTo but never creates a
@@ -1299,8 +1444,19 @@ function endInteraction(){
   }
   pendingCollapseTo = null;
   if (!interaction) return;
+  if (interaction.mode === 'marquee'){
+    if (!interaction.moved){
+      // A plain click with no drag — same "shift+click on empty space is a
+      // no-op, otherwise clear" rule the old immediate-clear code used at
+      // pointerdown, just resolved here now that the decision is deferred
+      // until it's actually known whether a drag happened.
+      if (!(e && e.shiftKey)) clearSelection();
+    }
+    updateSelectionOverlay();   // wipe the marquee rect itself — nothing else clears it once dragging stops
+  }
   interaction = null;
   clearSnapGuides();
+  clearAxisLockGuide();
   hideRotateLabel();
   hideDimensionLabels();
   if (hadInteraction) refreshStatusR();

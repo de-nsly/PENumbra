@@ -31,7 +31,6 @@
 
 <main>
   <section id="viewport3d">
-    <div class="paneLabel">3D · drag orbit · shift-drag pan · wheel zoom</div>
     <div id="dropHint">drop .stl / .obj / .pen to load</div>
     <div id="camPanelStack">
       <div id="camFloat">
@@ -101,7 +100,7 @@
       <div class="stat" id="modelStat">no model</div>
       <div class="warnTxt" id="modelWarn"></div>
     </div>
-    <svg id="lightGizmo" viewBox="-4 0 214 156" width="210" height="156"
+    <svg id="lightGizmo" viewBox="-4 0 214 156" width="180" height="156"
       role="group" aria-label="light direction control"></svg>
     <button type="button" class="cornerBtn" id="recenter3dBtn" title="Center model" aria-label="Center model in view">
       <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -155,7 +154,6 @@
         <circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/>
       </svg>
     </button>
-    <div class="paneLabel" id="paperPaneLabel">2D · drag pan · wheel zoom</div>
   </section>
 
   <div id="panelResizeHandle" title="Drag to resize"></div>
@@ -245,6 +243,20 @@
             <input type="number" id="marginRightMm" min="0" max="60" step="1" value="5" style="grid-column:2/3">
             <span class="val">mm</span>
           </div>
+        </div>
+      </div>
+
+      <h2>Guide Grid</h2>
+      <div class="sec">
+        <label class="chk" title="Draws evenly-spaced reference lines edge-to-edge across the Layout page, to help position blocks by eye. Also acts as a snap target while dragging/scaling, same as the margin and page-center lines.">
+          <input type="checkbox" id="gridGuideEnabled"> Show guide grid</label>
+        <div class="ctl">
+          <label for="gridGuideX">Guides X</label>
+          <input type="number" id="gridGuideX" min="0" max="30" step="1" value="2" style="grid-column:2/3">
+        </div>
+        <div class="ctl">
+          <label for="gridGuideY">Guides Y</label>
+          <input type="number" id="gridGuideY" min="0" max="30" step="1" value="2" style="grid-column:2/3">
         </div>
       </div>
     </div>
@@ -491,7 +503,7 @@
           Assume watertight (cull back-face occluders)</label>
       </div>
 
-      <h2>Dash</h2>
+      <h2>Dash [mm]</h2>
       <div class="sec">
         <div id="dashGroupsContainer">
           <div class="dashGroup">
