@@ -132,8 +132,14 @@
         </div>
         <button class="btn" id="exportBtn">Export SVG</button>
       </div>
-      <button type="button" class="btn addToLayoutBtn" id="addToLayoutBtn"
-        title="Add current view to layout" aria-label="Add current view to layout">+ Add to layout</button>
+      <div id="addToLayoutFloat">
+        <button type="button" class="btn addToLayoutBtn" id="addToLayoutBtn"
+          title="Add current view to layout" aria-label="Add current view to layout">+ Add to layout</button>
+        <span class="switchWrap" id="addToLayoutSaveViewWrap" title="Also save the current 3D view to the saved views list when adding to layout">
+          <span>Also save 3D view</span>
+          <button class="pillToggle" id="addToLayoutSaveViewBtn" role="switch" aria-checked="false" aria-label="also save current 3D view when adding to layout"></button>
+        </span>
+      </div>
       <div id="addToLayoutMsg" role="status" aria-live="polite"></div>
       <div id="blocksFloat" style="display:none">
         <div class="svHeaderRow">

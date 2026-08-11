@@ -33,6 +33,14 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 
 let blocks = [];
 let blockCounter = 0;                 // names only ever climb, never renumbered (same policy as Saved Views)
+// A block's OWN identity for lookups (row <-> block, e.g. refreshSelectionHighlight)
+// — separate from blockCounter/name because name is user-editable and, since
+// duplicating a block deliberately doesn't advance blockCounter (see
+// duplicateBlock), two blocks can legitimately end up with the same name.
+// Never reset except by a fresh page load; scene import reassigns every
+// block a new id off this same counter rather than trusting whatever was in
+// the file, so it stays valid however many times a scene gets re-imported.
+let blockIdCounter = 0;
 // Session-only multi-select — a Set, not a persistent named group. Single
 // selection is just the size===1 case throughout, not a separate code
 // path, EXCEPT where noted (rotate/scale hit-testing and math keep an
@@ -218,7 +226,7 @@ document.querySelectorAll('.paperTab').forEach(btn => {
     $('layoutSheet').style.display = tab === 'layout' ? '' : 'none';
     $('layoutOverlaySvg').style.display = tab === 'layout' ? '' : 'none';
     $('previewOverlaySvg').style.display = tab === 'preview' ? '' : 'none';
-    $('addToLayoutBtn').style.display = tab === 'preview' ? '' : 'none';
+    $('addToLayoutFloat').style.display = tab === 'preview' ? '' : 'none';
     $('addToLayoutMsg').style.display = tab === 'preview' ? '' : 'none';
     $('genRow').style.display = tab === 'preview' ? '' : 'none';
     $('blocksFloat').style.display = tab === 'layout' ? '' : 'none';
@@ -314,6 +322,7 @@ function freezeCurrentGeneration(){
   blockCounter++;
   const bboxLocal = { x0: bb.x, y0: bb.y, x1: bb.x + bb.width, y1: bb.y + bb.height };
   const block = {
+    id: ++blockIdCounter,
     name: 'Layer ' + String(blockCounter).padStart(2, '0'),
     visible: true,
     // Prevents accidental move/rotate/scale via the canvas — selection and
@@ -372,11 +381,12 @@ function showAddToLayoutMsg(text){
 // a later Add to Layout would use, so numbering stays contiguous whether
 // or not anything got duplicated in between. Not de-duplicated against
 // existing names (duplicating the same block twice gives two blocks both
-// named "X Copy") — names aren't a uniqueness key anywhere else in this
-// file either, and the existing double-click-to-rename already covers it.
+// named "X Copy") — names aren't a uniqueness key (see blockIdCounter/id
+// above), and the existing double-click-to-rename already covers it.
 function duplicateBlock(block){
   const dup = {
     ...block,
+    id: ++blockIdCounter,
     name: block.name + ' Copy',
     layerPaths: structuredClone(block.layerPaths),
     layerVisible: structuredClone(block.layerVisible),
@@ -806,7 +816,7 @@ function updateSelectionOverlay(){
 }
 function refreshSelectionHighlight(){
   for (const row of $('blocksList').children){
-    const block = blocks.find(b => b.name === row.dataset.blockName);
+    const block = blocks.find(b => b.id === +row.dataset.blockId);
     row.classList.toggle('svRowSelected', !!block && selectedBlocks.has(block));
   }
 }
@@ -1698,7 +1708,7 @@ function renderBlocksList(){
     const row = document.createElement('div');
     row.className = 'savedView' + (block.visible ? '' : ' svRowHidden') +
       (selectedBlocks.has(block) ? ' svRowSelected' : '');
-    row.dataset.blockName = block.name;
+    row.dataset.blockId = block.id;
     row.innerHTML =
       '<span class="svDragHandle" title="Drag to reorder" aria-label="Drag to reorder ' + block.name + '">' +
         '<svg viewBox="0 0 10 16" width="8" height="14" fill="currentColor">' +
@@ -1769,7 +1779,18 @@ function renderBlocksList(){
 }
 renderBlocksList();   // sets the initial empty-state class — no other call site runs unconditionally at load
 
-$('addToLayoutBtn').addEventListener('click', () => freezeCurrentGeneration());
+// Off by default — saving a view is an explicit opt-in, not something
+// "+ Add to layout" should do as a side effect unless asked.
+let addToLayoutSaveView = false;
+$('addToLayoutSaveViewBtn').addEventListener('click', () => {
+  addToLayoutSaveView = !addToLayoutSaveView;
+  $('addToLayoutSaveViewBtn').setAttribute('aria-checked', String(addToLayoutSaveView));
+  $('addToLayoutSaveViewBtn').classList.toggle('active', addToLayoutSaveView);
+});
+$('addToLayoutBtn').addEventListener('click', () => {
+  freezeCurrentGeneration();
+  if (addToLayoutSaveView) saveCurrentView();
+});
 $('clearBlocksBtn').addEventListener('click', () => {
   if (!blocks.length) return;
   if (!confirm('Delete all ' + blocks.length + ' layer(s)? This cannot be undone.')) return;
@@ -1784,5 +1805,5 @@ $('clearBlocksBtn').addEventListener('click', () => {
 ['pointerdown','wheel'].forEach(t => {
   $('blocksFloat').addEventListener(t, e => e.stopPropagation());
   $('paperTabs').addEventListener(t, e => e.stopPropagation());
-  $('addToLayoutBtn').addEventListener(t, e => e.stopPropagation());
+  $('addToLayoutFloat').addEventListener(t, e => e.stopPropagation());
 });

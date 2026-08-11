@@ -1,5 +1,5 @@
 :root{
-  --bg:#171a1f; --panel:#1e222a; --panel2:#252b34; --line:#323a46;
+  --bg:#171a1f; --panel:#1e222a; --panel2:#252b34; --panel3:#292f3b; --line:#323a46;
   --text:#e9e7df; --muted:#8b93a1; --accent:#58b8d6; --accent-ink:#0c1a20;
   --warn:#e0764f; --paper:#fbf9f3; --bed:#475161; --paper-edge:#5b6472;
   --mono:'IBM Plex Mono',ui-monospace,monospace; --disp:'Space Grotesk',system-ui,sans-serif;
@@ -36,7 +36,7 @@ button,input,select{font:inherit;color:inherit}
 /* ---------- header ---------- */
 header{display:flex;align-items:center;justify-content:space-between;
   position:relative;z-index:2;
-  padding:0 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+  padding:0 16px;border-bottom:0px solid var(--line);background:var(--panel)}
 .brand{display:flex;align-items:baseline;gap:10px}
 .brand .mark{color:var(--accent);flex:none;transform:translateY(2px)}
 .brand .name{font-weight:700;letter-spacing:.22em;font-size:15px}
@@ -89,7 +89,8 @@ header{display:flex;align-items:center;justify-content:space-between;
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .btn.primary:hover{filter:brightness(1.1);color:var(--accent-ink)}
 .btn.toggle{color:var(--muted)}
-.addToLayoutBtn{width:224px;text-align:center}
+#addToLayoutFloat .addToLayoutBtn{width:100%;text-align:center}
+#addToLayoutSaveViewWrap{margin-top:10px}
 #genRow{display:flex;align-items:center;gap:8px;margin:0 0 8px}
 #genRow .switchWrap{flex:none}
 #genRow #genBtn{flex:1;text-align:center}
@@ -184,7 +185,7 @@ section,aside{position:relative;min-width:0;min-height:0}
    left, leaving a small sliver visible as a cue that they're still
    there, just tucked away. Same class applied to both, toggled together. */
 #camPanelStack.panelsHidden,#paperPanelStack.panelsHidden{transform:translateX(-100%)}
-#camFloat,#rotateFloat,#viewsFloat,#genExportFloat{width:224px;
+#camFloat,#rotateFloat,#viewsFloat,#genExportFloat,#addToLayoutFloat{width:224px;
   background:rgba(23,26,31,.58);border:1px solid rgba(255,255,255,.09);
   border-radius:10px;padding:12px 12px 10px;
   box-shadow:0 8px 24px rgba(0,0,0,.35);
@@ -394,19 +395,37 @@ input[type=color]::-moz-color-swatch{border:none;border-radius:4px}
 #progressBar{height:100%;width:0;background:var(--accent);transition:width .12s linear}
 
 /* Preview/Layout tabs — top-right of the 2D pane, clear of genExportFloat/
-   blocksFloat (top-left) and the stale badge (top-center) */
-#paperTabs{position:absolute;top:12px;right:12px;z-index:3;display:flex;gap:4px}
-.paperTab{background:rgba(23,26,31,.62);border:1px solid rgba(255,255,255,.09);
-  border-radius:6px;color:var(--muted);cursor:pointer;padding:6px 12px;
+   blocksFloat (top-left) and the stale badge (top-center). Styled like
+   actual browser tabs: flush against the pane's top edge (top:0 — absolute
+   positioning ignores the parent's own padding, so this sits right at the
+   border, no gap), shaped using clip-path (with negative margin-left).
+   The active tab is filled with the HEADER's own background (the pane sits
+   directly under the header, so matching it reads as "this tab is attached
+   to the header above") and has no visible seam where it meets the pane's
+   content below. The inactive tab instead gets the pane's own background
+   (var(--bed) but a bit darker (black 25%), so it recedes into the pane behind*/
+#paperTabs{position:absolute;top:0;right:12px;z-index:3;display:flex}
+.paperTab{background:color-mix(in srgb, var(--bed), black 25%);border:0px;border-top:none;
+  padding:7px 24px;margin-left:-20px;
   font-family:var(--disp);font-size:12px;font-weight:600;
-  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
-.paperTab:hover{border-color:var(--accent);color:var(--accent)}
+  transition:background .12s,color .12s;
+  clip-path: shape(
+    from top left,
+    curve to 10px 10px with 10px 0,
+    vline to calc(100% - 10px),
+    curve to 20px 100% with 10px 100%,
+    hline to calc(100% - 20px),
+    curve to calc(100% - 10px) calc(100% - 10px) with calc(100% - 10px) 100%,
+    vline to 10px,
+    curve to 100% 0 with calc(100% - 10px) 0);}
+.paperTab:first-child{margin-left:0}
+.paperTab:hover{color:var(--accent)}
 .paperTab:focus,.paperTab:focus-visible{outline:none}
-.paperTab.active{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.paperTab.active{background:var(--panel);border-color:var(--line);color:var(--text);z-index:1}
 body.dragging #paperTabs{display:none}
 
 /* ---------- control panel ---------- */
-#panel{background:var(--panel);overflow-y:auto;padding-bottom:24px;position:relative;z-index:4}
+#panel{background:var(--panel3);overflow-y:auto;padding-bottom:24px;position:relative;z-index:4}
 /* Pen/Cog settings-mode toggle — deliberately NOT the small slide-knob
    .pillToggle used elsewhere: bigger, no sliding, just the clicked half
    lit with the accent color while the other stays muted/grey. */

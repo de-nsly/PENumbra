@@ -148,7 +148,7 @@ $('debugSoIvOverlayBtn').addEventListener('click', () => {
 
 
 $('loadBtn').addEventListener('click', () => $('fileInput').click());
-for (const [wrap, btn] of [['zUpWrap','zUpBtn'], ['autoWrap','autoGenBtn']])
+for (const [wrap, btn] of [['zUpWrap','zUpBtn'], ['autoWrap','autoGenBtn'], ['addToLayoutSaveViewWrap','addToLayoutSaveViewBtn']])
   $(wrap).addEventListener('click', e => { if (e.target !== $(btn)) $(btn).click(); });
 // Single entry point for "the user handed us a file" — file picker and drag-drop
 // both funnel through this, and it's just a filename sniff: .pen goes to the
@@ -364,6 +364,12 @@ function applyImportedScene(data){
   closeLayerContextMenu();
   for (const b of blocks) removeBlockDom(b);
   blocks = Array.isArray(data.blocks) ? data.blocks : [];
+  // Fresh ids on import rather than trusting whatever's in the file — older
+  // scenes predate the id field entirely, and even a newer one could get
+  // re-imported twice in the same session, so regenerating here is what
+  // keeps every block's id actually unique against blockIdCounter's current
+  // state instead of just against the other blocks in this one file.
+  for (const b of blocks) b.id = ++blockIdCounter;
   blockCounter = Number.isFinite(data.blockCounter) ? data.blockCounter : 0;
   renderBlocksList();
   if (activeTab === 'layout') renderLayoutCanvas();
