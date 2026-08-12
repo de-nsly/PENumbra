@@ -229,7 +229,7 @@ document.querySelectorAll('.paperTab').forEach(btn => {
     $('addToLayoutFloat').style.display = tab === 'preview' ? '' : 'none';
     $('addToLayoutMsg').style.display = tab === 'preview' ? '' : 'none';
     $('genRow').style.display = tab === 'preview' ? '' : 'none';
-    $('blocksFloat').style.display = tab === 'layout' ? '' : 'none';
+    syncBlocksFloatVisibility();
     activeSheetId = tab === 'preview' ? 'sheet' : 'layoutSheet';
     if (tab === 'preview'){ $('paperPane').style.cursor = ''; lastCursor = null; }
     resetPvFitWithRulers(); applyPv();
@@ -1693,10 +1693,19 @@ document.addEventListener('pointerup', () => {
   renderBlocksList();
 });
 
+// Whether the Layers panel itself should be on screen at all — both that
+// the Layout tab is even active AND that there's at least one block to
+// show. Distinct from the empty-list case Saved Views still handles with
+// its own centered "nothing yet" state (.svEmpty in styles.css) — here the
+// panel (list, Duplicate/Delete All buttons, everything) is hidden outright
+// once the last block is removed, rather than left on screen empty.
+function syncBlocksFloatVisibility(){
+  $('blocksFloat').style.display = (activeTab === 'layout' && blocks.length > 0) ? '' : 'none';
+}
 function renderBlocksList(){
   const list = $('blocksList');
   list.innerHTML = '';
-  $('blocksFloat').classList.toggle('svEmpty', blocks.length === 0);
+  syncBlocksFloatVisibility();
   syncDuplicateBlockBtn();
   // Displayed top-to-bottom in front-to-back order (top of list = drawn on
   // top, matching the common layers-panel convention) — the reverse of
@@ -1777,7 +1786,7 @@ function renderBlocksList(){
     list.appendChild(row);
   }
 }
-renderBlocksList();   // sets the initial empty-state class — no other call site runs unconditionally at load
+renderBlocksList();   // sets the panel's initial hidden/shown state — no other call site runs unconditionally at load
 
 // Off by default — saving a view is an explicit opt-in, not something
 // "+ Add to layout" should do as a side effect unless asked.

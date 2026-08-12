@@ -113,7 +113,7 @@
   <section id="paperPane">
     <div id="progressWrap"><div id="progressBar"></div></div>
     <div id="paperTabs">
-      <button type="button" class="paperTab active" data-tab="preview">Preview</button>
+      <button type="button" class="paperTab active" data-tab="preview">Live preview</button>
       <button type="button" class="paperTab" data-tab="layout">Layout</button>
     </div>
     <div class="sheet" id="sheet"><svg id="plot" xmlns="http://www.w3.org/2000/svg"></svg></div>
@@ -566,7 +566,11 @@
         </p>
         <button type="button" class="btn" id="debugRawEdgesRawBtn" style="width:100%;margin-bottom:8px">Export raw edges (screen px)</button>
         <button type="button" class="btn" id="debugRawEdgesPaperBtn" style="width:100%;margin-bottom:8px">Export raw edges (paper-aligned)</button>
-        <button type="button" class="btn" id="debugSoIvOverlayBtn" style="width:100%">Export Silhouette vs Individual (pre-dedup)</button>
+        <button type="button" class="btn" id="debugSoIvOverlayBtn" style="width:100%;margin-bottom:8px">Export Silhouette vs Individual (pre-dedup)</button>
+        <label class="chk" style="margin:10px 0 0"><input type="checkbox" id="debugDisableContourRelayCleanup">
+          Disable Contour relay cleanup (cleanupContourRelay)</label>
+        <label class="chk" style="margin:8px 0 0"><input type="checkbox" id="debugShowPathEndpoints">
+          Mark path endpoints (Silhouette / Individual / Contour)</label>
       </div>
     </div>
     <div id="penTab">

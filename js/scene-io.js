@@ -105,6 +105,15 @@ function handleDebugRawEdgesResult(m){
 $('debugRawEdgesRawBtn').addEventListener('click', () => triggerDebugRawEdgesExport('raw'));
 $('debugRawEdgesPaperBtn').addEventListener('click', () => triggerDebugRawEdgesExport('paper'));
 
+/* cleanupContourRelay is pure post-processing on top of the worker's
+   already-solved Contour segments (see onResult in svg-export.js) — toggling
+   it doesn't need a full solve, just rebuilding the SVG paths from the same
+   lastGen result, so this re-runs onResult directly instead of marking
+   stale/regenerating through the worker. */
+$('debugDisableContourRelayCleanup').addEventListener('change', () => {
+  if (lastGen) onResult(lastGen);
+});
+
 /* ================= debug: Silhouette vs Individual pre-dedup overlay =================
    Exports the raw so/iv geometry EXACTLY as computed, before subtractCovered
    (or anything else) touches it — so (black) and iv (red), overlaid in one

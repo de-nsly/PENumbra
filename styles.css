@@ -225,12 +225,14 @@ section,aside{position:relative;min-width:0;min-height:0}
 #duplicateBlockBtn:disabled{opacity:.45;cursor:default;pointer-events:none}
 #viewsList,#blocksList{max-height:500px;overflow-y:auto;margin-top:10px}
 #blocksList{position:relative}
-/* Empty state: center the header row (name + button) within whatever
+/* Empty state (Saved Views only — the Layout Layers panel hides itself
+   entirely when empty instead, see syncBlocksFloatVisibility in
+   layout-canvas.js): center the header row (name + button) within whatever
    height the panel has, instead of it sitting flush against the top
    padding with visible dead space below. The (empty) list itself is
    hidden outright so its own margin-top doesn't throw off the centering. */
-#viewsFloat.svEmpty,#blocksFloat.svEmpty{display:flex;flex-direction:column;justify-content:center}
-#viewsFloat.svEmpty #viewsList,#blocksFloat.svEmpty #blocksList{display:none}
+#viewsFloat.svEmpty{display:flex;flex-direction:column;justify-content:center}
+#viewsFloat.svEmpty #viewsList{display:none}
 .savedView{display:grid;grid-template-columns:1fr 22px 22px;align-items:center;gap:5px;
   padding:4px 6px;border-bottom:1px dashed rgba(255,255,255,.05)}
 /* Layout's blocksList rows have one more button (Lock, between Eye and
@@ -276,6 +278,10 @@ section,aside{position:relative;min-width:0;min-height:0}
   vector-effect:non-scaling-stroke;pointer-events:auto;cursor:grab}
 .textureGizmo:active{cursor:grabbing}
 .textureGizmoCross{stroke:var(--accent-ink);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
+/* Debug endpoint markers. Drawn into previewOverlaySvg in SCREEN coordinates,
+   so the radius below is literal screen px and stays put under zoom. The pale
+   ring keeps a dot readable against both dark ink and a dark page colour. */
+.pathEndpointDot{fill:#ff2d2d;fill-opacity:.85;stroke:#fff;stroke-width:.75;stroke-opacity:.9;pointer-events:none}
 .layoutMarginGuide{fill:none;stroke:var(--guide-color);stroke-width:1;stroke-dasharray:3 3;
   vector-effect:non-scaling-stroke;pointer-events:none}
 .layoutGridGuide{stroke:var(--guide-color);stroke-width:1.6;stroke-dasharray:1 3;

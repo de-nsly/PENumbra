@@ -195,10 +195,81 @@ function screenToPreviewMm(clientX, clientY){
     (clientY - rect.top)  / Math.max(1e-6, rect.height) * layout.paperH,
   ];
 }
+/* ================================================================
+   drawPathEndpointMarkers — debug aid behind #debugShowPathEndpoints.
+   Puts a dot on both ends of every OPEN subpath in the Silhouette (so),
+   Individual Silhouette (iv/ih) and Contour (sv/sh) layers, for eyeballing
+   where strokes actually start and stop — which trims fired, which gaps
+   merged, where the pen lifts. Closed subpaths have no endpoints and get
+   nothing, so "no dots on a loop" reads as "that loop closed cleanly".
+
+   Reads the FINAL rendered d-strings rather than any intermediate chain
+   data, so what it shows is exactly what would be plotted, after every
+   cleanup/split/simplify pass has had its say.
+
+   Lives in previewOverlaySvg, which is a screen-space overlay covering the
+   whole viewport (see the comment on updatePaneClip): dots therefore sit
+   above all plot content whatever its layer order, keep a fixed pixel size
+   under zoom for free, and — being outside #plot — cannot reach the
+   exported file, which clones #plot alone.
+
+   Emitted as ONE path element built from per-dot arc subpaths instead of N
+   circle elements: this redraws on every pan/zoom frame, and a drawing can
+   easily carry thousands of endpoints.
+   ================================================================ */
+const ENDPOINT_DOT_R = 3;                                    // screen px
+const ENDPOINT_DOT_LAYERS = ['so', 'iv', 'ih', 'sv', 'sh'];
+const ENDPOINT_DOT_CAP = 8000;                               // sanity bound on one redraw
+function openSubpathEndpoints(d){
+  const out = [];
+  const tok = d.split(/\s+/);
+  let first = null, last = null, closed = false;
+  const flush = () => { if (first && !closed) out.push(first, last); first = null; last = null; closed = false; };
+  for (let i = 0; i < tok.length; i++){
+    if (tok[i] === 'M'){ flush(); first = [+tok[i+1], +tok[i+2]]; last = first; i += 2; }
+    else if (tok[i] === 'L'){ last = [+tok[i+1], +tok[i+2]]; i += 2; }
+    else if (tok[i] === 'Z' || tok[i] === 'z') closed = true;
+  }
+  flush();
+  return out;
+}
+function drawPathEndpointMarkers(){
+  if (activeTab !== 'preview' || !$('debugShowPathEndpoints').checked) return;
+  const d = [], r = ENDPOINT_DOT_R;
+  let n = 0;
+  for (const key of ENDPOINT_DOT_LAYERS){
+    // The group is built even for a layer that is switched off (it is only
+    // display:none — see applyLayerStyle), so the checkbox is the thing to
+    // test, not the group's existence. getScreenCTM would return null on a
+    // hidden element anyway.
+    if (!layerEls[key] || !layerStyle(key).on) continue;
+    const path = document.querySelector('#g_' + key + ' path');
+    if (!path) continue;
+    const m = path.getScreenCTM();      // folds in #paperContent's transform AND the sheet's current pan/zoom
+    if (!m) continue;
+    for (const [x, y] of openSubpathEndpoints(path.getAttribute('d') || '')){
+      if (n++ >= ENDPOINT_DOT_CAP) break;
+      const sx = m.a*x + m.c*y + m.e, sy = m.b*x + m.d*y + m.f;
+      // Two same-sweep semicircle arcs = one circle. Same sweep throughout so
+      // coincident dots never punch a nonzero-fill hole in each other; the Z
+      // closes it for the stroke, which would otherwise show a seam at the join.
+      d.push('M', (sx-r).toFixed(1), sy.toFixed(1),
+             'a', r, r, 0, 1, 0, 2*r, 0, 'a', r, r, 0, 1, 0, -2*r, 0, 'Z');
+    }
+  }
+  if (!d.length) return;
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('class', 'pathEndpointDot');
+  p.setAttribute('d', d.join(' '));
+  $('previewOverlaySvg').appendChild(p);
+}
 function updateTextureGizmo(){
   const ov = $('previewOverlaySvg');
   ov.innerHTML = '';
-  updateRuler();   // this wipe just took the ruler out with it — put it back before either early return below
+  // This wipe takes every other overlay consumer out with it, so they all get
+  // redrawn here, before any of the gizmo's own early returns below.
+  updateRuler();
+  drawPathEndpointMarkers();
   const visible = activeTab === 'preview' && layerEls['cr'].chk.checked && $('texGizmoShow').checked;
   if (!visible) return;
   const layout = computePaperLayout();
@@ -250,6 +321,10 @@ document.addEventListener('pointercancel', () => { gizmoDragging = false; });
 $('texGroundPatternCenterX').addEventListener('input', updateTextureGizmo);
 $('texGroundPatternCenterY').addEventListener('input', updateTextureGizmo);
 $('texGizmoShow').addEventListener('change', updateTextureGizmo);
+// updateTextureGizmo is the single redraw entry point for previewOverlaySvg —
+// it owns the wipe — so toggling the endpoint markers goes through it too.
+// Nothing needs re-solving: the dots are read off the already-rendered paths.
+$('debugShowPathEndpoints').addEventListener('change', updateTextureGizmo);
 
 /* ================= page rulers =================
    Horizontal ruler above the page, vertical ruler to its left — screen
