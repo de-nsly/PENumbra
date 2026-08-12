@@ -1080,9 +1080,9 @@ function demoSoup(){
   const c = (x,y,z)=>[x,y,z];
   const A=c(-hx,y0,-hz),B=c(hx,y0,-hz),C=c(hx,y0,hz),D=c(-hx,y0,hz);
   const E=c(-hx,y1,-hz),F=c(hx,y1,-hz),G=c(hx,y1,hz),H=c(-hx,y1,hz);
-  quad(D,C,B,A); quad(E,F,G,H);           // bottom, top
-  quad(A,B,F,E); quad(B,C,G,F);           // sides
-  quad(C,D,H,G); quad(D,A,E,H);
+  quad(A,B,C,D); quad(H,G,F,E);           // bottom, top
+  quad(E,F,B,A); quad(F,G,C,B);           // sides
+  quad(G,H,D,C); quad(H,E,A,D);
   return new Float32Array(soup);
 }
 
