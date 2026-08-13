@@ -2142,12 +2142,6 @@ function splitDashedPathD(d, dashLen, gapLen){
   return outParts.join(' ');
 }
 
-$('splitDashBtn').addEventListener('click', () => {
-  const on = !$('splitDashBtn').classList.contains('active');
-  $('splitDashBtn').setAttribute('aria-checked', String(on));
-  $('splitDashBtn').classList.toggle('active', on);
-});
-
 // Purely a preview compositing toggle — no geometry changes, so this
 // flips the class directly on the existing paperContent (Preview mode) and
 // the shared Layout blocks container (Layout mode — a single toggle there
@@ -2194,7 +2188,7 @@ $('exportBtn').addEventListener('click', () => {
     });
   }
   clone.querySelectorAll('g[style*="display: none"], g[style*="display:none"]').forEach(g => g.remove());
-  if ($('splitDashBtn').classList.contains('active')){
+  if ($('splitDashBtn').checked){
     clone.querySelectorAll('g[stroke-dasharray]').forEach(g => {
       const [dashLen, gapLen] = g.getAttribute('stroke-dasharray').split(/[\s,]+/).map(Number);
       g.querySelectorAll('path').forEach(p => {
