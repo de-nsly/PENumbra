@@ -595,7 +595,7 @@
       <div class="chkRow">
         <label class="chk"><input type="checkbox" id="softShadows" checked data-regen>
           Soft shadows</label>
-        <label class="chk" title="Flips where Hatch/Crosshatch/Deep shadow/Circles are drawn from Soft and Cast shadows: draws in the previously-blank (lit) areas instead of the previously-hatched (shadowed) ones. Ground shadow is unaffected.">
+        <label class="chk" id="invertShadowsRow" title="Flips where Hatch/Crosshatch/Deep shadow/Circles are drawn from Soft and Cast shadows: draws in the previously-blank (lit) areas instead of the previously-hatched (shadowed) ones. Ground shadow is unaffected.">
           <input type="checkbox" id="invertShadows" data-regen>
           Invert shadows</label>
       </div>
@@ -1423,8 +1423,7 @@ function walkCircleSplit(cx, cy, radius, testFn, seedPx, cutPx){
 // shadow test) — ring generation and boundary refinement are identical,
 // so this is the one place that logic lives rather than being duplicated
 // per texture type.
-function buildPatternSegsFromTest(testFn, cx, cy, spacing, W, H){
-  const corners = [[0,0],[W,0],[0,H],[W,H]];
+function buildPatternSegsFromTest(testFn, cx, cy, spacing, corners){
   let maxDist = 0;
   for (const [x,y] of corners) maxDist = Math.max(maxDist, Math.hypot(x-cx, y-cy));
   const nRings = Math.ceil(maxDist/spacing) + 1;
@@ -3251,6 +3250,12 @@ function generate(cam, S, shadingBuffer){
         const gy3 = bbMinY3 - (S.ground.off || 0) * M.radius;
         const gpSm = sharedShadowMap;
         if (!gpSm.kept) break grAttempt;   // no occluders — shadow test would always be false
+        // Worker-px rectangle that lands exactly on the full printable page
+        // once computePaperLayout's contain-fit transform is applied — see
+        // its own comment in gatherSettings() (js/panel-controls.js). Falls
+        // back to the plain viewport rectangle for stale settings blobs
+        // that arrive without it.
+        const pb = S.invertPageBounds || { x0:0, x1:W, y0:0, y1:H };
 
         const viewRayPointAtC = (px, py, c) => {
           const ndcX=(px/W-0.5)*2, ndcY=(0.5-py/H)*2;
@@ -3271,15 +3276,29 @@ function generate(cam, S, shadingBuffer){
           const dir = [p2[0]-p1[0], p2[1]-p1[1], p2[2]-p1[2]];
           if (Math.abs(dir[1]) < 1e-9) return null;
           const t = (gy3 - p1[1]) / dir[1];
+          if (t < 0) return null;   // ground point would be behind the camera (above the horizon)
           return [p1[0]+dir[0]*t, gy3, p1[2]+dir[2]*t];
         };
         const groundTest = (px, py) => {
           if (coverPoint(px, py, null)) return false;   // model covers the ground here from the camera
+          // Ring radii reach the farthest viewport corner from the (user-
+          // positioned) center, so rings already extend past the page edge —
+          // invisible normally (off-page points are essentially never in
+          // shadow), but Invert shadows would otherwise draw those arcs into
+          // the paper margins. Only gated here, not above: it's a deliberate
+          // page-bounds policy for the inverted fill, not a correctness fix.
+          if (S.invertShadows && (px<pb.x0 || py<pb.y0 || px>pb.x1 || py>pb.y1)) return false;
           const w = groundWorldAt(px, py);
           if (!w) return false;
-          return gpSm.test(w[0], w[1], w[2], -1);
+          const result = gpSm.test(w[0], w[1], w[2], -1);
+          return S.invertShadows ? !result : result;
         };
-        for (const piece of buildPatternSegsFromTest(groundTest, cx5, cy5, minS, W, H)){
+        // Rings need to reach the full page under Invert shadows, not just
+        // the viewport rectangle — see pb above.
+        const groundCorners = S.invertShadows
+          ? [[pb.x0,pb.y0],[pb.x1,pb.y0],[pb.x0,pb.y1],[pb.x1,pb.y1]]
+          : [[0,0],[W,0],[0,H],[W,H]];
+        for (const piece of buildPatternSegsFromTest(groundTest, cx5, cy5, minS, groundCorners)){
           piece.source = 'ground'; segs.push(piece);
         }
       }
@@ -3329,7 +3348,7 @@ function generate(cam, S, shadingBuffer){
         else result = brightOK;
         return invertShadows ? !result : result;
       };
-      for (const piece of buildPatternSegsFromTest(castTest, cx5, cy5, minS, W, H)){
+      for (const piece of buildPatternSegsFromTest(castTest, cx5, cy5, minS, [[0,0],[W,0],[0,H],[W,H]])){
         piece.source = 'cast'; segs.push(piece);
       }
     }
@@ -3339,6 +3358,16 @@ function generate(cam, S, shadingBuffer){
 
   /* 8 · hatching */
   if (S.hatch && (S.hatch.p1||S.hatch.p2||S.hatch.p3)){
+    // Invert shadows should be a no-op on the mesh's own surface when
+    // neither Soft nor Cast shadows is active — normally (non-inverted)
+    // neither produces any on-mesh hatch either, so without this guard
+    // inverting flips "nothing" into "hatch the whole mesh at max density".
+    // Settings-based (not a runtime "did anything actually get occluded"
+    // check), matching Circles' own gate a few hundred lines up
+    // (`S.shadow.on || circlesThr>0`) — that's exactly why Circles never
+    // had this problem.
+    const meshInvertActive = !!S.invertShadows &&
+      (!!(S.hatch && S.hatch.softShadowsOn) || !!(S.shadow && S.shadow.on));
     const minS=Math.max(1, S.hatch.minS), maxS=Math.max(minS+0.5, S.hatch.maxS);
     // user-configurable (see the Hatch cap slider) — higher allows denser
     // hatching before it gets cut off, at the cost of a slower solve; shadows
@@ -3508,7 +3537,7 @@ function generate(cam, S, shadingBuffer){
           const step = Math.max(1, Math.pow(2, Math.round(Math.log2(spacing/minS))));
           result = (k % step) === 0;
         }
-        return S.invertShadows ? !result : result;
+        return meshInvertActive ? !result : result;
       };
       const parts = [];
       const recurse = (loU, loS, hiU, hiS) => {
@@ -3569,6 +3598,23 @@ function generate(cam, S, shadingBuffer){
       for (const [px,py] of corners){
         const cc=px*nx+py*ny, tt=px*dx+py*dy;
         if (cc<c0)c0=cc; if (cc>c1)c1=cc; if (tt<t0e)t0e=tt; if (tt>t1e)t1e=tt;
+      }
+      // Invert shadows + Ground shadow: the ground-hatch block below fills
+      // the whole visible PAGE (not just the viewport rectangle, and not
+      // just the model+shadow bbox), so the carriers' along-line extent
+      // needs to reach the true page bounds too — see invertPageBounds'
+      // own comment in gatherSettings() (js/panel-controls.js). Widening
+      // t0e/t1e only (never c0 — that's the carrier-family phase anchor;
+      // shifting it would desync the k keys this on-mesh loop and the
+      // ground block below both write into the shared lineVis map) is
+      // safe: a face's own clip always reduces to the same physical
+      // endpoints regardless of how long this nominal backing span is.
+      if (GS && S.invertShadows){
+        const pb = S.invertPageBounds || { x0:0, x1:W, y0:0, y1:H };
+        for (const [px,py] of [[pb.x0,pb.y0],[pb.x1,pb.y0],[pb.x0,pb.y1],[pb.x1,pb.y1]]){
+          const tt=px*dx+py*dy;
+          if (tt<t0e)t0e=tt; if (tt>t1e)t1e=tt;
+        }
       }
       for (let f=0; f<nt && !capped; f++){
         if (!front[f]) continue;
@@ -3641,7 +3687,7 @@ function generate(cam, S, shadingBuffer){
           // nor any shadow contribution isn't dead weight — it's exactly the
           // face that should come out fully hatched — so this shortcut only
           // applies un-inverted.
-          if (!S.invertShadows && !litFace && !shadowOn) continue;   // shadow can still hatch a "too bright" face
+          if (!meshInvertActive && !litFace && !shadowOn) continue;   // shadow can still hatch a "too bright" face
           let stepLit = 1;
           if (litFace){
             const spacing=minS+Math.max(0,bF)*(maxS-minS);            // bright → sparse
@@ -3673,7 +3719,7 @@ function generate(cam, S, shadingBuffer){
               // Same reasoning as the face-level shortcut above — a carrier
               // line neither side would normally draw is exactly the one
               // Invert shadows needs to draw in full, so don't skip it.
-              if (!S.invertShadows && !litCandidate && !shOK) continue;
+              if (!meshInvertActive && !litCandidate && !shOK) continue;
               const cc=c0+k*minS;
               const X0=nx*cc+dx*t0e, Y0=ny*cc+dy*t0e, X1=nx*cc+dx*t1e, Y1=ny*cc+dy*t1e;
               let ta=0, tb=1, alive=true;
@@ -3705,7 +3751,7 @@ function generate(cam, S, shadingBuffer){
                 // vary with shadow at all here, so just negate the same
                 // whole-piece decision — see the shOK/litCandidate split
                 // below for the per-point case.
-                const draw = S.invertShadows ? !litCandidate : litCandidate;
+                const draw = meshInvertActive ? !litCandidate : litCandidate;
                 if (draw) for (let vp=0; vp<visPieces.length; vp+=2) ivs.push(ta+(tb-ta)*visPieces[vp], ta+(tb-ta)*visPieces[vp+1]);
               } else {
                 // second classification axis: within each camera-visible
@@ -3723,7 +3769,7 @@ function generate(cam, S, shadingBuffer){
                   const parts = shadowSplit(f, hx0,hy0,hx1,hy1, visPieces[vp], visPieces[vp+1]);
                   for (const [inShadow, ua, ub] of parts){
                     const draw = inShadow ? shOK : litCandidate;
-                    if (draw !== !!S.invertShadows) ivs.push(ta+(tb-ta)*ua, ta+(tb-ta)*ub);
+                    if (draw !== meshInvertActive) ivs.push(ta+(tb-ta)*ua, ta+(tb-ta)*ub);
                   }
                 }
               }
@@ -3742,6 +3788,8 @@ function generate(cam, S, shadingBuffer){
          model hatch uses — so ground and model strokes merge into single pen
          paths downstream. Exact boundaries, no shadow-map tests, no budget. */
       if (GS){
+        const inv = !!S.invertShadows;
+        const pb = S.invertPageBounds || { x0:0, x1:W, y0:0, y1:H };
         const T=GS.tris, tn=GS.tn, Lpx2=t1e-t0e;
         // per-triangle extent along this pass's carrier normal (quick reject)
         const tcMin=new Float64Array(tn), tcMax=new Float64Array(tn);
@@ -3755,12 +3803,50 @@ function generate(cam, S, shadingBuffer){
           const cc2=qx*nx+qy*ny;
           if (cc2<cLo)cLo=cc2; if (cc2>cHi)cHi=cc2;
         }
+        // Invert shadows: also walk every carrier that crosses the visible
+        // page, not just ones crossing the shadow's own bbox — those extra
+        // lines find no shadow triangles (iv stays empty) and get fully
+        // hatched below, which is exactly the "fill the rest of the page"
+        // behavior. Gated: the extra k's cost a real per-triangle reject
+        // scan below, wasted work when not inverting since output there is
+        // unaffected either way.
+        if (inv){
+          for (const [qx,qy] of [[pb.x0,pb.y0],[pb.x1,pb.y0],[pb.x0,pb.y1],[pb.x1,pb.y1]]){
+            const cc2=qx*nx+qy*ny;
+            if (cc2<cLo)cLo=cc2; if (cc2>cHi)cHi=cc2;
+          }
+        }
         const iv=[];
         let k=Math.ceil((cLo-c0)/minS);
         const kEnd=Math.floor((cHi-c0)/minS);
         for (; k<=kEnd && !capped; k++){
           if (k % stepShadow) continue;                  // shadow density only
           const cc=c0+k*minS;
+          // Invert shadows: clip this carrier's infinite line down to where
+          // it's actually on the visible page — and where the ground plane
+          // is a real, in-front-of-camera surface. GS.A/B/C was only ever
+          // validated INSIDE the true shadow footprint (see GS's own
+          // comment), so filling the whole page means evaluating it above
+          // the horizon too, where it extrapolates to behind-camera depths
+          // without this guard. Same half-plane (f0,df) idiom as the
+          // triangle clip just below — one axis-aligned page edge or
+          // ground-validity constraint per row.
+          let vt0=-1/0, vt1=1/0, cur=0;
+          if (inv){
+            const z0 = (GS.A*nx+GS.B*ny)*cc + GS.C, zd = GS.A*dx+GS.B*dy;
+            const IZ_MAX = 1/(-nearZ), IZ_MIN = IZ_MAX*1e-6;   // IZ_MIN: ~1e6 near-plane distances out = the horizon, not an arbitrary literal
+            const rows = ortho
+              ? [[nx*cc-pb.x0,dx],[pb.x1-nx*cc,-dx],[ny*cc-pb.y0,dy],[pb.y1-ny*cc,-dy],[nearZ-z0,-zd]]
+              : [[nx*cc-pb.x0,dx],[pb.x1-nx*cc,-dx],[ny*cc-pb.y0,dy],[pb.y1-ny*cc,-dy],[z0-IZ_MIN,zd],[IZ_MAX-z0,-zd]];
+            let onPage=true;
+            for (const [f0,df] of rows){
+              if (Math.abs(df) < 1e-12){ if (f0 < 0){ onPage=false; break; } continue; }
+              const tX=-f0/df;
+              if (df > 0){ if (tX>vt0) vt0=tX; } else { if (tX<vt1) vt1=tX; }
+            }
+            if (!onPage || vt1-vt0 <= 1e-6) continue;   // nothing of this carrier is on-page
+            cur = vt0;
+          }
           iv.length=0;
           for (let i=0;i<tn;i++){
             if (cc<tcMin[i] || cc>tcMax[i]) continue;
@@ -3780,7 +3866,11 @@ function generate(cam, S, shadingBuffer){
             }
             if (alive && tb-ta > 1e-9){ iv.push(ta, tb); }
           }
-          if (!iv.length) continue;
+          // Under Invert shadows, a line with no shadow triangle at all
+          // means "the whole on-page span is unshadowed" — must NOT skip
+          // (that's handled a few lines down); non-inverted keeps today's
+          // behavior exactly.
+          if (!iv.length && !inv) continue;
           // union the per-triangle intervals (adjacent projected triangles
           // share edges, so their intervals touch and fuse into one run)
           const nIv=iv.length/2, ord=[];
@@ -3804,14 +3894,28 @@ function generate(cam, S, shadingBuffer){
             hatchTotal++;
             if (hatchTotal>HATCH_CAP*2) capped=true;
           };
+          if (!nIv){ flush(vt0, vt1); continue; }   // inverted, no shadow on this line at all — hatch the whole on-page span
+          // Invert shadows: ink the GAPS between shadow runs (bounded by
+          // this line's on-page span, vt0/vt1) instead of the runs
+          // themselves. Reusing flush() unmodified for both directions is
+          // what makes "never overlap mesh" (its occlude call) hold for
+          // inverted ground hatch too, without reimplementing it.
+          const invRun = (a, b) => {
+            const s = Math.min(Math.max(a, vt0), vt1);
+            if (s - cur > 1e-6) flush(cur, s);
+            if (b > cur) cur = b;
+          };
+          const outRun = inv ? invRun : flush;
           let cs=iv[ord[0]*2], ce=iv[ord[0]*2+1];
           for (let i=1; i<=nIv && !capped; i++){
             const s2 = i<nIv ? iv[ord[i]*2]   : Infinity;
             const e2 = i<nIv ? iv[ord[i]*2+1] : 0;
             if (s2 <= ce+1e-3){ if (e2>ce) ce=e2; }
-            else { flush(cs,ce); cs=s2; ce=e2; }
+            else { outRun(cs,ce); cs=s2; ce=e2; }
           }
-          if (!capped) flush(cs,ce);
+          // Under Invert shadows this final call's sentinel args (Infinity,0)
+          // make invRun close the LAST gap up to vt1 — see invRun above.
+          if (!capped) outRun(cs,ce);
         }
       }
       // merge per carrier line: touching/overlapping visible intervals join into

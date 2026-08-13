@@ -487,6 +487,7 @@ input[type=checkbox]{-webkit-appearance:none;-moz-appearance:none;appearance:non
 input[type=checkbox]:checked{background:radial-gradient(circle, var(--accent) 4.0px, transparent 4.5px)}
 .chk{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:12.5px}
 .chk input{width:16px;height:16px}
+.chk.ctlDisabled{opacity:.35;pointer-events:none}
 /* Two related checkboxes sharing one row, split evenly (e.g. Soft shadows /
    Invert shadows) — same .chk look, just flex:1 and margin handed to the
    row wrapper instead of doubling up vertically. */
