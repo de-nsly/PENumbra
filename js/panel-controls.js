@@ -258,11 +258,6 @@ function gatherSettings(){
       deepThr:  $('softShadows').checked ? +$('deepThr').value  : 0,
       hatchThr: $('softShadows').checked ? +$('hatchThr').value : 0,
       softShadowsOn: $('softShadows').checked,
-      // On by default — see coarseGateOn's own tooltip/comment in
-      // index.html and project notes. Only meaningful for Smooth Shading;
-      // harmless to always send even when Flat Shading is active, since
-      // the worker only reads it inside the smooth-mode buffer path.
-      coarseGateOn: $('coarseGateOn').checked,
       cap: HATCH_CAP_PRESETS[+$('hatchCap').value],
     },
     shadow: { on: $('castShadows').checked,
@@ -270,6 +265,28 @@ function gatherSettings(){
     // off: fraction of the model's bounding RADIUS (size-relative, so the same
     // slider position means the same visual drop on any model scale)
     ground: { on: $('groundShadow').checked, off: +$('groundOff').value / 100 },
+    // Flips the final on-mesh "draw ink" decision for Hatch/Crosshatch/Deep
+    // shadow/Circles that Soft+Cast shadows would otherwise produce. Ground
+    // shadow's own hatch/circles (off-mesh, on the paper) don't read this —
+    // see the worker's ground-shadow code paths.
+    invertShadows: $('invertShadows').checked,
+    // The worker-px rectangle whose image, under computePaperLayout's own
+    // contain-fit transform (page_mm = offX + px*scale), lands exactly on
+    // the full margin-inset printable page — i.e. the inverse of that
+    // transform, computed once here so the worker never needs to duplicate
+    // the paper-layout math itself. Ground shadow's "invert" fill uses this
+    // instead of [0,W]x[0,H] so it reaches the true page edges instead of
+    // stopping at the (generally differently-proportioned) viewport
+    // rectangle's own letterboxed footprint on the page. On whichever axis
+    // the viewport already matches the page's available aspect ratio, this
+    // reduces to exactly [0,W] or [0,H].
+    invertPageBounds: (() => {
+      const availW = Math.max(0.01, layout.paperW - layout.margin.left - layout.margin.right);
+      const availH = Math.max(0.01, layout.paperH - layout.margin.top - layout.margin.bottom);
+      const x0 = -(availW/layout.scale - vp.clientWidth) / 2;
+      const y0 = -(availH/layout.scale - vp.clientHeight) / 2;
+      return { x0, x1: x0 + availW/layout.scale, y0, y1: y0 + availH/layout.scale };
+    })(),
     circlesOn: layerStyle('cr').on,
     circlesThr: $('softShadows').checked ? (+$('texCirclesThr').value || 0.92) : 0,
     groundPatternCenterX: layout
@@ -310,9 +327,20 @@ function syncShadowUI(){
   // self-shadow — Ground shadow is analytic (no sampling, no budget), so
   // the control is meaningless while Cast shadows is off
   $('shadowBudgetCtl').classList.toggle('ctlDisabled', !$('castShadows').checked);
+  // With Soft, Cast, and Ground shadows all off there's nothing left for
+  // Invert shadows to invert (the worker's own meshInvertActive/GS gating
+  // already makes it a no-op in that case) — disable it too so the UI
+  // doesn't suggest a dormant toggle does something. Doesn't clear the
+  // checkbox itself, so re-enabling any shadow type resumes exactly what
+  // was set before, without needing to re-check it.
+  const anyShadow = $('softShadows').checked || $('castShadows').checked || $('groundShadow').checked;
+  $('invertShadowsRow').classList.toggle('ctlDisabled', !anyShadow);
+  $('invertShadows').disabled = !anyShadow;
 }
+$('softShadows').addEventListener('change', syncShadowUI);
 $('castShadows').addEventListener('change', syncShadowUI);
 $('groundShadow').addEventListener('change', syncShadowUI);
+syncShadowUI();   // sets the initial disabled state at load
 // Circles pattern's Center X/Y/threshold now live in the always-visible
 // General sub-tab (moved there alongside Hatching/Shadows), so there's no
 // group visibility to toggle here anymore — only the gizmo, which still

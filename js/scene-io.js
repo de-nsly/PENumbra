@@ -338,10 +338,10 @@ function applyImportedScene(data){
   // but the live viewport keeps showing flat shading until the user
   // manually toggles the checkbox off and back on.
   if (typeof applySmoothShadingToggle === 'function') applySmoothShadingToggle();
-  // Same reasoning — the coarse gate row's visibility is also driven by
+  // Same reasoning — the smooth-angle row's visibility is also driven by
   // smoothShading's 'change' listener, which setting .checked directly
   // doesn't fire either.
-  if (typeof syncCoarseGateVisibility === 'function') syncCoarseGateVisibility();
+  if (typeof syncSmoothAngleVisibility === 'function') syncSmoothAngleVisibility();
   // Same reasoning as smoothShading just above — marginIndependent's
   // .checked was just set directly too, which won't fire the 'change'
   // listener that shows/hides the right margin inputs and recomputes the

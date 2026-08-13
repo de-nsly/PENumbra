@@ -487,6 +487,12 @@ input[type=checkbox]{-webkit-appearance:none;-moz-appearance:none;appearance:non
 input[type=checkbox]:checked{background:radial-gradient(circle, var(--accent) 4.0px, transparent 4.5px)}
 .chk{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:12.5px}
 .chk input{width:16px;height:16px}
+.chk.ctlDisabled{opacity:.35;pointer-events:none}
+/* Two related checkboxes sharing one row, split evenly (e.g. Soft shadows /
+   Invert shadows) — same .chk look, just flex:1 and margin handed to the
+   row wrapper instead of doubling up vertically. */
+.chkRow{display:flex;gap:8px;margin:7px 0}
+.chkRow .chk{flex:1;margin:0;min-width:0}
 select,input[type=number]{background:var(--panel2);border:1px solid var(--line);
   border-radius:5px;padding:4px 6px;font-family:var(--mono);font-size:11.5px}
 input[type=number]{width:58px}

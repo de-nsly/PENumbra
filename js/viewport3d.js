@@ -865,19 +865,19 @@ function applySmoothShadingToggle(){
   modelGeo.setAttribute('normal', useSmooth ? smoothNormalAttr : flatNormalAttr);
   modelGeo.attributes.normal.needsUpdate = true;
 }
-// The coarse gate row and the smooth-angle slider both only apply to Smooth
-// Shading — hidden entirely for Flat Shading, where neither is relevant.
-function syncCoarseGateVisibility(){
+// The smooth-angle slider only applies to Smooth Shading — always visible,
+// just disabled (same treatment as Shadow budg. under Cast shadows) for
+// Flat Shading, where it's not relevant.
+function syncSmoothAngleVisibility(){
   const on = $('smoothShading').checked;
-  $('coarseGateRow').style.display = on ? '' : 'none';
-  $('smoothAngleRow').style.display = on ? '' : 'none';
+  $('smoothAngleRow').classList.toggle('ctlDisabled', !on);
 }
 $('smoothShading').addEventListener('change', () => {
   applySmoothShadingToggle();
-  syncCoarseGateVisibility();
+  syncSmoothAngleVisibility();
   markStale();
 });
-syncCoarseGateVisibility();   // sets the initial visibility at load — no other call site runs unconditionally at load
+syncSmoothAngleVisibility();   // sets the initial visibility at load — no other call site runs unconditionally at load
 
 // Re-runs just the corner-normal fan grouping in the worker with a new
 // hard-edge threshold (see computeCornerNormals's own comment for why this
@@ -997,6 +997,13 @@ function captureShadingBuffer(){
   const target = ensureShadingCaptureTarget(w, h);
   const prevBackground = scene.background;
   scene.background = null;   // avoid a solid background color polluting non-geometry pixels — the G channel (always 1 where geometry was drawn) is what distinguishes "no geometry here" instead
+  // The grid is purely a visual orientation aid, not part of the model — but
+  // it's real scene geometry with its own depth, so when the camera looks
+  // up at the model from below the grid plane, its lines sit in front of
+  // the mesh and punch depth-tested gaps straight through the sampled N·L*
+  // shadow buffer. Hide it for this one render, restore right after.
+  const prevGridVisible = gridHelper ? gridHelper.visible : null;
+  if (gridHelper) gridHelper.visible = false;
   // Swaps each mesh's own material for a clone of itself (see
   // makeShadingMaterialFrom) — modelMesh may be a Group of multiple
   // shells, so this walks every Mesh found under it and clones each one's
@@ -1017,6 +1024,7 @@ function captureShadingBuffer(){
   renderer.setRenderTarget(prevTarget);
   for (const [o, mat] of swapped) o.material = mat;   // restore originals
   scene.background = prevBackground;
+  if (gridHelper) gridHelper.visible = prevGridVisible;
   if (!shadingMaterialVerified){
     console.warn('[shadingCapture] proceeding despite the shader-injection check above failing — treat this buffer as unverified.');
   }

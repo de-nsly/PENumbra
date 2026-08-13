@@ -591,8 +591,13 @@
 
     <h2>Shadows</h2>
     <div class="sec">
-      <label class="chk"><input type="checkbox" id="softShadows" checked data-regen>
-        Soft shadows</label>
+      <div class="chkRow">
+        <label class="chk"><input type="checkbox" id="softShadows" checked data-regen>
+          Soft shadows</label>
+        <label class="chk" id="invertShadowsRow" title="Flips where Hatch/Crosshatch/Deep shadow/Circles are drawn from Soft and Cast shadows: draws in the previously-blank (lit) areas instead of the previously-hatched (shadowed) ones. Ground shadow is unaffected.">
+          <input type="checkbox" id="invertShadows" data-regen>
+          Invert shadows</label>
+      </div>
       <label class="chk"><input type="checkbox" id="castShadows" data-regen>
         Cast shadows</label>
       <label class="chk"><input type="checkbox" id="groundShadow" data-regen>
@@ -610,11 +615,7 @@
       <label class="chk" style="margin-top:8px" title="Smooths both the 3D viewport display and the shadow-pattern boundary, for circles and for parallel hatching (all of Hatch/Crosshatch/Deep shadow).">
         <input type="checkbox" id="smoothShading" data-regen>
         Smooth shading</label>
-      <label class="chk" id="coarseGateRow" style="display:none"
-             title="A cheap per-triangle pre-check that skips faces obviously too bright to need hatching, before the slower precise test. Rarely, on a very thin sliver-shaped triangle, a tiny bit of shadowed hatching can be missed by this shortcut — turn it off for this specific view if that happens.">
-        <input type="checkbox" id="coarseGateOn" checked data-regen> Coarse gate
-      </label>
-      <div class="ctl" id="smoothAngleRow" style="display:none"
+      <div class="ctl ctlDisabled" id="smoothAngleRow"
            title="How sharp a dihedral angle between two faces can be before Smooth Shading treats it as a hard edge (never blending a normal across it) rather than part of the same smooth surface. Lower = more edges stay crisp; higher = more of the model blends smooth.">
         <label for="smoothAngleDeg">Smooth angle</label>
         <input type="range" id="smoothAngleDeg" min="0" max="180" step="1" value="30" data-regen>
@@ -1421,8 +1422,7 @@ function walkCircleSplit(cx, cy, radius, testFn, seedPx, cutPx){
 // shadow test) — ring generation and boundary refinement are identical,
 // so this is the one place that logic lives rather than being duplicated
 // per texture type.
-function buildPatternSegsFromTest(testFn, cx, cy, spacing, W, H){
-  const corners = [[0,0],[W,0],[0,H],[W,H]];
+function buildPatternSegsFromTest(testFn, cx, cy, spacing, corners){
   let maxDist = 0;
   for (const [x,y] of corners) maxDist = Math.max(maxDist, Math.hypot(x-cx, y-cy));
   const nRings = Math.ceil(maxDist/spacing) + 1;
@@ -3249,6 +3249,12 @@ function generate(cam, S, shadingBuffer){
         const gy3 = bbMinY3 - (S.ground.off || 0) * M.radius;
         const gpSm = sharedShadowMap;
         if (!gpSm.kept) break grAttempt;   // no occluders — shadow test would always be false
+        // Worker-px rectangle that lands exactly on the full printable page
+        // once computePaperLayout's contain-fit transform is applied — see
+        // its own comment in gatherSettings() (js/panel-controls.js). Falls
+        // back to the plain viewport rectangle for stale settings blobs
+        // that arrive without it.
+        const pb = S.invertPageBounds || { x0:0, x1:W, y0:0, y1:H };
 
         const viewRayPointAtC = (px, py, c) => {
           const ndcX=(px/W-0.5)*2, ndcY=(0.5-py/H)*2;
@@ -3269,15 +3275,29 @@ function generate(cam, S, shadingBuffer){
           const dir = [p2[0]-p1[0], p2[1]-p1[1], p2[2]-p1[2]];
           if (Math.abs(dir[1]) < 1e-9) return null;
           const t = (gy3 - p1[1]) / dir[1];
+          if (t < 0) return null;   // ground point would be behind the camera (above the horizon)
           return [p1[0]+dir[0]*t, gy3, p1[2]+dir[2]*t];
         };
         const groundTest = (px, py) => {
           if (coverPoint(px, py, null)) return false;   // model covers the ground here from the camera
+          // Ring radii reach the farthest viewport corner from the (user-
+          // positioned) center, so rings already extend past the page edge —
+          // invisible normally (off-page points are essentially never in
+          // shadow), but Invert shadows would otherwise draw those arcs into
+          // the paper margins. Only gated here, not above: it's a deliberate
+          // page-bounds policy for the inverted fill, not a correctness fix.
+          if (S.invertShadows && (px<pb.x0 || py<pb.y0 || px>pb.x1 || py>pb.y1)) return false;
           const w = groundWorldAt(px, py);
           if (!w) return false;
-          return gpSm.test(w[0], w[1], w[2], -1);
+          const result = gpSm.test(w[0], w[1], w[2], -1);
+          return S.invertShadows ? !result : result;
         };
-        for (const piece of buildPatternSegsFromTest(groundTest, cx5, cy5, minS, W, H)){
+        // Rings need to reach the full page under Invert shadows, not just
+        // the viewport rectangle — see pb above.
+        const groundCorners = S.invertShadows
+          ? [[pb.x0,pb.y0],[pb.x1,pb.y0],[pb.x0,pb.y1],[pb.x1,pb.y1]]
+          : [[0,0],[W,0],[0,H],[W,H]];
+        for (const piece of buildPatternSegsFromTest(groundTest, cx5, cy5, minS, groundCorners)){
           piece.source = 'ground'; segs.push(piece);
         }
       }
@@ -3285,6 +3305,7 @@ function generate(cam, S, shadingBuffer){
 
     if ((S.shadow && S.shadow.on) || circlesThr > 0){
       const cpSm = (S.shadow && S.shadow.on) ? sharedShadowMap : null;
+      const invertShadows = !!S.invertShadows;
       const castTest = (px, py, r) => {
         const hit = pickVisibleFace(px, py);
         if (!hit) return false;                                  // background — no surface to shadow
@@ -3295,10 +3316,13 @@ function generate(cam, S, shadingBuffer){
           // needed at all, unlike flat mode below.
           if (!shadingBuf) return false;   // warned once already, above the face loop equivalent
           const bFp = Math.max(0, sampleShading(shadingBuf.pixels, shadingBuf.w, shadingBuf.h, px, py).brightness);
-          if (bFp >= circlesThr) return false;
-          const spacing = minS + bFp*(maxS-minS);
-          const step = Math.max(1, Math.pow(2, Math.round(Math.log2(spacing/minS))));
-          return (r % step) === 0;
+          let result = false;
+          if (bFp < circlesThr){
+            const spacing = minS + bFp*(maxS-minS);
+            const step = Math.max(1, Math.pow(2, Math.round(Math.log2(spacing/minS))));
+            result = (r % step) === 0;
+          }
+          return invertShadows ? !result : result;
         }
         // Flat Shading: exact per-face scalar, unchanged.
         const bF = bright[hit.f];
@@ -3308,20 +3332,22 @@ function generate(cam, S, shadingBuffer){
           brightStep = Math.max(1, Math.pow(2, Math.round(Math.log2(spacing/minS))));
           brightOK = (r % brightStep) === 0;
         }
+        let result;
         // If brightness alone already maxes out the ring spacing right HERE
         // (brightStep===1), cast shadow's override can't add anything at
         // this point — skip its occlusion query. bF above is the exact
         // brightness at this specific sample point, not a conservative
         // per-face bound — so there's no brighter "elsewhere on the face"
         // this could be wrong about.
-        if (brightOK && brightStep === 1) return true;
+        if (brightOK && brightStep === 1) result = true;
         // Cast shadow's override applies unconditionally in Flat Shading
         // (no separate Soft Shadow gradient here to hand off an "away from
         // light" side to, unlike Smooth Shading).
-        if (cpSm && cpSm.kept && cpSm.test(hit.x, hit.y, hit.z, hit.f)) return true;
-        return brightOK;
+        else if (cpSm && cpSm.kept && cpSm.test(hit.x, hit.y, hit.z, hit.f)) result = true;
+        else result = brightOK;
+        return invertShadows ? !result : result;
       };
-      for (const piece of buildPatternSegsFromTest(castTest, cx5, cy5, minS, W, H)){
+      for (const piece of buildPatternSegsFromTest(castTest, cx5, cy5, minS, [[0,0],[W,0],[0,H],[W,H]])){
         piece.source = 'cast'; segs.push(piece);
       }
     }
@@ -3331,6 +3357,16 @@ function generate(cam, S, shadingBuffer){
 
   /* 8 · hatching */
   if (S.hatch && (S.hatch.p1||S.hatch.p2||S.hatch.p3)){
+    // Invert shadows should be a no-op on the mesh's own surface when
+    // neither Soft nor Cast shadows is active — normally (non-inverted)
+    // neither produces any on-mesh hatch either, so without this guard
+    // inverting flips "nothing" into "hatch the whole mesh at max density".
+    // Settings-based (not a runtime "did anything actually get occluded"
+    // check), matching Circles' own gate a few hundred lines up
+    // (`S.shadow.on || circlesThr>0`) — that's exactly why Circles never
+    // had this problem.
+    const meshInvertActive = !!S.invertShadows &&
+      (!!(S.hatch && S.hatch.softShadowsOn) || !!(S.shadow && S.shadow.on));
     const minS=Math.max(1, S.hatch.minS), maxS=Math.max(minS+0.5, S.hatch.maxS);
     // user-configurable (see the Hatch cap slider) — higher allows denser
     // hatching before it gets cut off, at the cost of a slower solve; shadows
@@ -3473,48 +3509,6 @@ function generate(cam, S, shadingBuffer){
       return merged;
     };
     // ================= Smooth Shading: buffer-driven Hatch density =================
-    // Coarse per-face pre-filter — permanent, at a fixed margin, after
-    // testing (see project notes) showed a real, meaningful speedup on
-    // heavier/shadow-dense scenes with no observed regressions across
-    // multiple test scenes and a wide margin range (0 to 100). Explicitly
-    // NOT a rigorous bound the way flat mode's analytic litFace is:
-    // Phong brightness there is a true convex combination of corner
-    // values, mathematically guaranteed to bound everything between them,
-    // but the shading buffer includes real shadow, which is not a smooth/
-    // convex function at all — it can change abruptly anywhere a
-    // silhouette edge from the light crosses this face. Sampling even a
-    // reasonable number of points can't rigorously guarantee a shadow
-    // boundary doesn't thread between them undetected — this is the exact
-    // same category of risk the old analytic hybrid's own shadow-relevance
-    // heuristic had (the thing that silently excluded real shadowed
-    // regions, fixed by moving to this buffer-driven approach in the first
-    // place). 7 points (corners + edge-midpoints + centroid) — a tip-biased
-    // 10-point variant was tried after a real report of missing hatch on a
-    // thin/sharp shadow sliver, and helped, but this is fundamentally a
-    // diminishing-returns tradeoff with no finite sample count that fully
-    // rules out an arbitrarily thin shadow boundary — so rather than keep
-    // adding points chasing a guaranteed end, this stayed at 7 and got a
-    // real, user-facing toggle (Hatch settings, visible only when Smooth
-    // Shading is on) instead: on by default, and there specifically so a
-    // rare miss on a particular model/angle can just be turned off for
-    // that generate, rather than needing a permanent, larger sample count
-    // that costs more for everyone to (still incompletely) chase a
-    // vanishingly rare case.
-    const COARSE_GATE_MARGIN = (S.hatch.coarseGateOn === false) ? Infinity : 0.05;
-    const COARSE_GATE_BARY = [
-      [1,0,0],[0,1,0],[0,0,1],
-      [0.5,0.5,0],[0,0.5,0.5],[0.5,0,0.5],
-      [1/3,1/3,1/3],
-    ];
-    function bufferFaceMinBright(ax,ay,bx,by,cx,cy2){
-      let minB = Infinity;
-      for (const [wa,wb,wc] of COARSE_GATE_BARY){
-        const px = wa*ax+wb*bx+wc*cx, py = wa*ay+wb*by+wc*cy2;
-        const b = sampleShading(shadingBuf.pixels, shadingBuf.w, shadingBuf.h, px, py).brightness;
-        if (b < minB) minB = b;
-      }
-      return minB;
-    }
     // Samples the captured shading buffer directly instead of an analytic
     // Phong formula — the buffer's brightness already IS max(0,N·L)*
     // shadowFactor as one continuous signal, so there's no separate shadow
@@ -3536,10 +3530,13 @@ function generate(cam, S, shadingBuffer){
         const px = Px(u), py = Py(u);
         const samp = sampleShading(shadingBuf.pixels, shadingBuf.w, shadingBuf.h, px, py);
         const bFp = Math.max(0, samp.brightness);
-        if (bFp >= pass.thr) return false;
-        const spacing = minS + bFp*(maxS-minS);
-        const step = Math.max(1, Math.pow(2, Math.round(Math.log2(spacing/minS))));
-        return (k % step) === 0;
+        let result = false;
+        if (bFp < pass.thr){
+          const spacing = minS + bFp*(maxS-minS);
+          const step = Math.max(1, Math.pow(2, Math.round(Math.log2(spacing/minS))));
+          result = (k % step) === 0;
+        }
+        return meshInvertActive ? !result : result;
       };
       const parts = [];
       const recurse = (loU, loS, hiU, hiS) => {
@@ -3601,6 +3598,23 @@ function generate(cam, S, shadingBuffer){
         const cc=px*nx+py*ny, tt=px*dx+py*dy;
         if (cc<c0)c0=cc; if (cc>c1)c1=cc; if (tt<t0e)t0e=tt; if (tt>t1e)t1e=tt;
       }
+      // Invert shadows + Ground shadow: the ground-hatch block below fills
+      // the whole visible PAGE (not just the viewport rectangle, and not
+      // just the model+shadow bbox), so the carriers' along-line extent
+      // needs to reach the true page bounds too — see invertPageBounds'
+      // own comment in gatherSettings() (js/panel-controls.js). Widening
+      // t0e/t1e only (never c0 — that's the carrier-family phase anchor;
+      // shifting it would desync the k keys this on-mesh loop and the
+      // ground block below both write into the shared lineVis map) is
+      // safe: a face's own clip always reduces to the same physical
+      // endpoints regardless of how long this nominal backing span is.
+      if (GS && S.invertShadows){
+        const pb = S.invertPageBounds || { x0:0, x1:W, y0:0, y1:H };
+        for (const [px,py] of [[pb.x0,pb.y0],[pb.x1,pb.y0],[pb.x0,pb.y1],[pb.x1,pb.y1]]){
+          const tt=px*dx+py*dy;
+          if (tt<t0e)t0e=tt; if (tt>t1e)t1e=tt;
+        }
+      }
       for (let f=0; f<nt && !capped; f++){
         if (!front[f]) continue;
         const a=tri[f*3], b=tri[f*3+1], c=tri[f*3+2];
@@ -3613,16 +3627,6 @@ function generate(cam, S, shadingBuffer){
           // bug the old approach had) and faster. Flat Shading (below) is
           // completely unaffected and never used any of this.
           if (!useShadingBuf) continue;   // no captured buffer this generate — warned once already, above
-          const gax=sx[a],gay=sy[a], gbx=sx[b],gby=sy[b], gcx=sx[c],gcy=sy[c];
-          // Coarse per-face pre-filter, permanent at margin 0.05 after
-          // testing showed a real, meaningful speedup on heavier scenes
-          // with no observed regressions across multiple test scenes and a
-          // wide margin range (0 to 100) — see project notes for the full
-          // validation. NOT a rigorous bound the way flat mode's analytic
-          // litFace is below (see bufferFaceMinBright's own comment) — if
-          // this ever produces a visible problem on some model, this
-          // margin (or the gate itself) is the first thing to revisit.
-          if (bufferFaceMinBright(gax,gay,gbx,gby,gcx,gcy) >= pass.thr + COARSE_GATE_MARGIN) continue;
           // face plane in (x,y,1/z)
           const ax=sx[a],ay=sy[a],az=iz[a], bx=sx[b],by=sy[b],bz=iz[b], cx=sx[c],cy2=sy[c],cz=iz[c];
           const d1x=bx-ax,d1y=by-ay,d1z=bz-az, d2x=cx-ax,d2y=cy2-ay,d2z=cz-az;
@@ -3678,7 +3682,11 @@ function generate(cam, S, shadingBuffer){
           // ================= Flat Shading: exact per-face scalar (unchanged) =================
           const bF = bright[f];
           const litFace = bF < pass.thr;
-          if (!litFace && !shadowOn) continue;   // shadow can still hatch a "too bright" face
+          // Under Invert shadows a face with neither normal brightness-hatch
+          // nor any shadow contribution isn't dead weight — it's exactly the
+          // face that should come out fully hatched — so this shortcut only
+          // applies un-inverted.
+          if (!meshInvertActive && !litFace && !shadowOn) continue;   // shadow can still hatch a "too bright" face
           let stepLit = 1;
           if (litFace){
             const spacing=minS+Math.max(0,bF)*(maxS-minS);            // bright → sparse
@@ -3707,7 +3715,10 @@ function generate(cam, S, shadingBuffer){
             for (; k<=kEnd; k++){
               const litCandidate = litFace && (k % stepLit) === 0;
               const shOK = faceShadowRelevant && (k % stepShadow) === 0;
-              if (!litCandidate && !shOK) continue;
+              // Same reasoning as the face-level shortcut above — a carrier
+              // line neither side would normally draw is exactly the one
+              // Invert shadows needs to draw in full, so don't skip it.
+              if (!meshInvertActive && !litCandidate && !shOK) continue;
               const cc=c0+k*minS;
               const X0=nx*cc+dx*t0e, Y0=ny*cc+dy*t0e, X1=nx*cc+dx*t1e, Y1=ny*cc+dy*t1e;
               let ta=0, tb=1, alive=true;
@@ -3735,7 +3746,12 @@ function generate(cam, S, shadingBuffer){
               }
               if (u<1) visPieces.push(u, 1);
               if (!faceShadowRelevant){
-                if (litCandidate) for (let vp=0; vp<visPieces.length; vp+=2) ivs.push(ta+(tb-ta)*visPieces[vp], ta+(tb-ta)*visPieces[vp+1]);
+                // Invert shadows: this carrier's draw/no-draw call doesn't
+                // vary with shadow at all here, so just negate the same
+                // whole-piece decision — see the shOK/litCandidate split
+                // below for the per-point case.
+                const draw = meshInvertActive ? !litCandidate : litCandidate;
+                if (draw) for (let vp=0; vp<visPieces.length; vp+=2) ivs.push(ta+(tb-ta)*visPieces[vp], ta+(tb-ta)*visPieces[vp+1]);
               } else {
                 // second classification axis: within each camera-visible
                 // piece, split by shadow state, then keep each run only if
@@ -3745,12 +3761,14 @@ function generate(cam, S, shadingBuffer){
                 // land in the SAME pass layer/pen, so adjacent kept runs
                 // merge back into one stroke downstream — density
                 // difference is carried by which carriers participate, not
-                // by breaking strokes.
+                // by breaking strokes. Invert shadows negates this same
+                // per-point eligibility rather than re-deriving anything —
+                // draw where it previously wouldn't, blank where it would.
                 for (let vp=0; vp<visPieces.length; vp+=2){
                   const parts = shadowSplit(f, hx0,hy0,hx1,hy1, visPieces[vp], visPieces[vp+1]);
                   for (const [inShadow, ua, ub] of parts){
-                    if (inShadow){ if (shOK) ivs.push(ta+(tb-ta)*ua, ta+(tb-ta)*ub); }
-                    else if (litCandidate) ivs.push(ta+(tb-ta)*ua, ta+(tb-ta)*ub);
+                    const draw = inShadow ? shOK : litCandidate;
+                    if (draw !== meshInvertActive) ivs.push(ta+(tb-ta)*ua, ta+(tb-ta)*ub);
                   }
                 }
               }
@@ -3769,6 +3787,8 @@ function generate(cam, S, shadingBuffer){
          model hatch uses — so ground and model strokes merge into single pen
          paths downstream. Exact boundaries, no shadow-map tests, no budget. */
       if (GS){
+        const inv = !!S.invertShadows;
+        const pb = S.invertPageBounds || { x0:0, x1:W, y0:0, y1:H };
         const T=GS.tris, tn=GS.tn, Lpx2=t1e-t0e;
         // per-triangle extent along this pass's carrier normal (quick reject)
         const tcMin=new Float64Array(tn), tcMax=new Float64Array(tn);
@@ -3782,12 +3802,50 @@ function generate(cam, S, shadingBuffer){
           const cc2=qx*nx+qy*ny;
           if (cc2<cLo)cLo=cc2; if (cc2>cHi)cHi=cc2;
         }
+        // Invert shadows: also walk every carrier that crosses the visible
+        // page, not just ones crossing the shadow's own bbox — those extra
+        // lines find no shadow triangles (iv stays empty) and get fully
+        // hatched below, which is exactly the "fill the rest of the page"
+        // behavior. Gated: the extra k's cost a real per-triangle reject
+        // scan below, wasted work when not inverting since output there is
+        // unaffected either way.
+        if (inv){
+          for (const [qx,qy] of [[pb.x0,pb.y0],[pb.x1,pb.y0],[pb.x0,pb.y1],[pb.x1,pb.y1]]){
+            const cc2=qx*nx+qy*ny;
+            if (cc2<cLo)cLo=cc2; if (cc2>cHi)cHi=cc2;
+          }
+        }
         const iv=[];
         let k=Math.ceil((cLo-c0)/minS);
         const kEnd=Math.floor((cHi-c0)/minS);
         for (; k<=kEnd && !capped; k++){
           if (k % stepShadow) continue;                  // shadow density only
           const cc=c0+k*minS;
+          // Invert shadows: clip this carrier's infinite line down to where
+          // it's actually on the visible page — and where the ground plane
+          // is a real, in-front-of-camera surface. GS.A/B/C was only ever
+          // validated INSIDE the true shadow footprint (see GS's own
+          // comment), so filling the whole page means evaluating it above
+          // the horizon too, where it extrapolates to behind-camera depths
+          // without this guard. Same half-plane (f0,df) idiom as the
+          // triangle clip just below — one axis-aligned page edge or
+          // ground-validity constraint per row.
+          let vt0=-1/0, vt1=1/0, cur=0;
+          if (inv){
+            const z0 = (GS.A*nx+GS.B*ny)*cc + GS.C, zd = GS.A*dx+GS.B*dy;
+            const IZ_MAX = 1/(-nearZ), IZ_MIN = IZ_MAX*1e-6;   // IZ_MIN: ~1e6 near-plane distances out = the horizon, not an arbitrary literal
+            const rows = ortho
+              ? [[nx*cc-pb.x0,dx],[pb.x1-nx*cc,-dx],[ny*cc-pb.y0,dy],[pb.y1-ny*cc,-dy],[nearZ-z0,-zd]]
+              : [[nx*cc-pb.x0,dx],[pb.x1-nx*cc,-dx],[ny*cc-pb.y0,dy],[pb.y1-ny*cc,-dy],[z0-IZ_MIN,zd],[IZ_MAX-z0,-zd]];
+            let onPage=true;
+            for (const [f0,df] of rows){
+              if (Math.abs(df) < 1e-12){ if (f0 < 0){ onPage=false; break; } continue; }
+              const tX=-f0/df;
+              if (df > 0){ if (tX>vt0) vt0=tX; } else { if (tX<vt1) vt1=tX; }
+            }
+            if (!onPage || vt1-vt0 <= 1e-6) continue;   // nothing of this carrier is on-page
+            cur = vt0;
+          }
           iv.length=0;
           for (let i=0;i<tn;i++){
             if (cc<tcMin[i] || cc>tcMax[i]) continue;
@@ -3807,7 +3865,11 @@ function generate(cam, S, shadingBuffer){
             }
             if (alive && tb-ta > 1e-9){ iv.push(ta, tb); }
           }
-          if (!iv.length) continue;
+          // Under Invert shadows, a line with no shadow triangle at all
+          // means "the whole on-page span is unshadowed" — must NOT skip
+          // (that's handled a few lines down); non-inverted keeps today's
+          // behavior exactly.
+          if (!iv.length && !inv) continue;
           // union the per-triangle intervals (adjacent projected triangles
           // share edges, so their intervals touch and fuse into one run)
           const nIv=iv.length/2, ord=[];
@@ -3831,14 +3893,28 @@ function generate(cam, S, shadingBuffer){
             hatchTotal++;
             if (hatchTotal>HATCH_CAP*2) capped=true;
           };
+          if (!nIv){ flush(vt0, vt1); continue; }   // inverted, no shadow on this line at all — hatch the whole on-page span
+          // Invert shadows: ink the GAPS between shadow runs (bounded by
+          // this line's on-page span, vt0/vt1) instead of the runs
+          // themselves. Reusing flush() unmodified for both directions is
+          // what makes "never overlap mesh" (its occlude call) hold for
+          // inverted ground hatch too, without reimplementing it.
+          const invRun = (a, b) => {
+            const s = Math.min(Math.max(a, vt0), vt1);
+            if (s - cur > 1e-6) flush(cur, s);
+            if (b > cur) cur = b;
+          };
+          const outRun = inv ? invRun : flush;
           let cs=iv[ord[0]*2], ce=iv[ord[0]*2+1];
           for (let i=1; i<=nIv && !capped; i++){
             const s2 = i<nIv ? iv[ord[i]*2]   : Infinity;
             const e2 = i<nIv ? iv[ord[i]*2+1] : 0;
             if (s2 <= ce+1e-3){ if (e2>ce) ce=e2; }
-            else { flush(cs,ce); cs=s2; ce=e2; }
+            else { outRun(cs,ce); cs=s2; ce=e2; }
           }
-          if (!capped) flush(cs,ce);
+          // Under Invert shadows this final call's sentinel args (Infinity,0)
+          // make invRun close the LAST gap up to vt1 — see invRun above.
+          if (!capped) outRun(cs,ce);
         }
       }
       // merge per carrier line: touching/overlapping visible intervals join into
