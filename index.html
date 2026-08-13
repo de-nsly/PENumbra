@@ -592,8 +592,13 @@
 
     <h2>Shadows</h2>
     <div class="sec">
-      <label class="chk"><input type="checkbox" id="softShadows" checked data-regen>
-        Soft shadows</label>
+      <div class="chkRow">
+        <label class="chk"><input type="checkbox" id="softShadows" checked data-regen>
+          Soft shadows</label>
+        <label class="chk" title="Flips where Hatch/Crosshatch/Deep shadow/Circles are drawn from Soft and Cast shadows: draws in the previously-blank (lit) areas instead of the previously-hatched (shadowed) ones. Ground shadow is unaffected.">
+          <input type="checkbox" id="invertShadows" data-regen>
+          Invert shadows</label>
+      </div>
       <label class="chk"><input type="checkbox" id="castShadows" data-regen>
         Cast shadows</label>
       <label class="chk"><input type="checkbox" id="groundShadow" data-regen>
@@ -611,11 +616,7 @@
       <label class="chk" style="margin-top:8px" title="Smooths both the 3D viewport display and the shadow-pattern boundary, for circles and for parallel hatching (all of Hatch/Crosshatch/Deep shadow).">
         <input type="checkbox" id="smoothShading" data-regen>
         Smooth shading</label>
-      <label class="chk" id="coarseGateRow" style="display:none"
-             title="A cheap per-triangle pre-check that skips faces obviously too bright to need hatching, before the slower precise test. Rarely, on a very thin sliver-shaped triangle, a tiny bit of shadowed hatching can be missed by this shortcut — turn it off for this specific view if that happens.">
-        <input type="checkbox" id="coarseGateOn" checked data-regen> Coarse gate
-      </label>
-      <div class="ctl" id="smoothAngleRow" style="display:none"
+      <div class="ctl ctlDisabled" id="smoothAngleRow"
            title="How sharp a dihedral angle between two faces can be before Smooth Shading treats it as a hard edge (never blending a normal across it) rather than part of the same smooth surface. Lower = more edges stay crisp; higher = more of the model blends smooth.">
         <label for="smoothAngleDeg">Smooth angle</label>
         <input type="range" id="smoothAngleDeg" min="0" max="180" step="1" value="30" data-regen>
@@ -3286,6 +3287,7 @@ function generate(cam, S, shadingBuffer){
 
     if ((S.shadow && S.shadow.on) || circlesThr > 0){
       const cpSm = (S.shadow && S.shadow.on) ? sharedShadowMap : null;
+      const invertShadows = !!S.invertShadows;
       const castTest = (px, py, r) => {
         const hit = pickVisibleFace(px, py);
         if (!hit) return false;                                  // background — no surface to shadow
@@ -3296,10 +3298,13 @@ function generate(cam, S, shadingBuffer){
           // needed at all, unlike flat mode below.
           if (!shadingBuf) return false;   // warned once already, above the face loop equivalent
           const bFp = Math.max(0, sampleShading(shadingBuf.pixels, shadingBuf.w, shadingBuf.h, px, py).brightness);
-          if (bFp >= circlesThr) return false;
-          const spacing = minS + bFp*(maxS-minS);
-          const step = Math.max(1, Math.pow(2, Math.round(Math.log2(spacing/minS))));
-          return (r % step) === 0;
+          let result = false;
+          if (bFp < circlesThr){
+            const spacing = minS + bFp*(maxS-minS);
+            const step = Math.max(1, Math.pow(2, Math.round(Math.log2(spacing/minS))));
+            result = (r % step) === 0;
+          }
+          return invertShadows ? !result : result;
         }
         // Flat Shading: exact per-face scalar, unchanged.
         const bF = bright[hit.f];
@@ -3309,18 +3314,20 @@ function generate(cam, S, shadingBuffer){
           brightStep = Math.max(1, Math.pow(2, Math.round(Math.log2(spacing/minS))));
           brightOK = (r % brightStep) === 0;
         }
+        let result;
         // If brightness alone already maxes out the ring spacing right HERE
         // (brightStep===1), cast shadow's override can't add anything at
         // this point — skip its occlusion query. bF above is the exact
         // brightness at this specific sample point, not a conservative
         // per-face bound — so there's no brighter "elsewhere on the face"
         // this could be wrong about.
-        if (brightOK && brightStep === 1) return true;
+        if (brightOK && brightStep === 1) result = true;
         // Cast shadow's override applies unconditionally in Flat Shading
         // (no separate Soft Shadow gradient here to hand off an "away from
         // light" side to, unlike Smooth Shading).
-        if (cpSm && cpSm.kept && cpSm.test(hit.x, hit.y, hit.z, hit.f)) return true;
-        return brightOK;
+        else if (cpSm && cpSm.kept && cpSm.test(hit.x, hit.y, hit.z, hit.f)) result = true;
+        else result = brightOK;
+        return invertShadows ? !result : result;
       };
       for (const piece of buildPatternSegsFromTest(castTest, cx5, cy5, minS, W, H)){
         piece.source = 'cast'; segs.push(piece);
@@ -3474,48 +3481,6 @@ function generate(cam, S, shadingBuffer){
       return merged;
     };
     // ================= Smooth Shading: buffer-driven Hatch density =================
-    // Coarse per-face pre-filter — permanent, at a fixed margin, after
-    // testing (see project notes) showed a real, meaningful speedup on
-    // heavier/shadow-dense scenes with no observed regressions across
-    // multiple test scenes and a wide margin range (0 to 100). Explicitly
-    // NOT a rigorous bound the way flat mode's analytic litFace is:
-    // Phong brightness there is a true convex combination of corner
-    // values, mathematically guaranteed to bound everything between them,
-    // but the shading buffer includes real shadow, which is not a smooth/
-    // convex function at all — it can change abruptly anywhere a
-    // silhouette edge from the light crosses this face. Sampling even a
-    // reasonable number of points can't rigorously guarantee a shadow
-    // boundary doesn't thread between them undetected — this is the exact
-    // same category of risk the old analytic hybrid's own shadow-relevance
-    // heuristic had (the thing that silently excluded real shadowed
-    // regions, fixed by moving to this buffer-driven approach in the first
-    // place). 7 points (corners + edge-midpoints + centroid) — a tip-biased
-    // 10-point variant was tried after a real report of missing hatch on a
-    // thin/sharp shadow sliver, and helped, but this is fundamentally a
-    // diminishing-returns tradeoff with no finite sample count that fully
-    // rules out an arbitrarily thin shadow boundary — so rather than keep
-    // adding points chasing a guaranteed end, this stayed at 7 and got a
-    // real, user-facing toggle (Hatch settings, visible only when Smooth
-    // Shading is on) instead: on by default, and there specifically so a
-    // rare miss on a particular model/angle can just be turned off for
-    // that generate, rather than needing a permanent, larger sample count
-    // that costs more for everyone to (still incompletely) chase a
-    // vanishingly rare case.
-    const COARSE_GATE_MARGIN = (S.hatch.coarseGateOn === false) ? Infinity : 0.05;
-    const COARSE_GATE_BARY = [
-      [1,0,0],[0,1,0],[0,0,1],
-      [0.5,0.5,0],[0,0.5,0.5],[0.5,0,0.5],
-      [1/3,1/3,1/3],
-    ];
-    function bufferFaceMinBright(ax,ay,bx,by,cx,cy2){
-      let minB = Infinity;
-      for (const [wa,wb,wc] of COARSE_GATE_BARY){
-        const px = wa*ax+wb*bx+wc*cx, py = wa*ay+wb*by+wc*cy2;
-        const b = sampleShading(shadingBuf.pixels, shadingBuf.w, shadingBuf.h, px, py).brightness;
-        if (b < minB) minB = b;
-      }
-      return minB;
-    }
     // Samples the captured shading buffer directly instead of an analytic
     // Phong formula — the buffer's brightness already IS max(0,N·L)*
     // shadowFactor as one continuous signal, so there's no separate shadow
@@ -3537,10 +3502,13 @@ function generate(cam, S, shadingBuffer){
         const px = Px(u), py = Py(u);
         const samp = sampleShading(shadingBuf.pixels, shadingBuf.w, shadingBuf.h, px, py);
         const bFp = Math.max(0, samp.brightness);
-        if (bFp >= pass.thr) return false;
-        const spacing = minS + bFp*(maxS-minS);
-        const step = Math.max(1, Math.pow(2, Math.round(Math.log2(spacing/minS))));
-        return (k % step) === 0;
+        let result = false;
+        if (bFp < pass.thr){
+          const spacing = minS + bFp*(maxS-minS);
+          const step = Math.max(1, Math.pow(2, Math.round(Math.log2(spacing/minS))));
+          result = (k % step) === 0;
+        }
+        return S.invertShadows ? !result : result;
       };
       const parts = [];
       const recurse = (loU, loS, hiU, hiS) => {
@@ -3614,16 +3582,6 @@ function generate(cam, S, shadingBuffer){
           // bug the old approach had) and faster. Flat Shading (below) is
           // completely unaffected and never used any of this.
           if (!useShadingBuf) continue;   // no captured buffer this generate — warned once already, above
-          const gax=sx[a],gay=sy[a], gbx=sx[b],gby=sy[b], gcx=sx[c],gcy=sy[c];
-          // Coarse per-face pre-filter, permanent at margin 0.05 after
-          // testing showed a real, meaningful speedup on heavier scenes
-          // with no observed regressions across multiple test scenes and a
-          // wide margin range (0 to 100) — see project notes for the full
-          // validation. NOT a rigorous bound the way flat mode's analytic
-          // litFace is below (see bufferFaceMinBright's own comment) — if
-          // this ever produces a visible problem on some model, this
-          // margin (or the gate itself) is the first thing to revisit.
-          if (bufferFaceMinBright(gax,gay,gbx,gby,gcx,gcy) >= pass.thr + COARSE_GATE_MARGIN) continue;
           // face plane in (x,y,1/z)
           const ax=sx[a],ay=sy[a],az=iz[a], bx=sx[b],by=sy[b],bz=iz[b], cx=sx[c],cy2=sy[c],cz=iz[c];
           const d1x=bx-ax,d1y=by-ay,d1z=bz-az, d2x=cx-ax,d2y=cy2-ay,d2z=cz-az;
@@ -3679,7 +3637,11 @@ function generate(cam, S, shadingBuffer){
           // ================= Flat Shading: exact per-face scalar (unchanged) =================
           const bF = bright[f];
           const litFace = bF < pass.thr;
-          if (!litFace && !shadowOn) continue;   // shadow can still hatch a "too bright" face
+          // Under Invert shadows a face with neither normal brightness-hatch
+          // nor any shadow contribution isn't dead weight — it's exactly the
+          // face that should come out fully hatched — so this shortcut only
+          // applies un-inverted.
+          if (!S.invertShadows && !litFace && !shadowOn) continue;   // shadow can still hatch a "too bright" face
           let stepLit = 1;
           if (litFace){
             const spacing=minS+Math.max(0,bF)*(maxS-minS);            // bright → sparse
@@ -3708,7 +3670,10 @@ function generate(cam, S, shadingBuffer){
             for (; k<=kEnd; k++){
               const litCandidate = litFace && (k % stepLit) === 0;
               const shOK = faceShadowRelevant && (k % stepShadow) === 0;
-              if (!litCandidate && !shOK) continue;
+              // Same reasoning as the face-level shortcut above — a carrier
+              // line neither side would normally draw is exactly the one
+              // Invert shadows needs to draw in full, so don't skip it.
+              if (!S.invertShadows && !litCandidate && !shOK) continue;
               const cc=c0+k*minS;
               const X0=nx*cc+dx*t0e, Y0=ny*cc+dy*t0e, X1=nx*cc+dx*t1e, Y1=ny*cc+dy*t1e;
               let ta=0, tb=1, alive=true;
@@ -3736,7 +3701,12 @@ function generate(cam, S, shadingBuffer){
               }
               if (u<1) visPieces.push(u, 1);
               if (!faceShadowRelevant){
-                if (litCandidate) for (let vp=0; vp<visPieces.length; vp+=2) ivs.push(ta+(tb-ta)*visPieces[vp], ta+(tb-ta)*visPieces[vp+1]);
+                // Invert shadows: this carrier's draw/no-draw call doesn't
+                // vary with shadow at all here, so just negate the same
+                // whole-piece decision — see the shOK/litCandidate split
+                // below for the per-point case.
+                const draw = S.invertShadows ? !litCandidate : litCandidate;
+                if (draw) for (let vp=0; vp<visPieces.length; vp+=2) ivs.push(ta+(tb-ta)*visPieces[vp], ta+(tb-ta)*visPieces[vp+1]);
               } else {
                 // second classification axis: within each camera-visible
                 // piece, split by shadow state, then keep each run only if
@@ -3746,12 +3716,14 @@ function generate(cam, S, shadingBuffer){
                 // land in the SAME pass layer/pen, so adjacent kept runs
                 // merge back into one stroke downstream — density
                 // difference is carried by which carriers participate, not
-                // by breaking strokes.
+                // by breaking strokes. Invert shadows negates this same
+                // per-point eligibility rather than re-deriving anything —
+                // draw where it previously wouldn't, blank where it would.
                 for (let vp=0; vp<visPieces.length; vp+=2){
                   const parts = shadowSplit(f, hx0,hy0,hx1,hy1, visPieces[vp], visPieces[vp+1]);
                   for (const [inShadow, ua, ub] of parts){
-                    if (inShadow){ if (shOK) ivs.push(ta+(tb-ta)*ua, ta+(tb-ta)*ub); }
-                    else if (litCandidate) ivs.push(ta+(tb-ta)*ua, ta+(tb-ta)*ub);
+                    const draw = inShadow ? shOK : litCandidate;
+                    if (draw !== !!S.invertShadows) ivs.push(ta+(tb-ta)*ua, ta+(tb-ta)*ub);
                   }
                 }
               }

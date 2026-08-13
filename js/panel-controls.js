@@ -258,11 +258,6 @@ function gatherSettings(){
       deepThr:  $('softShadows').checked ? +$('deepThr').value  : 0,
       hatchThr: $('softShadows').checked ? +$('hatchThr').value : 0,
       softShadowsOn: $('softShadows').checked,
-      // On by default — see coarseGateOn's own tooltip/comment in
-      // index.html and project notes. Only meaningful for Smooth Shading;
-      // harmless to always send even when Flat Shading is active, since
-      // the worker only reads it inside the smooth-mode buffer path.
-      coarseGateOn: $('coarseGateOn').checked,
       cap: HATCH_CAP_PRESETS[+$('hatchCap').value],
     },
     shadow: { on: $('castShadows').checked,
@@ -270,6 +265,11 @@ function gatherSettings(){
     // off: fraction of the model's bounding RADIUS (size-relative, so the same
     // slider position means the same visual drop on any model scale)
     ground: { on: $('groundShadow').checked, off: +$('groundOff').value / 100 },
+    // Flips the final on-mesh "draw ink" decision for Hatch/Crosshatch/Deep
+    // shadow/Circles that Soft+Cast shadows would otherwise produce. Ground
+    // shadow's own hatch/circles (off-mesh, on the paper) don't read this —
+    // see the worker's ground-shadow code paths.
+    invertShadows: $('invertShadows').checked,
     circlesOn: layerStyle('cr').on,
     circlesThr: $('softShadows').checked ? (+$('texCirclesThr').value || 0.92) : 0,
     groundPatternCenterX: layout
