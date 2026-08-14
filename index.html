@@ -3286,13 +3286,25 @@ function generate(cam, S, shadingBuffer){
           const tx=a-V[12], ty=b-V[13], tz=c-V[14];
           return [V[0]*tx+V[1]*ty+V[2]*tz, V[4]*tx+V[5]*ty+V[6]*tz, V[8]*tx+V[9]*ty+V[10]*tz];
         };
+        // The two view-space depths groundWorldAt samples the ray at —
+        // named so the ray-hit depth check below can't drift out of sync
+        // with them.
+        const RAY_C1 = -1, RAY_C2 = -5;
         const groundWorldAt = (px, py) => {
-          const p1 = viewToWorld(...viewRayPointAtC(px, py, -1));
-          const p2 = viewToWorld(...viewRayPointAtC(px, py, -5));
+          const p1 = viewToWorld(...viewRayPointAtC(px, py, RAY_C1));
+          const p2 = viewToWorld(...viewRayPointAtC(px, py, RAY_C2));
           const dir = [p2[0]-p1[0], p2[1]-p1[1], p2[2]-p1[2]];
           if (Math.abs(dir[1]) < 1e-9) return null;
           const t = (gy3 - p1[1]) / dir[1];
-          if (t < 0) return null;   // ground point would be behind the camera (above the horizon)
+          // Reject on the ray-hit's own view-space depth against the
+          // camera's real near plane — not an arbitrary ray-parameter
+          // cutoff (the old `t<0` rejected a scale-dependent ~1-world-unit
+          // strip in front of the camera, which is wrong at both ends: too
+          // permissive in perspective near the true horizon, and a live
+          // bug in orthographic where it doesn't correspond to anything
+          // meaningful at all).
+          const viewZHit = RAY_C1 + t * (RAY_C2 - RAY_C1);
+          if (viewZHit >= nearZ) return null;   // behind the camera or closer than the near plane
           return [p1[0]+dir[0]*t, gy3, p1[2]+dir[2]*t];
         };
         const groundTest = (px, py) => {
@@ -3305,7 +3317,14 @@ function generate(cam, S, shadingBuffer){
           // page-bounds policy for the inverted fill, not a correctness fix.
           if (S.invertShadows && (px<pb.x0 || py<pb.y0 || px>pb.x1 || py>pb.y1)) return false;
           const w = groundWorldAt(px, py);
-          if (!w) return false;
+          // No valid ground-plane point here (behind the camera / above the
+          // horizon) means "can't be in shadow" — same as a real, tested
+          // point that comes back not-shadowed. Must still go through the
+          // same invert negation as a real result, not an unconditional
+          // false: otherwise every such point stays permanently blank even
+          // when inverted, which is exactly the leftover horizon/near-plane
+          // cutoff this was meant to fix.
+          if (!w) return S.invertShadows;
           const result = gpSm.test(w[0], w[1], w[2], -1);
           return S.invertShadows ? !result : result;
         };
@@ -3839,21 +3858,20 @@ function generate(cam, S, shadingBuffer){
           if (k % stepShadow) continue;                  // shadow density only
           const cc=c0+k*minS;
           // Invert shadows: clip this carrier's infinite line down to where
-          // it's actually on the visible page — and where the ground plane
-          // is a real, in-front-of-camera surface. GS.A/B/C was only ever
-          // validated INSIDE the true shadow footprint (see GS's own
-          // comment), so filling the whole page means evaluating it above
-          // the horizon too, where it extrapolates to behind-camera depths
-          // without this guard. Same half-plane (f0,df) idiom as the
-          // triangle clip just below — one axis-aligned page edge or
-          // ground-validity constraint per row.
+          // it's actually on the visible page. Deliberately NOT also
+          // clipping to any camera-frustum/horizon notion here — GS.A/B/C
+          // is only ever used below as a comparative depth KEY for
+          // occlude()'s mesh-occlusion test, never as an actual 3D
+          // position, so an extrapolated depth past the true horizon is
+          // still a validly-ordered "farther than any real surface" key:
+          // the mesh already occludes the fill wherever it should, and
+          // where nothing occludes it, inking it is exactly this feature's
+          // own spec (fill the whole page except shadow + mesh, at any
+          // viewing angle). Same half-plane (f0,df) idiom as the triangle
+          // clip just below — one axis-aligned page edge per row.
           let vt0=-1/0, vt1=1/0, cur=0;
           if (inv){
-            const z0 = (GS.A*nx+GS.B*ny)*cc + GS.C, zd = GS.A*dx+GS.B*dy;
-            const IZ_MAX = 1/(-nearZ), IZ_MIN = IZ_MAX*1e-6;   // IZ_MIN: ~1e6 near-plane distances out = the horizon, not an arbitrary literal
-            const rows = ortho
-              ? [[nx*cc-pb.x0,dx],[pb.x1-nx*cc,-dx],[ny*cc-pb.y0,dy],[pb.y1-ny*cc,-dy],[nearZ-z0,-zd]]
-              : [[nx*cc-pb.x0,dx],[pb.x1-nx*cc,-dx],[ny*cc-pb.y0,dy],[pb.y1-ny*cc,-dy],[z0-IZ_MIN,zd],[IZ_MAX-z0,-zd]];
+            const rows = [[nx*cc-pb.x0,dx],[pb.x1-nx*cc,-dx],[ny*cc-pb.y0,dy],[pb.y1-ny*cc,-dy]];
             let onPage=true;
             for (const [f0,df] of rows){
               if (Math.abs(df) < 1e-12){ if (f0 < 0){ onPage=false; break; } continue; }
