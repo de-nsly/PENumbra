@@ -41,6 +41,7 @@ function refreshValLabel(el){
   if (presets){ v.textContent = fmtBigCount(presets[+el.value]); return; }
   if (el.id === 'camShiftX' || el.id === 'camShiftY'){ v.textContent = (+el.value).toFixed(2); return; }
   if (el.id === 'dedupOffMult' || el.id === 'dedupGapMult'){ v.textContent = (+el.value).toFixed(2) + '×'; return; }
+  if (el.id === 'layoutOverlayOpacity'){ v.textContent = el.value + '%'; return; }
   const bid = baseTexId(el.id);
   const isTexAngle = bid === 'texAngleMin' || bid === 'texAngleMax';
   const isTexRatio = bid === 'texWobbleVariation' || bid === 'texCirclesThr';
@@ -71,6 +72,7 @@ function refreshValLabel(el){
 function valUnitFor(id){
   if (id === 'camShiftX' || id === 'camShiftY') return '';
   if (id === 'dedupOffMult' || id === 'dedupGapMult') return '×';
+  if (id === 'layoutOverlayOpacity') return '%';
   const bid = baseTexId(id);
   if (bid.startsWith('tex')) return (bid === 'texWobbleVariation' || bid === 'texCirclesThr') ? '' : (bid === 'texAngleMin' || bid === 'texAngleMax') ? '°' : 'mm';
   if (bid.includes('Thr')) return '';

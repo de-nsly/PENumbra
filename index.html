@@ -139,6 +139,23 @@
           <span>Also save 3D view</span>
           <button class="pillToggle" id="addToLayoutSaveViewBtn" role="switch" aria-checked="false" aria-label="also save current 3D view when adding to layout"></button>
         </span>
+        <span class="switchWrap" id="layoutOverlayWrap" title="Show the layers saved to Layout as a static, non-interactive overlay on this live preview">
+          <span>Layout overlay</span>
+          <button class="pillToggle" id="layoutOverlayBtn" role="switch" aria-checked="false" aria-label="show layout overlay on live preview"></button>
+        </span>
+        <div id="layoutOverlayControls" style="display:none">
+          <div class="projRow">
+            <span class="projLbl active" id="layoutOverlayLblBack">Behind</span>
+            <button type="button" class="pillToggle" id="layoutOverlayOrderBtn" data-mode="back"
+              role="switch" aria-checked="false" aria-label="layout overlay order: behind / in front"></button>
+            <span class="projLbl" id="layoutOverlayLblFront">In front</span>
+          </div>
+          <div class="ctl">
+            <label for="layoutOverlayOpacity">Opacity</label>
+            <input type="range" id="layoutOverlayOpacity" min="0" max="100" step="1" value="100">
+            <span class="val" id="layoutOverlayOpacityVal">100%</span>
+          </div>
+        </div>
       </div>
       <div id="addToLayoutMsg" role="status" aria-live="polite"></div>
       <div id="blocksFloat" style="display:none">

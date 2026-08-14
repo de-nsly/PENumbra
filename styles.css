@@ -91,6 +91,14 @@ header{display:flex;align-items:center;justify-content:space-between;
 .btn.toggle{color:var(--muted)}
 #addToLayoutFloat .addToLayoutBtn{width:100%;text-align:center}
 #addToLayoutSaveViewWrap{margin-top:10px}
+#layoutOverlayWrap{margin-top:6px}
+#layoutOverlayControls{margin-top:2px}
+#layoutOverlayControls .projRow{margin:6px 0 2px}
+/* #addToLayoutFloat is only 224px wide (see #camFloat,#rotateFloat,#viewsFloat,
+   #genExportFloat,#addToLayoutFloat below) — the default .ctl label column is
+   too wide for a short label like "Opacity" at that width, same reason
+   #camFloat/#rotateFloat override it for their own narrow floats. */
+#addToLayoutFloat .ctl{grid-template-columns:50px 1fr 34px}
 #genRow{display:flex;align-items:center;gap:8px;margin:0 0 8px}
 #genRow .switchWrap{flex:none}
 #genRow #genBtn{flex:1;text-align:center}
@@ -526,8 +534,17 @@ input[type=number]{width:58px}
 
 /* layer rows — pen swatch style */
 #hatchLayers{border-top:1px solid var(--line);margin-top:6px;padding-top:2px}
-.blendMultiply{isolation:isolate}
-.blendMultiply > g{mix-blend-mode:multiply}
+/* Applied to #plot itself (the shared parent of #paperContent AND
+   #previewLayoutOverlay — see the "Layout overlay" toggle), not to
+   #paperContent alone, so the live drawing's own strokes and the Preview
+   overlay's cloned block strokes blend against EACH OTHER, not just within
+   their own subtree. #previewLayoutOverlay's content is real cloned DOM
+   (not a <use> reference — see renderPreviewLayoutOverlay's own comment),
+   so mix-blend-mode on it behaves exactly like any other SVG content here,
+   with no cross-<use>-boundary ambiguity. */
+#plot.blendMultiply{isolation:isolate}
+#plot.blendMultiply #paperContent > g{mix-blend-mode:multiply}
+#plot.blendMultiply #previewLayoutOverlay .layoutLayerStroke{mix-blend-mode:multiply}
 /* Layout mode's equivalent, but scoped to blend across ALL blocks rather
    than only within each one individually. isolation:isolate on a PER-BLOCK
    element (the old approach) creates its own separate blending boundary for

@@ -167,6 +167,15 @@ function applyLayerStyle(key){
   // actually being looked at; switching TO Layout already does a full
   // render on its own.
   if (typeof activeTab !== 'undefined' && activeTab === 'layout') refreshAllBlockStyles();
+  // The Preview tab's Layout overlay clones each block's current DOM rather
+  // than referencing it live (see renderPreviewLayoutOverlay's own comment
+  // for why), so a color/width/dash panel tweak needs an explicit rebuild
+  // to show up in the overlay — it re-applies updateBlockStyle to each
+  // block itself before re-cloning, so this alone is enough even though
+  // refreshAllBlockStyles() above didn't run.
+  if (typeof layoutOverlayOn !== 'undefined' && layoutOverlayOn &&
+      typeof renderPreviewLayoutOverlay === 'function')
+    renderPreviewLayoutOverlay();
 }
 
 /* ================= paper layout =================
@@ -281,6 +290,12 @@ function renderPaper(){
   // regenerate. Geometry positioning already updates immediately above
   // (the content transform); this keeps stroke width in step with it.
   for (const L of LAYERS) applyLayerStyle(L.key);
+  // Layout overlay — same "recreate on every renderPaper() call" pattern as
+  // marginGuide/pvGridGuides above, since #plot's entire subtree (including
+  // whatever this drew last time) gets wiped on every regenerate (see
+  // onResult's while-loop). Defined in layout-canvas.js, which loads after
+  // this file — guarded the same way syncLayoutPaperFrame already is below.
+  if (typeof renderPreviewLayoutOverlay === 'function') renderPreviewLayoutOverlay();
   return layout;
 }
 ['paperSize','orient','marginMm','marginTopMm','marginBottomMm','marginLeftMm','marginRightMm'].forEach(id =>
@@ -2143,15 +2158,16 @@ function splitDashedPathD(d, dashLen, gapLen){
 }
 
 // Purely a preview compositing toggle — no geometry changes, so this
-// flips the class directly on the existing paperContent (Preview mode) and
-// the shared Layout blocks container (Layout mode — a single toggle there
-// affects every block, since isolation now lives at that one shared level,
-// not per-block — see styles.css), rather than going through markStale/
+// flips the class directly on #plot itself (Preview mode — covers both the
+// live drawing AND the Layout overlay, see styles.css) and the shared
+// Layout blocks container (Layout mode — a single toggle there affects
+// every block, since isolation lives at that one shared level, not
+// per-block — see styles.css), rather than going through markStale/
 // data-regen like every other setting.
 $('blendMultiplyOn').addEventListener('change', () => {
   const on = $('blendMultiplyOn').checked;
-  const content = document.getElementById('paperContent');
-  if (content) content.classList.toggle('blendMultiply', on);
+  const plot = document.getElementById('plot');
+  if (plot) plot.classList.toggle('blendMultiply', on);
   const blocksLayer = document.getElementById('layoutBlocksLayer');
   if (blocksLayer) blocksLayer.classList.toggle('blendMultiplyLayout', on);
 });
@@ -2173,6 +2189,13 @@ $('exportBtn').addEventListener('click', () => {
   if (guide) guide.remove();            // preview-only reference rect, not part of the plot
   const pvGrid = clone.querySelector('#pvGridGuides');
   if (pvGrid) pvGrid.remove();          // preview-only guide grid, not part of the plot
+  const overlay = clone.querySelector('#previewLayoutOverlay');
+  if (overlay) overlay.remove();        // preview-only Layout overlay reference, not part of the plot
+  // .blendMultiply now lives on #plot itself (see the toggle's own comment)
+  // — for a Preview export, `clone` IS that root element, which
+  // querySelectorAll below can't reach (it only matches descendants), so
+  // the root's own class has to be stripped separately first.
+  clone.classList.remove('blendMultiply');
   clone.querySelectorAll('.blendMultiply').forEach(el => el.classList.remove('blendMultiply'));   // preview-only compositing, inert anyway with no stylesheet, but kept clean
   if (isLayout){
     // These are all Layout-tab-only UI chrome (selection box/handles/gizmo,

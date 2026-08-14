@@ -235,6 +235,11 @@ document.querySelectorAll('.paperTab').forEach(btn => {
     resetPvFitWithRulers(); applyPv();
     if (tab === 'layout') renderLayoutCanvas();
     else markStale();
+    // Blocks can only ever change while Layout is active — refresh the
+    // Preview-tab overlay here so it's never stale after editing blocks,
+    // even if Auto-generate is off and markStale() above doesn't trigger an
+    // actual regenerate (which would otherwise be the only other refresh).
+    renderPreviewLayoutOverlay();
     refreshStatusR();
   });
 });
@@ -516,6 +521,65 @@ function renderLayoutCanvas(){
     if (!b.dom) createBlockDom(b);
     else { updateBlockTransform(b); updateBlockStyle(b); }
   }
+}
+// Static, non-interactive re-rendering of every saved block into the
+// Preview tab's own #plot — for live-compositing reference only (see the
+// "Layout overlay" toggle further down). Always fully torn down and rebuilt
+// rather than incrementally patched: #plot itself gets wiped on every
+// regenerate (see onResult in svg-export.js), and blocks can only ever
+// change while the Layout tab is active anyway (Preview/Layout are mutually
+// exclusive), so there's no continuous sync to maintain — just a refresh on
+// tab-switch/regenerate/control-change (see the call sites of this
+// function). Each block becomes a fresh <g> carrying the exact same
+// placement transform updateBlockTransform computes, wrapping a CLONE of
+// the block's own `inner` group (its per-layer stroke groups, each still
+// carrying the .layoutLayerStroke class used by the "blend overlapping
+// colors" toggle — see styles.css) — deliberately a real cloneNode, not a
+// <use> reference: mix-blend-mode inside a <use> shadow tree has known
+// cross-browser inconsistency about whether it blends with content OUTSIDE
+// the <use>, which is exactly what this needs (blending against the live
+// drawing). A plain clone has no such ambiguity. block.dom's OWN style is
+// refreshed right before cloning (updateBlockStyle) because Preview being
+// the active tab means refreshAllBlockStyles() isn't otherwise called for
+// it (see applyLayerStyle in svg-export.js) — without this a live color/
+// width/dash edit would clone stale style. Block-level visibility
+// (block.visible, which block.dom.outer's OWN display:none tracks) is
+// applied here directly to this function's own wrapper instead, since
+// `outer` itself is never touched. A block's world-mm (x,y) lands at the
+// same physical position here as in #layoutPlot because
+// computePaperLayout() and computeLayoutPaperDims() share the exact same
+// paperW/paperH/margin source of truth — no extra coordinate conversion
+// needed, only a shared viewBox (both #plot and #layoutPlot use
+// "0 0 paperW paperH").
+function renderPreviewLayoutOverlay(){
+  const plot = document.getElementById('plot');
+  if (!plot) return;
+  const old = document.getElementById('previewLayoutOverlay');
+  if (old) old.remove();
+  if (!layoutOverlayOn || !blocks.length) return;
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.id = 'previewLayoutOverlay';
+  g.style.pointerEvents = 'none';
+  g.style.opacity = String(layoutOverlayOpacity);
+  for (const block of blocks){
+    if (!block.dom) createBlockDom(block);   // e.g. a scene import that never visited the Layout tab
+    else updateBlockStyle(block);
+    const [cx, cy] = blockCenterLocal(block);
+    const wrap = document.createElementNS(SVG_NS, 'g');
+    wrap.setAttribute('transform',
+      'translate(' + block.x + ',' + block.y + ') rotate(' + block.rotationDeg + ') scale(' + block.scale + ') ' +
+      'translate(' + (-cx) + ',' + (-cy) + ')');
+    wrap.style.display = block.visible ? '' : 'none';
+    wrap.appendChild(block.dom.inner.cloneNode(true));
+    g.appendChild(wrap);
+  }
+  // "Behind"/"in front" is relative to the live drawing (#paperContent)
+  // specifically, not the margin/grid guides — appending after content
+  // paints on top of it; inserting before it sits behind the drawing but
+  // still in front of the guides (which are always the very back layer).
+  const content = document.getElementById('paperContent');
+  if (layoutOverlayFront || !content) plot.appendChild(g);
+  else plot.insertBefore(g, content);
 }
 // Feeds refreshStatusR() (svg-export.js) — sums computeDStats() over every
 // visible layer of every visible block, skipping a hidden block entirely
@@ -1605,6 +1669,28 @@ document.addEventListener('keydown', e => {
       updateSelectionOverlay();
     }
   }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && activeTab === 'layout' && selectedBlocks.size){
+    // Same typing guard as the nudge keys above — Backspace/Delete have
+    // native meaning in text inputs (the block name field, Override menu
+    // controls), so this only fires when focus isn't inside one of those.
+    // No confirmation dialog, unlike Delete All — this only ever touches
+    // the blocks already selected, not the whole layer stack, same as
+    // clicking a single row's own delete button.
+    const a = document.activeElement;
+    const isTyping = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
+    if (!isTyping){
+      e.preventDefault();
+      for (const b of selectedBlocks){
+        const i = blocks.indexOf(b);
+        if (i >= 0) blocks.splice(i, 1);
+        if (contextMenuBlock === b) closeLayerContextMenu();
+        removeBlockDom(b);
+      }
+      selectBlock(null);
+      refreshStatusR();
+      renderBlocksList();
+    }
+  }
 });
 ['pointerdown','wheel'].forEach(t => $('layerContextMenu').addEventListener(t, e => e.stopPropagation()));
 
@@ -1800,6 +1886,40 @@ $('addToLayoutBtn').addEventListener('click', () => {
   freezeCurrentGeneration();
   if (addToLayoutSaveView) saveCurrentView();
 });
+
+// Layout overlay — static, non-interactive rendering of every saved block
+// on top of (or behind) the live Preview drawing, for live-compositing
+// reference. Off by default, session-only (not saved to .pen scenes, same
+// as addToLayoutSaveView/blendMultiplyOn above/elsewhere) — see
+// renderPreviewLayoutOverlay for the actual drawing logic.
+let layoutOverlayOn = false;
+let layoutOverlayFront = false;   // false = behind (default), true = in front
+let layoutOverlayOpacity = 1;     // 0..1 — the slider below is 0-100
+$('layoutOverlayBtn').addEventListener('click', () => {
+  layoutOverlayOn = !layoutOverlayOn;
+  $('layoutOverlayBtn').setAttribute('aria-checked', String(layoutOverlayOn));
+  $('layoutOverlayBtn').classList.toggle('active', layoutOverlayOn);
+  $('layoutOverlayControls').style.display = layoutOverlayOn ? '' : 'none';
+  renderPreviewLayoutOverlay();
+});
+function setLayoutOverlayOrder(front){
+  layoutOverlayFront = front;
+  $('layoutOverlayOrderBtn').dataset.mode = front ? 'front' : 'back';
+  $('layoutOverlayOrderBtn').classList.toggle('active', front);
+  $('layoutOverlayOrderBtn').setAttribute('aria-checked', String(front));
+  $('layoutOverlayLblBack').classList.toggle('active', !front);
+  $('layoutOverlayLblFront').classList.toggle('active', front);
+  renderPreviewLayoutOverlay();
+}
+$('layoutOverlayOrderBtn').addEventListener('click', () => setLayoutOverlayOrder(!layoutOverlayFront));
+for (const [id, front] of [['layoutOverlayLblBack', false], ['layoutOverlayLblFront', true]])
+  $(id).addEventListener('click', () => setLayoutOverlayOrder(front));
+$('layoutOverlayOpacity').addEventListener('input', () => {
+  layoutOverlayOpacity = +$('layoutOverlayOpacity').value / 100;
+  $('layoutOverlayOpacityVal').textContent = $('layoutOverlayOpacity').value + '%';
+  renderPreviewLayoutOverlay();
+});
+
 $('clearBlocksBtn').addEventListener('click', () => {
   if (!blocks.length) return;
   if (!confirm('Delete all ' + blocks.length + ' layer(s)? This cannot be undone.')) return;
