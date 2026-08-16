@@ -34,8 +34,18 @@ const PRESET_SLIDERS = { shadowBudget: SHADOW_BUDGET_PRESETS, hatchCap: HATCH_CA
 function baseTexId(id){
   return id.replace(/_(h1|h2|h3|cr)$/, '');
 }
+// The value span's own id is always "<baseId>Val" in the source markup
+// (e.g. texOvershootMin / texOvershootMinVal) — but buildPerLayerTextureTabs
+// (main.js) renames every id in a per-layer clone by appending _h1/_h2/_h3/_cr
+// to whatever id was already there, so the clone's span ends up
+// "texOvershootMinVal_h1", not "texOvershootMin_h1Val". Has to reinsert the
+// suffix in the right place rather than just appending 'Val'.
+function valLabelId(id){
+  const m = id.match(/^(.*)(_(?:h1|h2|h3|cr))$/);
+  return m ? m[1] + 'Val' + m[2] : id + 'Val';
+}
 function refreshValLabel(el){
-  const v = $(el.id + 'Val');
+  const v = $(valLabelId(el.id));
   if (!v) return;
   const presets = PRESET_SLIDERS[el.id];
   if (presets){ v.textContent = fmtBigCount(presets[+el.value]); return; }
@@ -82,7 +92,7 @@ function valUnitFor(id){
 }
 function makeSliderValueEditable(rangeEl){
   if (PRESET_SLIDERS[rangeEl.id]) return;      // excluded — see comment above
-  const span = $(rangeEl.id + 'Val');
+  const span = $(valLabelId(rangeEl.id));
   if (!span) return;
   const unit = valUnitFor(rangeEl.id);
   let editing = false, cancelled = false;

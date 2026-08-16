@@ -971,13 +971,24 @@ function makeShadingMaterialFrom(sourceMaterial){
     // N·L times the shadow factor, via Three's own getShadow() — verified
     // against this build's real compiled shader, not guessed.
     const marker = '#include <dithering_fragment>';
-    const injected = `
-      float shadingNdotL = max(0.0, dot(normalize(vNormal), directionalLights[0].direction));
-      float shadingShadow = 1.0;
+    // NUM_DIR_LIGHT_SHADOWS > 0 (hence a real shadow-map sample being
+    // available at all) is driven by dirLight.castShadow, which
+    // syncShadowCasting sets true whenever EITHER Cast shadows OR Ground
+    // shadow is on (Ground shadow needs the model to cast onto the catcher
+    // plane too) — so without this explicit check, turning Ground shadow
+    // on with Cast shadows off would still bake real self-shadow darkening
+    // into the captured buffer, leaking into Smooth Shading's Hatch and
+    // Circles even though Cast shadows itself is unchecked.
+    const shadowTerm = $('castShadows').checked ? `
       #if NUM_DIR_LIGHT_SHADOWS > 0
         shadingShadow = getShadow(directionalShadowMap[0], directionalLightShadows[0].shadowMapSize,
           directionalLightShadows[0].shadowBias, directionalLightShadows[0].shadowRadius, vDirectionalShadowCoord[0]);
       #endif
+    ` : '';
+    const injected = `
+      float shadingNdotL = max(0.0, dot(normalize(vNormal), directionalLights[0].direction));
+      float shadingShadow = 1.0;
+      ${shadowTerm}
       gl_FragColor = vec4(shadingNdotL * shadingShadow, 1.0, 0.0, 1.0);
     `;
     if (shader.fragmentShader.includes(marker)){
