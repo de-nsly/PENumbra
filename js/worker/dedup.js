@@ -8,6 +8,9 @@
    unrelated to the line-overlap problem, but the smallest of the
    three exported "line-layer cleanup" helpers generate() calls.
    ================================================================ */
+// Also used directly by generate() (solver.js), which imports it from here
+// rather than the reverse — dedupCollinear/subtractCovered need it too, and
+// defining it here keeps this module a leaf with no import back to solver.js.
 export const MIN_SEG = 0.3;        // min output segment length, px
 /* 7.5 · collinear-overlap dedup — line layers only (never hatch: those
    strokes are deliberately parallel-adjacent, not overlapping).
