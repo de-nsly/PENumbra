@@ -964,6 +964,20 @@ function makeShadingMaterialFrom(sourceMaterial){
   mat.color.set(0xffffff);   // avoid the mesh's own albedo tinting the output
   mat.map = null; mat.normalMap = null; mat.roughnessMap = null;   // avoid texture-driven contamination — pure geometry+lighting only
   mat.metalnessMap = null; mat.aoMap = null; mat.emissiveMap = null;
+  // Three caches compiled programs by a key it derives itself from ordinary
+  // material/light/renderer state — it has no way to know onBeforeCompile's
+  // injected GLSL below also depends on the Cast shadows checkbox, since
+  // that's plain external JS state, invisible to Three's own key. Without
+  // this, toggling Cast shadows (or Ground shadow, which forces the same
+  // NUM_DIR_LIGHT_SHADOWS>0 condition on) after a program for the OTHER
+  // state has already been compiled+cached reuses that stale program
+  // outright — onBeforeCompile never runs again, so the buffer keeps
+  // whatever shadow behavior was baked in the first time, until something
+  // forces a full recompile (e.g. a page reload resets Three's cache).
+  // customProgramCacheKey is exactly Three's own escape hatch for this:
+  // fold the external condition into the key so each state gets its own
+  // cached program instead of colliding.
+  mat.customProgramCacheKey = () => $('castShadows').checked ? 'shadingCast' : 'shadingNoCast';
   mat.onBeforeCompile = shader => {
     // Overwrites the material's final color output (right at
     // #include<dithering_fragment>, one of the last chunks in Three's
