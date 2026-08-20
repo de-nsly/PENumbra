@@ -40,8 +40,20 @@ than is repeated here — read the top of the file you're editing first.
 
 **Two execution contexts:**
 1. **Main thread** (the files above): UI, three.js viewport, paper preview, SVG assembly/export.
-2. **HLR worker**: `js/worker/solver.js` (~3,400 lines, between the `__CORE_START__`/`__CORE_END__`
-   markers). `main.js` boots it as a module worker: `new Worker('js/worker/solver.js', { type: 'module' })`.
+2. **HLR worker**: `js/worker/*.js`, real ES modules imported by `js/worker/solver.js`, the entry point
+   `main.js` boots as a module worker: `new Worker('js/worker/solver.js', { type: 'module' })`. Split along
+   the solver's own declaration groups, each a one-directional leaf `solver.js` imports from — none of them
+   import from each other or from `solver.js`:
+   - `parsers.js` — parseSTL/parseOBJ/demoSoup, turning a file (or nothing) into a flat triangle soup.
+   - `mesh.js` — buildMesh/computeCornerNormals and the module-level mesh state `M`, rebuilt only on
+     `load`/`demo`.
+   - `geom-utils.js` — segment intersection/spatial indexing, the light-space shadow map
+     (`buildShadowMap`), screen→world face recovery (`worldOnFace`), circle/ring pattern walking, and
+     shading-buffer sampling.
+   - `dedup.js` — collinear-overlap cleanup (`dedupCollinear`), higher-layer coverage subtraction
+     (`subtractCovered`), and crease-junction arm pairing (`pairJunctionArms`).
+   - `solver.js` — `generate()`/`generateRawEdges()` (the actual HLR solve) and the `self.onmessage`
+     dispatcher; composes the four modules above.
 
 **Worker message protocol** (dispatched in `scene-io.js`'s `worker.onmessage`, handled in the worker's own
 `self.onmessage`): `load`/`demo` (parse STL/OBJ, build mesh, reply `loaded`) -> `generate` (run the HLR
