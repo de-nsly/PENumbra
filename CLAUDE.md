@@ -6,8 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PENumbra is a browser-based hidden-line-removal (HLR) "plotter studio": load an STL/OBJ mesh, it computes
 silhouette/contour/crease edges and hatching, and exports pen-plotter-ready SVG laid out on a paper sheet.
-It is a single static page — no build step, no bundler, no package.json, no test suite. Open `index.html`
-directly (file:// works) or serve the directory with any static file server.
+It is a single static page — no build step, no bundler, no package.json, no test suite. The HLR worker
+(`js/worker/solver.js`) is booted as a module worker, which browsers refuse to load from a `file://` page,
+so `index.html` must be served over HTTP — e.g. `python3 -m http.server 8000` from the repo root, then open
+`http://localhost:8000/`.
 
 The only external dependency is `three.js r128`, loaded from a CDN `<script>` tag in `index.html` (used
 for the live 3D viewport only — the HLR solver itself is dependency-free). Fonts are loaded from Google
@@ -38,12 +40,8 @@ than is repeated here — read the top of the file you're editing first.
 
 **Two execution contexts:**
 1. **Main thread** (the files above): UI, three.js viewport, paper preview, SVG assembly/export.
-2. **HLR worker**: a large inline script, embedded as `<script id="worker-code" type="text/plain">` in
-   `index.html` (~3,300 lines, between the `__CORE_START__`/`__CORE_END__` markers). It's read out of the
-   DOM and spun up via `new Worker(URL.createObjectURL(new Blob([...])))` in `main.js` — done this way
-   specifically so the app keeps working when opened as a `file://` page, which can't `fetch()` a sibling
-   `.js` file as a worker script. When editing the solver, you are editing a `<script>` block inside
-   `index.html`, not a `.js` file in `js/`.
+2. **HLR worker**: `js/worker/solver.js` (~3,400 lines, between the `__CORE_START__`/`__CORE_END__`
+   markers). `main.js` boots it as a module worker: `new Worker('js/worker/solver.js', { type: 'module' })`.
 
 **Worker message protocol** (dispatched in `scene-io.js`'s `worker.onmessage`, handled in the worker's own
 `self.onmessage`): `load`/`demo` (parse STL/OBJ, build mesh, reply `loaded`) -> `generate` (run the HLR

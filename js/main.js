@@ -2,8 +2,7 @@
 /* ================================================================
    main.js — shared app state & boot glue
    Declares the $ helper, the layer registry, and instantiates the
-   HLR worker (from the inline worker-code script block in index.html,
-   since file:// pages can't load a worker from a separate .js file).
+   HLR worker as a module worker from js/worker/solver.js.
    Load this file FIRST — every other file assumes $, LAYERS, DASH_RATIOS/scaledDash
    and 'worker' already exist as globals.
    ================================================================ */
@@ -120,5 +119,4 @@ function dashOnFraction(key){
 })();
 
 /* ================= worker ================= */
-const workerSrc = document.getElementById('worker-code').textContent;
-const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type:'text/javascript' })));
+const worker = new Worker('js/worker/solver.js', { type: 'module' });
