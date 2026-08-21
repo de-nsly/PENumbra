@@ -898,12 +898,24 @@ function generate(cam, S, shadingBuffer){
       siChains.push(walk(e,false));
     }
   }
-  // project every silhouette-topo edge's endpoints once — mirrors ccX0/etc. above for crease
-  const siX0=new Float32Array(ne), siY0=new Float32Array(ne), siZ0=new Float32Array(ne);
-  const siX1=new Float32Array(ne), siY1=new Float32Array(ne), siZ1=new Float32Array(ne);
-  const siValid=new Uint8Array(ne);   // stage 2 needs to know which edges actually got projected
+  // segment records — one per silhouette-topology edge, ready to also host
+  // non-edge (face-interior) segments in a future phase; see comment above.
+  // csX0/Y0/Z0 and csX1/Y1/Z1 keep the edge's OWN ea→eb direction (never
+  // normalised to chain-walk direction — that direction now lives in
+  // chainRev below, exactly where `rev` lived in the old edge-indexed walk).
+  let nCS = 0;
+  const edgeToSeg = new Int32Array(ne).fill(-1);
+  for (let e=0;e<ne;e++) if (isSilTopo[e]) edgeToSeg[e] = nCS++;
+  const csX0=new Float32Array(nCS), csY0=new Float32Array(nCS), csZ0=new Float32Array(nCS);
+  const csX1=new Float32Array(nCS), csY1=new Float32Array(nCS), csZ1=new Float32Array(nCS);
+  const csFaceA=new Int32Array(nCS), csFaceB=new Int32Array(nCS);
+  const csShell=new Int32Array(nCS);
+  const csEdge=new Int32Array(nCS);
+  const csValid=new Uint8Array(nCS);   // stage 2 needs to know which segments actually got projected
   for (let e=0;e<ne;e++){
     if (!isSilTopo[e]) continue;
+    const i = edgeToSeg[e];
+    csEdge[i]=e; csFaceA[i]=et0[e]; csFaceB[i]=et1[e]; csShell[i]=COMP[et0[e]];
     const a=ea[e], b=eb[e];
     let X0,Y0,Z0,X1,Y1,Z1;
     if (ok[a]&&ok[b]){ X0=sx[a];Y0=sy[a];Z0=iz[a]; X1=sx[b];Y1=sy[b];Z1=iz[b]; }
@@ -916,14 +928,35 @@ function generate(cam, S, shadingBuffer){
       const A2=projView(pa[0],pa[1],pa[2]), B2=projView(pb[0],pb[1],pb[2]);
       X0=A2[0];Y0=A2[1];Z0=A2[2]; X1=B2[0];Y1=B2[1];Z1=B2[2];
     }
-    siX0[e]=X0; siY0[e]=Y0; siZ0[e]=Z0; siX1[e]=X1; siY1[e]=Y1; siZ1[e]=Z1;
-    siValid[e]=1;
+    csX0[i]=X0; csY0[i]=Y0; csZ0[i]=Z0; csX1[i]=X1; csY1[i]=Y1; csZ1[i]=Z1;
+    csValid[i]=1;
   }
-  if (layerOn.sv || layerOn.sh) for (const chain of siChains){
+  // chains, CSR over segment indices — same chain/segment order as the walk
+  // above, just relabeled from edge index to segment index via edgeToSeg.
+  const chainStart = new Int32Array(siChains.length + 1);
+  let chainSegTotal = 0;
+  for (const c of siChains) chainSegTotal += c.edges.length;
+  const chainSeg = new Int32Array(chainSegTotal);
+  const chainRev = new Uint8Array(chainSegTotal);
+  const chainClosed = new Uint8Array(siChains.length);
+  {
+    let p = 0;
+    for (let ci=0; ci<siChains.length; ci++){
+      const c = siChains[ci];
+      chainStart[ci] = p;
+      for (const {e, rev} of c.edges){ chainSeg[p]=edgeToSeg[e]; chainRev[p]=rev?1:0; p++; }
+      chainClosed[ci] = c.cycle ? 1 : 0;
+    }
+    chainStart[siChains.length] = p;
+  }
+  if (layerOn.sv || layerOn.sh) for (let ci=0; ci<siChains.length; ci++){
+    const segStart = chainStart[ci], segEnd = chainStart[ci+1], cycle = !!chainClosed[ci];
     const pieces = [];
-    for (const {e:ei, rev} of chain.edges){
-      const hid = occlude(siX0[ei],siY0[ei],siZ0[ei],siX1[ei],siY1[ei],siZ1[ei],
-                           et0[ei], et1[ei], undefined, ea[ei], eb[ei]);
+    for (let p=segStart; p<segEnd; p++){
+      const seg = chainSeg[p], rev = !!chainRev[p];
+      const e = csEdge[seg];
+      const hid = occlude(csX0[seg],csY0[seg],csZ0[seg],csX1[seg],csY1[seg],csZ1[seg],
+                           csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
       const nat = [];
       let t=0;
       for (let i=0;i<hid.length;i+=2){
@@ -936,13 +969,13 @@ function generate(cam, S, shadingBuffer){
       for (const [st,s0,s1] of walked){
         const t0 = rev ? 1-s0 : s0, t1w = rev ? 1-s1 : s1;
         pieces.push([st,
-          [siX0[ei]+(siX1[ei]-siX0[ei])*t0, siY0[ei]+(siY1[ei]-siY0[ei])*t0],
-          [siX0[ei]+(siX1[ei]-siX0[ei])*t1w, siY0[ei]+(siY1[ei]-siY0[ei])*t1w]]);
+          [csX0[seg]+(csX1[seg]-csX0[seg])*t0, csY0[seg]+(csY1[seg]-csY0[seg])*t0],
+          [csX0[seg]+(csX1[seg]-csX0[seg])*t1w, csY0[seg]+(csY1[seg]-csY0[seg])*t1w]]);
       }
     }
     if (!pieces.length) continue;
     let ordered = pieces;
-    if (chain.cycle && pieces.length>1){
+    if (cycle && pieces.length>1){
       let rotateAt=-1;
       for (let i=0;i<pieces.length;i++){
         const prev = pieces[(i-1+pieces.length)%pieces.length];
@@ -1067,24 +1100,24 @@ function generate(cam, S, shadingBuffer){
     return bestF;   // -1 = nothing behind (open background)
   };
 
-  const siList = [];      // compact list of valid stage-1 edge indices
+  const siList = [];      // compact list of valid stage-1 segment indices
   const siFlat = [];      // parallel flat [x0,y0,x1,y1,...] for buildSegGrid
-  for (let e=0;e<ne;e++){
-    if (!isSilTopo[e] || !siValid[e]) continue;
-    siList.push(e);
-    siFlat.push(siX0[e], siY0[e], siX1[e], siY1[e]);
+  for (let seg=0;seg<nCS;seg++){
+    if (!csValid[seg]) continue;
+    siList.push(seg);
+    siFlat.push(csX0[seg], csY0[seg], csX1[seg], csY1[seg]);
   }
-  const siShellOfIdx = siList.map(e => COMP[et0[e]]);
-  const siCuts = siList.map((e) => [ {t:0, x:siX0[e], y:siY0[e]}, {t:1, x:siX1[e], y:siY1[e]} ]);
+  const siShellOfIdx = siList.map(seg => csShell[seg]);
+  const siCuts = siList.map((seg) => [ {t:0, x:csX0[seg], y:csY0[seg]}, {t:1, x:csX1[seg], y:csY1[seg]} ]);
   if (siList.length && siList.length <= 60000){
     const siSplitGrid = buildSegGrid(siFlat);
     for (let idx=0; idx<siList.length; idx++){
-      const e = siList[idx];
-      const x0=siX0[e], y0=siY0[e], x1=siX1[e], y1=siY1[e];
+      const seg = siList[idx];
+      const x0=csX0[seg], y0=csY0[seg], x1=csX1[seg], y1=csY1[seg];
       siSplitGrid.query(x0,y0,x1,y1, jdx => {
         if (jdx <= idx) return;               // each crossing pair handled once, from the lower index
-        const e2 = siList[jdx];
-        const hit = intersectSegs(x0,y0,x1,y1, siX0[e2],siY0[e2],siX1[e2],siY1[e2]);
+        const seg2 = siList[jdx];
+        const hit = intersectSegs(x0,y0,x1,y1, csX0[seg2],csY0[seg2],csX1[seg2],csY1[seg2]);
         if (!hit) return;
         // ONE shared point, computed from idx's own line, consumed by BOTH sides
         const X = x0 + (x1-x0)*hit.t, Y = y0 + (y1-y0)*hit.t;
@@ -1094,8 +1127,8 @@ function generate(cam, S, shadingBuffer){
     }
   }
 
-  const idxOfEdge = new Int32Array(ne).fill(-1);
-  for (let idx=0; idx<siList.length; idx++) idxOfEdge[siList[idx]] = idx;
+  const idxOfSeg = new Int32Array(nCS).fill(-1);
+  for (let idx=0; idx<siList.length; idx++) idxOfSeg[siList[idx]] = idx;
   const lerp2 = (ca,cb,t) => [ca.x+(cb.x-ca.x)*t, ca.y+(cb.y-ca.y)*t];
   // Builds ONE edge's ordered piece-or-break list (in the edge's own ea→eb
   // direction). A "break" is an explicit backdrop-drop (self-occlusion) —
@@ -1115,9 +1148,10 @@ function generate(cam, S, shadingBuffer){
   // right there would end up preserved as a genuine cut and then dropped
   // by emit()'s length filter anyway — a real, if tiny, gap invisible
   // until zoomed in.)
-  function buildEdgePieces(e, wantIndividual){
-    const idx = idxOfEdge[e];
+  function buildEdgePieces(seg, wantIndividual){
+    const idx = idxOfSeg[seg];
     const shell = siShellOfIdx[idx];
+    const e = csEdge[seg];
     // Both modes now split at EVERY crossing, same-shell or not (previously
     // Individual only split at same-shell crossings, leaving cross-shell
     // occlusion boundaries — e.g. where one torus disappears behind another
@@ -1151,13 +1185,13 @@ function generate(cam, S, shadingBuffer){
     const OUTWARD_EPS = 0.01;
     let ox=0, oy=0;
     {
-      const ex = siX1[e]-siX0[e], ey = siY1[e]-siY0[e];
+      const ex = csX1[seg]-csX0[seg], ey = csY1[seg]-csY0[seg];
       const elen = Math.hypot(ex,ey) || 1;
       let nx = -ey/elen, ny = ex/elen;
-      const refFace = (et1[e]<0 || front[et0[e]]) ? et0[e] : et1[e];
+      const refFace = (csFaceB[seg]<0 || front[csFaceA[seg]]) ? csFaceA[seg] : csFaceB[seg];
       const va=tri[refFace*3], vb=tri[refFace*3+1], vc=tri[refFace*3+2];
       const tv = (va!==ea[e] && va!==eb[e]) ? va : (vb!==ea[e] && vb!==eb[e]) ? vb : vc;
-      const emx=(siX0[e]+siX1[e])/2, emy=(siY0[e]+siY1[e])/2;
+      const emx=(csX0[seg]+csX1[seg])/2, emy=(csY0[seg]+csY1[seg])/2;
       const tvx = sx[tv]-emx, tvy = sy[tv]-emy;
       // nx,ny should point AWAY from the material — if it currently points
       // toward the reference face's own third vertex (into the material), flip it
@@ -1169,13 +1203,13 @@ function generate(cam, S, shadingBuffer){
       const ca=cuts[k], cb=cuts[k+1];
       if (cb.t - ca.t < 1e-6) continue;
       const tm = (ca.t+cb.t)/2;
-      const mx = siX0[e]+(siX1[e]-siX0[e])*tm, my = siY0[e]+(siY1[e]-siY0[e])*tm;
-      const backF = pickBackdropFace(mx+ox, my+oy, et0[e], et1[e]);
+      const mx = csX0[seg]+(csX1[seg]-csX0[seg])*tm, my = csY0[seg]+(csY1[seg]-csY0[seg])*tm;
+      const backF = pickBackdropFace(mx+ox, my+oy, csFaceA[seg], csFaceB[seg]);
       const dropSelf = backF>=0 && COMP[backF]===shell;
       const keep = wantIndividual ? !dropSelf : backF<0;
       if (!keep){ out.push({brk:true}); continue; }
-      const sz0 = siZ0[e]+(siZ1[e]-siZ0[e])*ca.t, sz1 = siZ0[e]+(siZ1[e]-siZ0[e])*cb.t;
-      const hid = occlude(ca.x,ca.y,sz0, cb.x,cb.y,sz1, et0[e], et1[e], undefined, ea[e], eb[e]);
+      const sz0 = csZ0[seg]+(csZ1[seg]-csZ0[seg])*ca.t, sz1 = csZ0[seg]+(csZ1[seg]-csZ0[seg])*cb.t;
+      const hid = occlude(ca.x,ca.y,sz0, cb.x,cb.y,sz1, csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
       let t=0;
       for (let i=0;i<hid.length;i+=2){
         if (hid[i]>t) out.push({st:'v', p0:lerp2(ca,cb,t), p1:lerp2(ca,cb,hid[i])});
@@ -1190,13 +1224,15 @@ function generate(cam, S, shadingBuffer){
   if (layerOn.iv || layerOn.ih) wantedModes.push(true);    // Silhouette individual
   if (layerOn.so) wantedModes.push(false);                 // Silhouette
   for (const wantIndividual of wantedModes){
-    for (const chain of siChains){
-      // full chain walk, concatenating every edge's pieces (respecting rev)
-      // into one continuous sequence before any flushing happens
+    for (let ci=0; ci<siChains.length; ci++){
+      const segStart = chainStart[ci], segEnd = chainStart[ci+1], cycle = !!chainClosed[ci];
+      // full chain walk, concatenating every segment's pieces (respecting
+      // rev) into one continuous sequence before any flushing happens
       let pieces = [];
-      for (const {e:ei, rev} of chain.edges){
-        if (idxOfEdge[ei] < 0) continue;   // shouldn't happen, but stay defensive
-        const edgePieces = buildEdgePieces(ei, wantIndividual);
+      for (let pi=segStart; pi<segEnd; pi++){
+        const seg = chainSeg[pi], rev = !!chainRev[pi];
+        if (idxOfSeg[seg] < 0) continue;   // shouldn't happen, but stay defensive
+        const edgePieces = buildEdgePieces(seg, wantIndividual);
         const walked = rev
           ? edgePieces.slice().reverse().map(p => p.brk ? p : { st:p.st, p0:p.p1, p1:p.p0 })
           : edgePieces;
@@ -1208,7 +1244,7 @@ function generate(cam, S, shadingBuffer){
       // Crease/Contour above — so the arbitrary walk-start seam never
       // artificially splits one continuous run into two.
       const hasBreak = pieces.some(p => p.brk);
-      if (chain.cycle && !hasBreak && pieces.length>1){
+      if (cycle && !hasBreak && pieces.length>1){
         let rotateAt=-1;
         for (let i=0;i<pieces.length;i++){
           const prev = pieces[(i-1+pieces.length)%pieces.length];
