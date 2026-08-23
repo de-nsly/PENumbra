@@ -964,6 +964,17 @@ function generate(cam, S, shadingBuffer){
     }
     chainStart[siChains.length] = p;
   }
+  // TEMPORARY DEBUG BYPASS — see debugContourBypassOcclusion checkbox
+  // (index.html) / gatherSettings (panel-controls.js). When on: every
+  // Contour edge is treated as fully visible (hid=[]), which — as a direct
+  // consequence, no code below needs to change — also collapses run
+  // assembly to exactly one run per chain (curState never changes, so
+  // flushRun only fires once), and dedupCollinear is skipped for sv/sh
+  // below. Lets the raw, unoccluded, unprocessed chain geometry reach the
+  // live 2D viewport/SVG directly, for backdrop-test experimentation.
+  // Revert: delete this const, the ternary using it just below, and the
+  // `if (debugContourRaw) continue;` in the dedup loop further down.
+  const debugContourRaw = !!S.debugContourBypassOcclusion;
   // Distinct runId per flushRun() call below, shared across every siChain —
   // never reset per-chain, so two runs can never collide even when their
   // endpoints happen to coincide on screen (the whole point of Phase 3a:
@@ -975,7 +986,7 @@ function generate(cam, S, shadingBuffer){
     for (let p=segStart; p<segEnd; p++){
       const seg = chainSeg[p], rev = !!chainRev[p];
       const e = csEdge[seg];
-      const hid = occlude(csX0[seg],csY0[seg],csZ0[seg],csX1[seg],csY1[seg],csZ1[seg],
+      const hid = debugContourRaw ? [] : occlude(csX0[seg],csY0[seg],csZ0[seg],csX1[seg],csY1[seg],csZ1[seg],
                            csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
       const nat = [];
       let t=0;
@@ -2072,6 +2083,7 @@ function generate(cam, S, shadingBuffer){
      loses nothing. */
   for (const k of ['sv','sh','cv','ch','so']){
     if (k==='sv' || k==='sh'){
+      if (debugContourRaw) continue;   // TEMPORARY DEBUG BYPASS — see debugContourRaw above
       const res = dedupCollinear(groups[k], effOffTol, effGapTol, runIds[k], seqs[k]);
       groups[k] = res.arr; runIds[k] = res.runIds; seqs[k] = res.seqs;
     } else {

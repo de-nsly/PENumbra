@@ -594,6 +594,11 @@
         <button type="button" class="btn" id="debugSoIvOverlayBtn" style="width:100%;margin-bottom:8px">Export Silhouette vs Individual (pre-dedup)</button>
         <label class="chk" style="margin:10px 0 0"><input type="checkbox" id="debugShowPathEndpoints">
           Mark path endpoints (Silhouette / Individual / Contour)</label>
+        <!-- TEMPORARY DEBUG BYPASS — see debugContourRaw in generate() (js/worker/solver.js)
+             and gatherSettings (js/panel-controls.js). Revert by deleting this checkbox
+             and the two gated spots those files' comments point to. -->
+        <label class="chk" style="margin:8px 0 0"><input type="checkbox" id="debugContourBypassOcclusion" data-regen>
+          Contour: bypass occlusion + dedup (raw chains)</label>
       </div>
     </div>
     <div id="penTab">

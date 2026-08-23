@@ -224,6 +224,10 @@ function gatherSettings(){
   const mmToPx = mm => layout ? mm / layout.scale : mm;
   return {
     watertight: $('watertight').checked,
+    // TEMPORARY DEBUG BYPASS — see debugContourRaw in generate() (solver.js)
+    // and the checkbox in index.html. Revert by deleting this line, the
+    // checkbox, and the two gated spots in solver.js.
+    debugContourBypassOcclusion: $('debugContourBypassOcclusion').checked,
     // Multipliers on the solver's own auto-computed, zoom-independent
     // dedup tolerances (see effOffTol/effGapTol in generate()) — 1.0 is
     // the original unscaled behavior. Kept as multipliers rather than raw
