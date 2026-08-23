@@ -332,9 +332,18 @@ const exactDupPairKey = (x0,y0,x1,y1) => {
   return ka<kb ? ka+'|'+kb : kb+'|'+ka;
 };
 
-export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
+/* runIds/seqs (Phase 3a — see PHASE3a-chain-identity.md): optional parallel
+   identity arrays, one entry per input segment, carried by the Contour
+   layers (sv/sh) only — every other caller omits them and gets the
+   original plain-array return, untouched. When supplied, this function
+   returns { arr, runIds, seqs } instead of a bare array: a merge here is
+   genuine double ink between two chains (or two pieces of the same chain),
+   so the survivor inherits the runId/seq of whichever contributing span
+   was longest — ties and single-run merges naturally keep that run's own
+   id, since nothing with greater length ever displaces it. */
+export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL, runIds=null, seqs=null){
   const n0 = arr.length/4;
-  if (n0 < 2) return arr;
+  if (n0 < 2) return runIds ? { arr, runIds, seqs } : arr;
   // Exact-duplicate fast path — see EXACT_DUP_EPS above. Collapses literal
   // (within float noise) duplicates to one copy each, unconditionally,
   // before the tolerance-based clustering below — the two mechanisms
@@ -353,18 +362,29 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
   }
   if (keepIdx.length < n0){
     const reduced = [];
-    for (const i of keepIdx) reduced.push(arr[i*4],arr[i*4+1],arr[i*4+2],arr[i*4+3]);
+    const reducedRunIds = runIds ? [] : null;
+    const reducedSeqs = seqs ? [] : null;
+    for (const i of keepIdx){
+      reduced.push(arr[i*4],arr[i*4+1],arr[i*4+2],arr[i*4+3]);
+      if (runIds){ reducedRunIds.push(runIds[i]); reducedSeqs.push(seqs[i]); }
+    }
     arr = reduced;
+    if (runIds){ runIds = reducedRunIds; seqs = reducedSeqs; }
   }
   const n = arr.length/4;
-  if (n < 2) return arr;
+  if (n < 2) return runIds ? { arr, runIds, seqs } : arr;
   const { clusters } = clusterCollinear(arr, offTol, gapTol);
   const out = [];
+  const outRunIds = runIds ? [] : null;
+  const outSeqs = seqs ? [] : null;
   for (const L of clusters){
     if (L.idxs.length < 2){
       const i = L.idxs[0];
       const x0=arr[i*4],y0=arr[i*4+1],x1=arr[i*4+2],y1=arr[i*4+3];
-      if (Math.hypot(x1-x0,y1-y0) > MIN_SEG) out.push(x0,y0,x1,y1);
+      if (Math.hypot(x1-x0,y1-y0) > MIN_SEG){
+        out.push(x0,y0,x1,y1);
+        if (runIds){ outRunIds.push(runIds[i]); outSeqs.push(seqs[i]); }
+      }
       continue;
     }
     // union along the line direction (tx,ty) = (-ny,nx)
@@ -381,7 +401,7 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
       // input segment's direction exactly, never a drifted stand-in.
       const lo = t0r<=t1r ? {t:t0r,x:x0,y:y0} : {t:t1r,x:x1,y:y1};
       const hi = t0r<=t1r ? {t:t1r,x:x1,y:y1} : {t:t0r,x:x0,y:y0};
-      spans.push([lo,hi]);
+      spans.push([lo,hi,i]);
     }
     spans.sort((a,b)=>a[0].t-b[0].t);
     /* Sweep left-to-right maintaining one "backbone" run — either a single
@@ -405,30 +425,53 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
        genuinely different, merely-nearby-in-tolerance span into a single
        new interior point — the one case that produced the zig-zag: two
        close-but-distinct lines whose interleaved pieces used to get
-       stitched together using whichever endpoint happened to be extremal. */
+       stitched together using whichever endpoint happened to be extremal.
+       ownerRunId/ownerSeq/ownerLen (only tracked when runIds is supplied)
+       ride alongside the backbone, always holding the identity of whichever
+       contributing span is currently longest — reset outright whenever the
+       backbone itself resets (trim/gap), only displaced by a strictly
+       longer newcomer when bridged or subsumed. */
     let bs = spans[0][0], be = spans[0][1];
+    let ownerRunId = runIds ? runIds[spans[0][2]] : undefined;
+    let ownerSeq = runIds ? seqs[spans[0][2]] : undefined;
+    let ownerLen = be.t - bs.t;
+    const pushBackbone = () => {
+      if (be.t - bs.t > MIN_SEG){
+        out.push(bs.x, bs.y, be.x, be.y);
+        if (runIds){ outRunIds.push(ownerRunId); outSeqs.push(ownerSeq); }
+      }
+    };
     for (let k=1; k<spans.length; k++){
-      const ns = spans[k][0], ne = spans[k][1];
+      const ns = spans[k][0], ne = spans[k][1], srcI = spans[k][2];
+      const nsLen = ne.t - ns.t;
       if (ne.t <= be.t){
+        if (runIds && nsLen > ownerLen){ ownerRunId=runIds[srcI]; ownerSeq=seqs[srcI]; ownerLen=nsLen; }
         continue;                                  // fully redundant — drop
       }
       if (ns.t <= be.t){
         // overlaps and extends further: keep backbone whole, trim next's
         // own head at t=be.t using ONLY next's two endpoints
-        if (be.t - bs.t > MIN_SEG) out.push(bs.x, bs.y, be.x, be.y);
+        pushBackbone();
         const frac = (be.t - ns.t) / Math.max(1e-9, ne.t - ns.t);
         bs = { t: be.t, x: ns.x + (ne.x-ns.x)*frac, y: ns.y + (ne.y-ns.y)*frac };
         be = ne;
+        ownerRunId = runIds ? runIds[srcI] : undefined;
+        ownerSeq = runIds ? seqs[srcI] : undefined;
+        ownerLen = be.t - bs.t;
       } else if (ns.t <= be.t + gapTol){
         be = ne;                                    // real gap, but bridgeable
+        if (runIds && nsLen > ownerLen){ ownerRunId=runIds[srcI]; ownerSeq=seqs[srcI]; ownerLen=nsLen; }
       } else {
-        if (be.t - bs.t > MIN_SEG) out.push(bs.x, bs.y, be.x, be.y);
+        pushBackbone();
         bs = ns; be = ne;
+        ownerRunId = runIds ? runIds[srcI] : undefined;
+        ownerSeq = runIds ? seqs[srcI] : undefined;
+        ownerLen = be.t - bs.t;
       }
     }
-    if (be.t - bs.t > MIN_SEG) out.push(bs.x, bs.y, be.x, be.y);
+    pushBackbone();
   }
-  return out;
+  return runIds ? { arr: out, runIds: outRunIds, seqs: outSeqs } : out;
 }
 
 /* Remove, from `loArr`, any portion that lies on the same infinite line AND
@@ -439,9 +482,18 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
    A lo segment can emerge as zero, one, or several pieces (if hi coverage
    has a gap inside it, both remaining ends survive as separate segments).
    Segments with no collinear match in hiArr pass through unchanged. */
-export function subtractCovered(loArr, hiArr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
+/* runIds/seqs (Phase 3a — see PHASE3a-chain-identity.md): optional parallel
+   identity arrays, one entry per input lo segment, carried by the Contour
+   layers (sv/sh) only. subtractCovered only ever trims or removes — it
+   never merges two lo segments together — so every surviving piece simply
+   copies its source lo segment's runId/seq verbatim; a split just yields
+   two pieces sharing that same pair, which chainByRun's endpoint-adjacency
+   walk (js/svg-export.js) resolves correctly on its own. When supplied,
+   returns { arr, runIds, seqs } instead of a bare array; omitted entirely
+   for every other caller, which gets the original plain-array return. */
+export function subtractCovered(loArr, hiArr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL, runIds=null, seqs=null){
   const hn0 = hiArr.length/4;
-  if (!hn0 || !loArr.length) return loArr;
+  if (!hn0 || !loArr.length) return runIds ? { arr: loArr, runIds, seqs } : loArr;
   // Exact-duplicate fast path — see EXACT_DUP_EPS above. Runs first,
   // unconditionally, so a lo segment with a literal duplicate in hi is
   // ALWAYS fully removed, with zero dependence on offTol/gapTol and zero
@@ -454,14 +506,18 @@ export function subtractCovered(loArr, hiArr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP
   }
   const ln0 = loArr.length/4;
   const remainingLo = [];
+  const remainingRunIds = runIds ? [] : null;
+  const remainingSeqs = seqs ? [] : null;
   for (let i=0;i<ln0;i++){
     const x0=loArr[i*4],y0=loArr[i*4+1],x1=loArr[i*4+2],y1=loArr[i*4+3];
     if (hiExact.has(exactDupPairKey(x0,y0,x1,y1))) continue;   // exact duplicate — fully covered, drop
     remainingLo.push(x0,y0,x1,y1);
+    if (runIds){ remainingRunIds.push(runIds[i]); remainingSeqs.push(seqs[i]); }
   }
   loArr = remainingLo;
+  if (runIds){ runIds = remainingRunIds; seqs = remainingSeqs; }
   const hn = hiArr.length/4;
-  if (!hn || !loArr.length) return loArr;
+  if (!hn || !loArr.length) return runIds ? { arr: loArr, runIds, seqs } : loArr;
   /* THE SHIFT-BUG FIX. The old version parameterized each hi group's covered
      intervals along the GROUP's own tangent basis, then compared those t
      values against a lo segment's t values computed in the LO segment's
@@ -478,16 +534,22 @@ export function subtractCovered(loArr, hiArr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP
   const hiClustered = clusterCollinear(hiArr, offTol, gapTol);
   const ln = loArr.length/4;
   const out = [];
+  const outRunIds = runIds ? [] : null;
+  const outSeqs = seqs ? [] : null;
   const ivs = [];                                        // scratch, reused per lo segment
   for (let i=0;i<ln;i++){
     const x0=loArr[i*4],y0=loArr[i*4+1],x1=loArr[i*4+2],y1=loArr[i*4+3];
+    const emitPiece = (ax,ay,bx,by) => {
+      out.push(ax,ay,bx,by);
+      if (runIds){ outRunIds.push(runIds[i]); outSeqs.push(seqs[i]); }
+    };
     let dx=x1-x0, dy=y1-y0; const len=Math.hypot(dx,dy);
     if (len<1e-6) continue;
     dx/=len; dy/=len;
     if (dx<0 || (dx===0 && dy<0)){ dx=-dx; dy=-dy; }
     const nx=-dy, ny=dx, c=nx*x0+ny*y0;
     const found = findCollinearMatch(hiClustered, offTol, gapTol, x0,y0,x1,y1);
-    if (!found){ out.push(x0,y0,x1,y1); continue; }     // no collinear hi coverage — keep as-is
+    if (!found){ emitPiece(x0,y0,x1,y1); continue; }     // no collinear hi coverage — keep as-is
     // project the matched group's RAW hi endpoints into THIS lo segment's own
     // tangent axis, then sort + gap-merge + subtract — all in one basis
     const tx=dx, ty=dy;
@@ -512,11 +574,11 @@ export function subtractCovered(loArr, hiArr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP
       // segment — some plotter software treats near-zero-length paths as
       // literal zero-length "points" rather than dropping them
       const segEnd = Math.min(s,t1);
-      if (segEnd-cur > MIN_SEG) out.push(px+tx*cur,py+ty*cur, px+tx*segEnd,py+ty*segEnd);
+      if (segEnd-cur > MIN_SEG) emitPiece(px+tx*cur,py+ty*cur, px+tx*segEnd,py+ty*segEnd);
       cur = Math.max(cur, e);
       if (cur>=t1) break;
     }
-    if (t1-cur > MIN_SEG) out.push(px+tx*cur,py+ty*cur, px+tx*t1,py+ty*t1);
+    if (t1-cur > MIN_SEG) emitPiece(px+tx*cur,py+ty*cur, px+tx*t1,py+ty*t1);
   }
-  return out;
+  return runIds ? { arr: out, runIds: outRunIds, seqs: outSeqs } : out;
 }

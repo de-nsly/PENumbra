@@ -2,8 +2,8 @@
    worker/solver.js — HLR worker entry point
    Boots as a module worker (see main.js). Owns the message dispatcher
    (self.onmessage) and the core solve pipeline (generate,
-   generateRawEdges), composing the mesh/parsing/geometry/dedup
-   building blocks from the sibling modules below.
+   generateRawEdges, generateRawContourEdges), composing the mesh/parsing/
+   geometry/dedup building blocks from the sibling modules below.
    ================================================================ */
 import { parseSTL, parseOBJ, demoSoup } from './parsers.js';
 import { M, buildMesh, computeCornerNormals } from './mesh.js';
@@ -608,6 +608,21 @@ function generate(cam, S, shadingBuffer){
 
   /* 6 · candidate edges → visible / hidden segments */
   const groups={ sv:[], sh:[], cv:[], ch:[], h1:[], h2:[], h3:[], so:[], iv:[], ih:[] };
+  // Contour (sv/sh) chain identity — Phase 3a, see PHASE3a-chain-identity.md.
+  // One runId/seq entry per segment actually pushed to groups.sv/groups.sh,
+  // parallel to those arrays: runId names which topological run (one
+  // flushRun() call, below) a segment came from, seq its order within that
+  // run. No other layer carries this — the exporter still rebuilds so/iv/ih
+  // and cv/ch chains from coordinates/array-adjacency as before.
+  const runIds = { sv:[], sh:[] };
+  const seqs = { sv:[], sh:[] };
+  // Diagnostic only (Phase 3a Step 4 — see PHASE3a-chain-identity.md): raw
+  // per-run pixel length, one entry per genuine flushRun() below, captured
+  // BEFORE dedupCollinear/subtractCovered can merge or drop any of them —
+  // the "ceiling" the phase's measurement step compares the final path
+  // count against. Read from devtools console as
+  // lastGen.counts.contourRunLensSv / …Sh; not used by the pipeline itself.
+  const contourRunLens = { sv:[], sh:[] };
   const hatchCarrier={ h1:[], h2:[], h3:[] };
   const counts={};
   const emit=(arr,x0,y0,x1,y1,tA,tB)=>{
@@ -949,6 +964,11 @@ function generate(cam, S, shadingBuffer){
     }
     chainStart[siChains.length] = p;
   }
+  // Distinct runId per flushRun() call below, shared across every siChain —
+  // never reset per-chain, so two runs can never collide even when their
+  // endpoints happen to coincide on screen (the whole point of Phase 3a:
+  // stop the exporter from inferring connectivity from coordinates).
+  let contourRunSeq = 0;
   if (layerOn.sv || layerOn.sh) for (let ci=0; ci<siChains.length; ci++){
     const segStart = chainStart[ci], segEnd = chainStart[ci+1], cycle = !!chainClosed[ci];
     const pieces = [];
@@ -985,10 +1005,27 @@ function generate(cam, S, shadingBuffer){
     }
     let curState=null, runPts=[];
     const flushRun = () => {
+      // One id per flush, whether or not it actually emits anything below
+      // (the layer being off, or too few points, just means this id ends up
+      // unused — never reused by a later, different run).
+      const rid = contourRunSeq++;
       if (runPts.length>=2){
-        const arr = curState==='v' ? (layerOn.sv ? groups.sv : null) : (layerOn.sh ? groups.sh : null);
-        if (arr) for (let i=0;i+1<runPts.length;i++)
-          emit(arr, runPts[i][0],runPts[i][1], runPts[i+1][0],runPts[i+1][1], 0, 1);
+        const isV = curState==='v';
+        let rl=0; for (let i=1;i<runPts.length;i++) rl+=Math.hypot(runPts[i][0]-runPts[i-1][0], runPts[i][1]-runPts[i-1][1]);
+        (isV ? contourRunLens.sv : contourRunLens.sh).push(rl);
+        const arr = isV ? (layerOn.sv ? groups.sv : null) : (layerOn.sh ? groups.sh : null);
+        if (arr){
+          const runArr = isV ? runIds.sv : runIds.sh;
+          const seqArr = isV ? seqs.sv : seqs.sh;
+          let seq = 0;
+          for (let i=0;i+1<runPts.length;i++)
+            // emit() silently drops sub-MIN_SEG pieces — only push the
+            // parallel identity entry when a segment actually landed, or
+            // groups.sv/sh and runIds.sv/sh desync.
+            if (emit(arr, runPts[i][0],runPts[i][1], runPts[i+1][0],runPts[i+1][1], 0, 1)){
+              runArr.push(rid); seqArr.push(seq++);
+            }
+        }
       }
       runPts=[];
     };
@@ -2034,7 +2071,12 @@ function generate(cam, S, shadingBuffer){
      WITHIN each layer, since same-layer strokes share a pen and merging
      loses nothing. */
   for (const k of ['sv','sh','cv','ch','so']){
-    groups[k] = dedupCollinear(groups[k], effOffTol, effGapTol);
+    if (k==='sv' || k==='sh'){
+      const res = dedupCollinear(groups[k], effOffTol, effGapTol, runIds[k], seqs[k]);
+      groups[k] = res.arr; runIds[k] = res.runIds; seqs[k] = res.seqs;
+    } else {
+      groups[k] = dedupCollinear(groups[k], effOffTol, effGapTol);
+    }
   }
   /* Pass 2: cross-layer ink-avoidance across the FULL drawing-priority
      hierarchy (highest first): Scene outline > Silhouette > Silhouette-
@@ -2073,9 +2115,19 @@ function generate(cam, S, shadingBuffer){
     const lo = HIER[i];
     for (let j=0;j<i;j++){
       const hi = HIER[j];
-      if (layerOn[hi] && groups[hi].length) groups[lo] = subtractCovered(groups[lo], groups[hi], effOffTol, effGapTol);
+      if (!(layerOn[hi] && groups[hi].length)) continue;
+      if (lo==='sv' || lo==='sh'){
+        const res = subtractCovered(groups[lo], groups[hi], effOffTol, effGapTol, runIds[lo], seqs[lo]);
+        groups[lo] = res.arr; runIds[lo] = res.runIds; seqs[lo] = res.seqs;
+      } else {
+        groups[lo] = subtractCovered(groups[lo], groups[hi], effOffTol, effGapTol);
+      }
     }
   }
+
+  // Diagnostic only — see contourRunLens declaration above.
+  counts.contourRunLensSv = contourRunLens.sv;
+  counts.contourRunLensSh = contourRunLens.sh;
 
   /* 8 · package result */
   const out={}, transfer=[];
@@ -2083,6 +2135,15 @@ function generate(cam, S, shadingBuffer){
     counts[k]=groups[k].length/4;
     out[k]=new Float32Array(groups[k]);
     transfer.push(out[k].buffer);
+  }
+  // Contour chain identity (sv/sh only — see PHASE3a-chain-identity.md),
+  // freshly built this generate() call and not reused for anything else
+  // afterward, so a plain transfer (no "copy, don't transfer" slice) is safe.
+  const outRunIds={}, outSeqs={};
+  for (const k of ['sv','sh']){
+    outRunIds[k]=new Int32Array(runIds[k]);
+    outSeqs[k]=new Int32Array(seqs[k]);
+    transfer.push(outRunIds[k].buffer, outSeqs[k].buffer);
   }
   const outCarrier={};
   for (const k in hatchCarrier){
@@ -2092,7 +2153,7 @@ function generate(cam, S, shadingBuffer){
   const debugPreDedupSoOut = new Float32Array(debugPreDedupSo);
   const debugPreDedupIvOut = new Float32Array(debugPreDedupIv);
   transfer.push(debugPreDedupSoOut.buffer, debugPreDedupIvOut.buffer);
-  post({ type:'result', groups:out, hatchCarrier:outCarrier, w:W, h:H, counts, ms: Date.now()-t0ms,
+  post({ type:'result', groups:out, runIds:outRunIds, seqs:outSeqs, hatchCarrier:outCarrier, w:W, h:H, counts, ms: Date.now()-t0ms,
     circlePatternSegs, debugPreDedupSo: debugPreDedupSoOut, debugPreDedupIv: debugPreDedupIvOut }, transfer);
 }
 
@@ -2129,6 +2190,131 @@ function generateRawEdges(cam, creaseDeg){
   }
   const out = new Float32Array(segs);
   post({ type:'debugRawEdgesResult', segs: out, w:W, h:H }, [out.buffer]);
+}
+
+/* ---------------- debug: raw contour edges (topological silhouette, chained) ----------------
+   Same "bypass almost everything" spirit as generateRawEdges above, but
+   selects edges by the Contour layer's own classification test (isSilTopo
+   in generate()) instead of the crease-angle threshold, and walks them into
+   chains via the exact same welded-vertex-incidence + pairJunctionArms
+   mechanism generate()'s siChains uses — so the output shows the raw chain
+   topology feeding Contour. No occlusion, no backdrop test, no dedup: each
+   chain is emitted as one continuous polyline, broken only where an edge has
+   an endpoint behind the camera (the same "simple bypass" behavior
+   generateRawEdges uses, just per-chain instead of per-edge). */
+function generateRawContourEdges(cam){
+  if (!M){ post({ type:'error', msg:'No model loaded' }); return; }
+  const { view:V, proj:P, w:W, h:H, near } = cam;
+  const ortho = !!cam.ortho;
+  const nearZ = -near * 1.0001;
+  const { pos, fn, tri, nv, nt, ea, eb, et0, et1, ne } = M;
+  const projView = (a,b,c) => {
+    const cx=P[0]*a+P[4]*b+P[8]*c+P[12], cy=P[1]*a+P[5]*b+P[9]*c+P[13],
+          cw=P[3]*a+P[7]*b+P[11]*c+P[15];
+    return [(cx/cw*0.5+0.5)*W, (0.5-cy/cw*0.5)*H];
+  };
+  const vx=new Float32Array(nv), vy=new Float32Array(nv), vz=new Float32Array(nv);
+  for (let i=0;i<nv;i++){
+    const x=pos[i*3], y=pos[i*3+1], z=pos[i*3+2];
+    vx[i]=V[0]*x+V[4]*y+V[8]*z+V[12]; vy[i]=V[1]*x+V[5]*y+V[9]*z+V[13]; vz[i]=V[2]*x+V[6]*y+V[10]*z+V[14];
+  }
+  // per-face front/back facing — same test as generate()'s own step 2
+  const EPS_FRONT_TIE = 1e-6;
+  const front = new Uint8Array(nt);
+  for (let f=0; f<nt; f++){
+    const nx=fn[f*3], ny=fn[f*3+1], nz=fn[f*3+2];
+    const nvx=V[0]*nx+V[4]*ny+V[8]*nz, nvy=V[1]*nx+V[5]*ny+V[9]*nz, nvz=V[2]*nx+V[6]*ny+V[10]*nz;
+    const a=tri[f*3], b=tri[f*3+1], c=tri[f*3+2];
+    const cx=(vx[a]+vx[b]+vx[c])/3, cy=(vy[a]+vy[b]+vy[c])/3, cz=(vz[a]+vz[b]+vz[c])/3;
+    front[f] = ortho ? (nvz > EPS_FRONT_TIE ? 1 : 0) : ((nvx*cx + nvy*cy + nvz*cz) < 0 ? 1 : 0);
+  }
+  // isSilTopo — same test as generate()'s Contour section (6.4b)
+  const isSilTopo = new Uint8Array(ne);
+  for (let e=0; e<ne; e++){
+    const t1x = et1[e];
+    if (t1x >= 0){ if (front[et0[e]] !== front[t1x]) isSilTopo[e]=1; }
+    else isSilTopo[e]=1;   // open/non-manifold edge
+  }
+  // chain adjacency: two isSilTopo edges connect iff they share a welded
+  // vertex; at a junction (valence 3+) pairJunctionArms picks which pair
+  // continues straight through — identical to generate()'s siCont0/siCont1.
+  const siCont0 = new Int32Array(ne).fill(-1), siCont1 = new Int32Array(ne).fill(-1);
+  {
+    const incident = new Map();
+    for (let e=0;e<ne;e++){
+      if (!isSilTopo[e]) continue;
+      const a=ea[e], b=eb[e];
+      if (a===b) continue;
+      let la=incident.get(a); if(!la){la=[];incident.set(a,la);} la.push([e,0]);
+      let lb=incident.get(b); if(!lb){lb=[];incident.set(b,lb);} lb.push([e,1]);
+    }
+    for (const [v, list] of incident){
+      if (list.length < 2) continue;
+      if (list.length === 2){
+        const [e0,end0]=list[0], [e1,end1]=list[1];
+        if (end0===0) siCont0[e0]=e1; else siCont1[e0]=e1;
+        if (end1===0) siCont0[e1]=e0; else siCont1[e1]=e0;
+        continue;
+      }
+      const arms = list.map(([e,end]) => {
+        const other = end===0 ? eb[e] : ea[e];
+        const dx=pos[other*3]-pos[v*3], dy=pos[other*3+1]-pos[v*3+1], dz=pos[other*3+2]-pos[v*3+2];
+        const L=Math.hypot(dx,dy,dz)||1;
+        return [dx/L,dy/L,dz/L];
+      });
+      for (const [i,j] of pairJunctionArms(arms)){
+        const [ei,endi]=list[i], [ej,endj]=list[j];
+        if (endi===0) siCont0[ei]=ej; else siCont1[ei]=ej;
+        if (endj===0) siCont0[ej]=ei; else siCont1[ej]=ei;
+      }
+    }
+  }
+  const chains = [];
+  {
+    const visited = new Uint8Array(ne);
+    const walk = (startE, startRev) => {
+      const edges=[]; let curE=startE, curRev=startRev;
+      for(;;){
+        edges.push({e:curE, rev:curRev});
+        visited[curE]=1;
+        const arriveV = curRev ? ea[curE] : eb[curE];
+        const nextE = curRev ? siCont0[curE] : siCont1[curE];
+        if (nextE===-1) return edges;
+        if (visited[nextE]) return edges;
+        curRev = eb[nextE]===arriveV;
+        curE = nextE;
+      }
+    };
+    for (let e=0;e<ne;e++){
+      if (!isSilTopo[e] || visited[e]) continue;
+      if (siCont0[e]===-1){ chains.push(walk(e,false)); continue; }
+      if (siCont1[e]===-1){ chains.push(walk(e,true));  continue; }
+    }
+    for (let e=0;e<ne;e++){
+      if (!isSilTopo[e] || visited[e]) continue;
+      chains.push(walk(e,false));
+    }
+  }
+  // project each chain in walk order into one flat polyline of screen
+  // points, breaking (and starting a fresh polyline) at any edge with an
+  // endpoint behind the camera
+  const chainSegs = [];
+  for (const edges of chains){
+    let runPts = [];
+    const flush = () => { if (runPts.length>=4) chainSegs.push(new Float32Array(runPts)); runPts = []; };
+    for (const {e, rev} of edges){
+      const a = rev ? eb[e] : ea[e], b = rev ? ea[e] : eb[e];
+      if (vz[a] >= nearZ || vz[b] >= nearZ){ flush(); continue; }
+      if (!runPts.length){
+        const [xa,ya] = projView(vx[a],vy[a],vz[a]);
+        runPts.push(xa,ya);
+      }
+      const [xb,yb] = projView(vx[b],vy[b],vz[b]);
+      runPts.push(xb,yb);
+    }
+    flush();
+  }
+  post({ type:'debugRawContourEdgesResult', chains: chainSegs, w:W, h:H }, chainSegs.map(c => c.buffer));
 }
 /* ---------------- message dispatch ---------------- */
 if (typeof self !== 'undefined' && typeof self.document === 'undefined'){
@@ -2178,6 +2364,8 @@ if (typeof self !== 'undefined' && typeof self.document === 'undefined'){
         generate(m.cam, m.settings, m.shadingBuffer);
       } else if (m.type === 'debugRawEdges'){
         generateRawEdges(m.cam, m.creaseDeg);
+      } else if (m.type === 'debugRawContourEdges'){
+        generateRawContourEdges(m.cam);
       } else if (m.type === 'recomputeSmoothAngle'){
         // Re-runs ONLY the corner-normal fan grouping with a new hard-edge
         // threshold — every input it needs is already sitting in M from the

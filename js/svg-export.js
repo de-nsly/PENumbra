@@ -558,349 +558,6 @@ function accumulatePathStats(stats, pts, closed){
   if (closed) len += Math.hypot(pts[0][0]-pts[pts.length-1][0], pts[0][1]-pts[pts.length-1][1]);
   stats.lenPx += len;
 }
-/* ================================================================
-   cleanupContourRelay — post-chain cleanup for Contour (sv/sh) only.
-   Cleans up the "fuzzy" stray micro-geometry occlude() leaves at bends on
-   curved/faceted meshes: adjacent facet edges occasionally produce several
-   near-duplicate, near-parallel candidate chains covering slightly
-   different lengths of the same true smooth curve, plus short spurious
-   whisker chains. Operates on chainSegments()'s own {pts, closed} output,
-   before splitSelfTouching/simplifyCollinear run.
-
-   Model: each open chain end is classified as
-     - coincident: within tolMerge of another chain's endpoint
-     - on-polyline: within tolS (perpendicular) of another chain's line,
-       landing strictly inside that chain's own span (excluding a tolMerge
-       margin at ITS endpoints, to avoid double-classifying a near-shared
-       vertex as a mid-span touch)
-     - free: neither
-   Anchoring gates trimming at two levels. Chain level: a chain anchored at
-   BOTH ends (any combination of the two kinds) is never trimmed at either
-   end — both its tips are already tied into the drawing, so neither can be
-   the loose overshoot trimming exists to retract. End level: an ON-POLYLINE
-   end is never trimmed regardless of what the far end is doing, because it
-   sits mid-span on another chain and retracting it can only tear a real
-   T-junction apart. A COINCIDENT end stays trimmable when the far end is
-   free — its trim is bounded by tolMerge and produces the exact zero-gap
-   snap the ordinary relay depends on — as does a genuinely free end, which
-   is what this step is for in the first place.
-   (Known limitation 1: `anchored` is computed once, before whisker deletion
-   is resolved, so an end anchored solely to a chain that is later deleted
-   keeps its now-stale anchored flag and stays protected from trimming.
-   Accepted deliberately to keep this a single-shot pass.)
-   (Known limitation 2, the cost of the on-polyline gate: an EXACTLY collinear
-   overshoot also lands mid-span on its neighbour, so it reads as on-polyline
-   and is now protected too, leaving that short doubled run in place. Nothing
-   here distinguishes "crosses me" from "is my own line drawn again" — that
-   needs a direction test findOnPolyline does not do. Faceted geometry usually
-   kinks enough at the join to stay outside tolS and trim normally: on
-   pipe.obj the overshooting tip measured 0.205px off its neighbour's line
-   against a tolS of 0.0798px.)
-   Free ends search their own LAST segment for another chain's endpoint
-   landing on it (perpendicular <= tolS, projecting within [0,1], and
-   continuing in roughly the same direction — within angleThreshDeg of
-   straight-through — ruling out genuine perpendicular T-junctions, which
-   must never get trimmed toward). The closest such candidate to the free
-   tip is used ("shortest trim"): the tip snaps to that candidate's EXACT
-   coordinate (zero-gap) and a hard link is recorded for the merge step.
-   "Shortest" is only relative to the end segment, though, and one segment is
-   one mesh edge — on a straight run that can be tens of mm, so even the
-   closest candidate on it may sit most of the way along. maxTrimLen caps how
-   much a single trim may remove from a chain of TRIM_CAP_MIN_VERTS or more
-   vertices: a chain that substantial is a real contour line, and no amount of
-   fuzz cleanup should be eating centimetres of one. (On pipe.obj a candidate
-   27.7deg off straight — inside the 40deg threshold, but really a Y-branch —
-   retracted 23mm of a 21-vertex chain.) Whiskers are exempt: the deletion
-   pass judges those as a whole, and capping their trim would strand the scrap
-   rather than retract it.
-   2-vertex whisker chains get deleted outright in two cases:
-     (a) exactly one end anchored, the other free, and nothing lands on the
-         whisker itself (hasLandingOn) — deleted at ANY length, since a bare
-         2-point spur that dangles into nothing and carries no junction of
-         its own is not a real feature however long it happens to be. The
-         landing test is what protects it, not maxWhiskerLen;
-     (b) both ends anchored (even to different neighbors) AND at or under
-         maxWhiskerLen — a short connector between two already-anchored
-         points is redundant duplicate ink, not a real feature.
-   Deletion is fully resolved before any surviving chain's actual trim
-   target is chosen, so a deleted whisker never leaves a "phantom" trim
-   behind on the chain that would otherwise have used it as a landing point.
-   Merging (a separate step, after all trims are applied) resolves hard
-   links from trims first (already exact), then remaining coincident
-   tip-to-tip pairs within tolMerge (interpolated to their midpoint).
-   On-polyline anchors that were never trimmed are genuine T-junctions and
-   are never merged — pen lift is correct there. Runs that need stitching
-   at both ends (a chain acting as a middle link between two neighbors) are
-   walked fully, and an all-paired closed loop is walked once as a closed
-   chain rather than silently dropped.
-   ================================================================ */
-function cleanupContourRelay(chains, tolMerge, tolS, maxWhiskerLen, angleThreshDeg, maxTrimLen){
-  // Vertex count at which a chain stops being a scrap and starts being a real
-  // contour line that maxTrimLen protects.
-  const TRIM_CAP_MIN_VERTS = 4;
-  function clen(pts){ let t=0; for(let i=0;i<pts.length-1;i++) t+=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]); return t; }
-  function cdist(a,b){ return Math.hypot(a[0]-b[0],a[1]-b[1]); }
-  const open = [], closedOut = [];
-  chains.forEach((c) => { if (c.closed || c.pts.length < 2) closedOut.push(c); else open.push({ pts: c.pts.map(p=>p.slice()) }); });
-  const N = open.length;
-
-  function endPos(ci, end){ const p = open[ci].pts; return end===0 ? p[0] : p[p.length-1]; }
-  function otherEnds(ci){ const out=[]; for (let j=0;j<N;j++) if (j!==ci){ out.push([j,0]); out.push([j,1]); } return out; }
-
-  function findCoincident(pt, selfCi){
-    let best=null, bestD=tolMerge;
-    for (let j=0;j<N;j++){ if (j===selfCi) continue;
-      for (const end of [0,1]){ const d = cdist(pt, endPos(j,end)); if (d<=bestD){ bestD=d; best=[j,end]; } }
-    }
-    return best;
-  }
-  function findOnPolyline(pt, selfCi){
-    for (let j=0;j<N;j++){ if (j===selfCi) continue;
-      const p = open[j].pts;
-      for (let k=0;k<p.length-1;k++){
-        const ax=p[k][0],ay=p[k][1], bx=p[k+1][0],by=p[k+1][1];
-        const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy || 1e-12, L=Math.sqrt(L2);
-        let t = ((pt[0]-ax)*dx+(pt[1]-ay)*dy)/L2;
-        const tc = Math.max(0,Math.min(1,t));
-        const cx=ax+dx*tc, cy=ay+dy*tc;
-        if (cdist(pt,[cx,cy]) > tolS) continue;
-        const distFromChainStart = k===0 ? tc*L : Infinity;
-        const distFromChainEnd = k===p.length-2 ? (1-tc)*L : Infinity;
-        if (Math.min(distFromChainStart, distFromChainEnd) < tolMerge) continue;
-        return true;
-      }
-    }
-    return false;
-  }
-  /* The mirror image of findOnPolyline: does any OTHER chain's endpoint land
-     on chain ci's own polyline, strictly inside its span? Same tolS
-     perpendicular tolerance and same tolMerge margin at ci's own endpoints, so
-     a neighbour clustered at ci's anchored tip reads as the anchor it is, not
-     as a dependent landing. Deliberately direction-agnostic, unlike
-     findTrimCandidates — a path meeting ci at a right angle is never a trim
-     candidate, but it is absolutely something that depends on ci still being
-     drawn. Like `anchored`, this ignores whether the landing chain is itself
-     about to be deleted, which keeps deletion independent of chain order. */
-  function hasLandingOn(ci){
-    const p = open[ci].pts;
-    for (let j=0;j<N;j++){ if (j===ci) continue;
-      for (const e of [0,1]){
-        const pt = endPos(j,e);
-        for (let k=0;k<p.length-1;k++){
-          const ax=p[k][0],ay=p[k][1], bx=p[k+1][0],by=p[k+1][1];
-          const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy || 1e-12, L=Math.sqrt(L2);
-          const t = ((pt[0]-ax)*dx+(pt[1]-ay)*dy)/L2;
-          const tc = Math.max(0,Math.min(1,t));
-          if (cdist(pt,[ax+dx*tc, ay+dy*tc]) > tolS) continue;
-          const distFromChainStart = k===0 ? tc*L : Infinity;
-          const distFromChainEnd = k===p.length-2 ? (1-tc)*L : Infinity;
-          if (Math.min(distFromChainStart, distFromChainEnd) < tolMerge) continue;
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-  function candidateDir(j, e){
-    const p = open[j].pts;
-    const from = e===1 ? p[p.length-1] : p[0];
-    const to   = e===1 ? p[p.length-2] : p[1];
-    const dx=to[0]-from[0], dy=to[1]-from[1], l=Math.hypot(dx,dy)||1;
-    return [dx/l, dy/l];
-  }
-  function findTrimCandidates(ci, end){
-    const p = open[ci].pts;
-    const [ax,ay] = end===1 ? p[p.length-2] : p[1];
-    const [bx,by] = end===1 ? p[p.length-1] : p[0];
-    const dx=bx-ax, dy=by-ay, L2=dx*dx+dy*dy || 1e-12, L=Math.sqrt(L2);
-    const myDir = [dx/L, dy/L];
-    const cosThresh = Math.cos(angleThreshDeg * Math.PI/180);
-    const out = [];
-    for (const [j,e] of otherEnds(ci)){
-      if (j===ci) continue;
-      const pt = endPos(j,e);
-      const t = ((pt[0]-ax)*dx+(pt[1]-ay)*dy)/L2;
-      if (t < 0 || t > 1) continue;
-      const cx=ax+dx*t, cy=ay+dy*t;
-      if (cdist(pt,[cx,cy]) > tolS) continue;
-      const cDir = candidateDir(j, e);
-      const cosAngle = cDir[0]*myDir[0] + cDir[1]*myDir[1];
-      if (cosAngle < cosThresh) continue;
-      // "Shortest trim" is only short RELATIVE to the end segment, and a
-      // segment here is one mesh edge — on a straight run that can be tens of
-      // mm, so the closest candidate on it can still be most of its length.
-      // A substantial chain is a real contour line, not fuzz, so cap how much
-      // of one a single trim may eat. Whiskers are exempt: they are 2-3 point
-      // scraps that the deletion pass judges as a whole, and capping them
-      // would only strand the scrap instead of retracting it.
-      if (p.length >= TRIM_CAP_MIN_VERTS && (1-t)*L > maxTrimLen) continue;
-      out.push({ ci:j, end:e, pt, tFromB: 1-t });
-    }
-    return out;
-  }
-
-  const anchored = Array.from({length:N}, () => [false,false]);
-  const onPoly = Array.from({length:N}, () => [false,false]);
-  for (let ci=0; ci<N; ci++) for (const end of [0,1]){
-    const pt = endPos(ci,end);
-    if (findCoincident(pt, ci)) { anchored[ci][end] = true; continue; }
-    if (findOnPolyline(pt, ci)) { anchored[ci][end] = true; onPoly[ci][end] = true; continue; }
-  }
-
-  const allCands = Array.from({length:N}, () => [null,null]);
-  for (let ci=0; ci<N; ci++) for (const end of [0,1]){
-    const cands = findTrimCandidates(ci, end);
-    if (!cands.length) continue;
-    cands.sort((a,b)=>a.tFromB-b.tFromB);
-    allCands[ci][end] = cands;
-  }
-  const deleteChain = new Uint8Array(N);
-  for (let ci=0; ci<N; ci++){
-    if (open[ci].pts.length !== 2) continue;
-    const a0 = anchored[ci][0], a1 = anchored[ci][1];
-    if (a0 && a1 && !hasLandingOn(ci)){
-      if (clen(open[ci].pts) <= maxWhiskerLen) deleteChain[ci] = 1;
-      continue;
-    }
-    if (!a0 && !a1) continue;
-    // Exactly one end anchored, the other dangling free. Length is irrelevant
-    // here: what makes this a whisker rather than a feature is that it is a
-    // bare 2-point spur nothing else depends on, so the only thing that can
-    // save it is another path landing on it (a junction that would be left
-    // stranded in mid-air by the deletion).
-    if (hasLandingOn(ci)) continue;
-    deleteChain[ci] = 1;
-  }
-  const trimLink = Array.from({length:N}, () => [null,null]);
-  for (let ci=0; ci<N; ci++){
-    // A chain anchored at BOTH ends is already tied into the drawing at each
-    // tip, so neither end can be a redundant tail — trimming exists purely to
-    // retract a loose overshoot, which by definition needs a free end. Without
-    // this gate a genuine feature (commonly one bridging two T-junctions) gets
-    // pulled back off a junction it legitimately belongs to, leaving a visible
-    // gap. Deliberately chain-level, not per-end: a chain anchored at one end
-    // with a free other end still trims that free end — that case is the whole
-    // point of this step.
-    if (anchored[ci][0] && anchored[ci][1]) continue;
-    for (const end of [0,1]){
-      // ...and on top of that, an ON-POLYLINE end is protected in its own
-      // right, whatever the far end is doing. It is sitting mid-span on
-      // another chain — a genuine T-junction — so retracting it can only tear
-      // a real junction apart. The chain-level gate alone cannot express this:
-      // it needs BOTH ends anchored, so a chain with one T-junction end and
-      // one free end had its junction stripped of protection by the far end.
-      // That is not hypothetical — on pipe.obj an end sitting 0.0027px onto
-      // another chain's interior lost 41.9mm because the OTHER end missed the
-      // coincident threshold by 0.066px. Coincident ends are deliberately not
-      // covered here: their trim is bounded by tolMerge and gives the exact
-      // zero-gap snap the ordinary relay depends on.
-      if (onPoly[ci][end]) continue;
-      const cands = allCands[ci][end];
-      if (!cands) continue;
-      const best = cands.find(c => !deleteChain[c.ci]);
-      if (best) trimLink[ci][end] = { ci: best.ci, end: best.end, pt: best.pt };
-    }
-  }
-
-  for (let ci=0; ci<N; ci++){
-    if (deleteChain[ci]) continue;
-    for (const end of [0,1]){
-      const link = trimLink[ci][end];
-      if (!link) continue;
-      if (end === 1) open[ci].pts[open[ci].pts.length-1] = link.pt.slice();
-      else open[ci].pts[0] = link.pt.slice();
-    }
-  }
-
-  const paired = new Map();
-  function tipKey(ci,end){ return ci*2+end; }
-  function setPair(a,b){ paired.set(a,b); paired.set(b,a); }
-  for (let ci=0; ci<N; ci++){
-    if (deleteChain[ci]) continue;
-    for (const end of [0,1]){
-      const link = trimLink[ci][end];
-      if (!link || deleteChain[link.ci]) continue;
-      setPair(tipKey(ci,end), tipKey(link.ci, link.end));
-    }
-  }
-  for (let ci=0; ci<N; ci++){
-    if (deleteChain[ci]) continue;
-    for (const end of [0,1]){
-      if (paired.has(tipKey(ci,end))) continue;
-      if (onPoly[ci][end]) continue;
-      if (!anchored[ci][end]) continue;
-      const pt = endPos(ci,end);
-      let best=null, bestD=tolMerge;
-      for (let cj=0; cj<N; cj++){ if (cj===ci || deleteChain[cj]) continue;
-        for (const e2 of [0,1]){
-          if (paired.has(tipKey(cj,e2))) continue;
-          if (onPoly[cj][e2]) continue;
-          if (!anchored[cj][e2]) continue;
-          const d = cdist(pt, endPos(cj,e2));
-          if (d<=bestD){ bestD=d; best=[cj,e2]; }
-        }
-      }
-      if (best) setPair(tipKey(ci,end), tipKey(best[0],best[1]));
-    }
-  }
-  const hardLinked = new Set();
-  for (let ci=0; ci<N; ci++) for (const end of [0,1]) if (trimLink[ci][end] && !deleteChain[ci]) {
-    hardLinked.add(tipKey(ci,end)); hardLinked.add(tipKey(trimLink[ci][end].ci, trimLink[ci][end].end));
-  }
-  for (const [a,b] of paired){
-    if (a>b) continue;
-    if (hardLinked.has(a) || hardLinked.has(b)) continue;
-    const ca=(a/2)|0, ea=a%2, cb=(b/2)|0, eb=b%2;
-    const pa = endPos(ca,ea), pb = endPos(cb,eb);
-    const mid = [(pa[0]+pb[0])/2, (pa[1]+pb[1])/2];
-    if (ea===1) open[ca].pts[open[ca].pts.length-1]=mid.slice(); else open[ca].pts[0]=mid.slice();
-    if (eb===1) open[cb].pts[open[cb].pts.length-1]=mid.slice(); else open[cb].pts[0]=mid.slice();
-  }
-
-  function orientedPts(ci, exitEnd){ const p = open[ci].pts; return exitEnd===1 ? p.slice() : p.slice().reverse(); }
-  const used = new Uint8Array(N);
-  const result = [];
-  for (let ci=0; ci<N; ci++){
-    if (used[ci] || deleteChain[ci]) continue;
-    const p0 = paired.get(tipKey(ci,0)), p1 = paired.get(tipKey(ci,1));
-    if (p0 != null && p1 != null) continue;
-    used[ci] = 1;
-    const exitEnd = p0 != null ? 0 : 1;
-    let pts = orientedPts(ci, exitEnd);
-    let curTip = tipKey(ci, exitEnd);
-    for (let guard=N+2; guard>0; guard--){
-      const partner = paired.get(curTip);
-      if (partner == null) break;
-      const nci = (partner/2)|0, nend = partner%2;
-      if (used[nci]) break;
-      used[nci] = 1;
-      const nextExitEnd = nend===1 ? 0 : 1;
-      const nextPts = orientedPts(nci, nextExitEnd);
-      pts = pts.concat(nextPts.slice(1));
-      curTip = tipKey(nci, nextExitEnd);
-    }
-    result.push({ pts, closed:false });
-  }
-  for (let ci=0; ci<N; ci++){
-    if (used[ci] || deleteChain[ci]) continue;
-    used[ci] = 1;
-    let pts = orientedPts(ci, 1);
-    let curTip = tipKey(ci, 1);
-    for (let guard=N+2; guard>0; guard--){
-      const partner = paired.get(curTip);
-      if (partner == null) break;
-      const nci = (partner/2)|0, nend = partner%2;
-      if (used[nci]) break;
-      used[nci] = 1;
-      const nextExitEnd = nend===1 ? 0 : 1;
-      const nextPts = orientedPts(nci, nextExitEnd);
-      pts = pts.concat(nextPts.slice(1));
-      curTip = tipKey(nci, nextExitEnd);
-    }
-    result.push({ pts, closed:true });
-  }
-  return result.concat(closedOut);
-}
 
 /* ================================================================
    mergeSilhouetteClose — post-chain cleanup for Silhouette (so/iv/ih).
@@ -1076,13 +733,48 @@ function mergeSilhouetteClose(chains, tolMerge, protectedPoints){
   return result.concat(closedOut);
 }
 
-function buildChainedPathD(segs, stats, relayCleanupTol, silMergeOpts){
+/* chainByRun — Contour (sv/sh) path assembly, Phase 3a (see
+   PHASE3a-chain-identity.md). Builds chains from the worker's own
+   runId/seq identity (js/worker/solver.js's flushRun) instead of
+   chainSegments()'s global coordinate re-matching: segments sharing a
+   runId are the SAME topological run the worker walked, in occlusion
+   order; sorting by seq recovers it exactly, with no bucket/junction
+   heuristics at all. A run can still arrive here with real gaps —
+   subtractCovered punches holes when a higher-priority layer covers part
+   of it — so consecutive same-run segments that don't actually share an
+   endpoint (same ~0.02px tolerance chainSegments/splitSelfTouching use)
+   start a fresh polyline rather than being stitched across the hole. */
+function chainByRun(segs, runIds, seqs){
+  const eq = (x1,y1,x2,y2) => Math.abs(x1-x2)<0.02 && Math.abs(y1-y2)<0.02;
+  const n = segs.length/4;
+  const byRun = new Map();
+  for (let i=0;i<n;i++){
+    const rid = runIds[i];
+    let list = byRun.get(rid);
+    if (!list){ list=[]; byRun.set(rid, list); }
+    list.push(i);
+  }
+  const polys = [];
+  for (const list of byRun.values()){
+    list.sort((a,b) => seqs[a]-seqs[b]);
+    let cur = null;
+    for (const i of list){
+      const x0=segs[i*4],y0=segs[i*4+1],x1=segs[i*4+2],y1=segs[i*4+3];
+      if (cur && eq(cur[cur.length-1][0], cur[cur.length-1][1], x0,y0)) cur.push([x1,y1]);
+      else { if (cur) polys.push(cur); cur = [[x0,y0],[x1,y1]]; }
+    }
+    if (cur) polys.push(cur);
+  }
+  return polys.map(pts => {
+    const closed = pts.length>2 && eq(pts[0][0],pts[0][1], pts[pts.length-1][0],pts[pts.length-1][1]);
+    return { pts: closed ? pts.slice(0,-1) : pts, closed };
+  });
+}
+
+function buildChainedPathD(segs, stats, silMergeOpts){
   const d = [];
   let chains = chainSegments(segs);
-  if (relayCleanupTol){
-    chains = cleanupContourRelay(chains, relayCleanupTol.tolMerge, relayCleanupTol.tolS,
-      relayCleanupTol.maxWhiskerLen, relayCleanupTol.angleThreshDeg, relayCleanupTol.maxTrimLen);
-  } else if (silMergeOpts){
+  if (silMergeOpts){
     chains = trimTipFoldback(chains, silMergeOpts.foldbackAngleThreshDeg);
     chains = mergeSilhouetteClose(chains, silMergeOpts.tolMerge, silMergeOpts.protectedPoints);
   }
@@ -1744,7 +1436,10 @@ function onResult(m){
   // function's own comment for why neither one alone is safe/sufficient on
   // its own. Hatch is untouched — it already has its own, different
   // optimization (straight-line runs reduced to 2 points per carrier).
-  const CHAIN_LAYERS = { sv:1, sh:1, so:1, iv:1, ih:1 };
+  // sv/sh moved out to their own runId-based branch below (chainByRun,
+  // Phase 3a) — they no longer go through chainSegments()'s coordinate
+  // re-chaining at all.
+  const CHAIN_LAYERS = { so:1, iv:1, ih:1 };
   const SEQ_CHAIN_LAYERS = { cv:1, ch:1 };
 
   // Tracks the FINAL, post-processing picture — one entry per actual pen
@@ -1869,19 +1564,23 @@ function onResult(m){
     g.setAttribute('stroke-linecap', 'round');
     g.setAttribute('stroke-linejoin', 'round');
     const d = [];
-    if (CHAIN_LAYERS[L.key]){
-      let relayCleanupTol = null, silMergeOpts = null;
-      if ((L.key === 'sv' || L.key === 'sh') && !$('debugDisableContourRelayCleanup').checked){
-        const layout = computePaperLayout();
-        const mmToPx = layout ? 1/Math.max(1e-6, layout.scale) : 1;
-        relayCleanupTol = {
-          tolMerge: 0.3 * mmToPx,        // endpoint-proximity merge tolerance
-          tolS: 0.02 * mmToPx,            // on-polyline perpendicular tolerance
-          maxWhiskerLen: 1 * mmToPx,      // isolated-whisker deletion length cap
-          angleThreshDeg: 20,             // redundant-tail relay vs. genuine T-junction
-          maxTrimLen: 3 * mmToPx,         // most a single trim may eat off a 4+ vertex chain
-        };
-      } else if (L.key === 'so' || L.key === 'iv' || L.key === 'ih'){
+    if (L.key === 'sv' || L.key === 'sh'){
+      // Contour — built straight from the worker's own runId/seq chain
+      // identity (Phase 3a), never from coordinate re-matching. See
+      // chainByRun's own comment. Tail is the same as every other chained
+      // layer: split-self-touching safety net, collinear simplify, path
+      // emit, stats.
+      for (const chain of chainByRun(segs, m.runIds[L.key], m.seqs[L.key]))
+        for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed)){
+          const pts = simplifyCollinear(rawPts, closed);
+          if (layerOn) accumulatePathStats(pathStats, pts, closed);
+          d.push('M', pts[0][0].toFixed(2), pts[0][1].toFixed(2));
+          for (let i=1;i<pts.length;i++) d.push('L', pts[i][0].toFixed(2), pts[i][1].toFixed(2));
+          if (closed) d.push('Z');
+        }
+    } else if (CHAIN_LAYERS[L.key]){
+      let silMergeOpts = null;
+      if (L.key === 'so' || L.key === 'iv' || L.key === 'ih'){
         const layout = computePaperLayout();
         const mmToPx = layout ? 1/Math.max(1e-6, layout.scale) : 1;
         // Silhouette and Individual Silhouette get identical treatment here —
@@ -1892,7 +1591,7 @@ function onResult(m){
           protectedPoints: null,
         };
       }
-      d.push(buildChainedPathD(segs, layerOn ? pathStats : null, relayCleanupTol, silMergeOpts));
+      d.push(buildChainedPathD(segs, layerOn ? pathStats : null, silMergeOpts));
     } else if (SEQ_CHAIN_LAYERS[L.key]){
       // 1) local, topology-trusting merge of array-adjacent touching pieces
       // 2) screen-space fallback that mops up whatever (1) couldn't place —

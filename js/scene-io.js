@@ -19,6 +19,8 @@ worker.onmessage = ev => {
     onSmoothAngleResult(m);
   } else if (m.type === 'debugRawEdgesResult'){
     handleDebugRawEdgesResult(m);
+  } else if (m.type === 'debugRawContourEdgesResult'){
+    handleDebugRawContourEdgesResult(m);
   } else if (m.type === 'testShadingSampleResult'){
     // Phase 2 validation — see testShadingBufferRoundTrip in panel-controls.js
     if (!pendingShadingTestReference){
@@ -105,14 +107,64 @@ function handleDebugRawEdgesResult(m){
 $('debugRawEdgesRawBtn').addEventListener('click', () => triggerDebugRawEdgesExport('raw'));
 $('debugRawEdgesPaperBtn').addEventListener('click', () => triggerDebugRawEdgesExport('paper'));
 
-/* cleanupContourRelay is pure post-processing on top of the worker's
-   already-solved Contour segments (see onResult in svg-export.js) — toggling
-   it doesn't need a full solve, just rebuilding the SVG paths from the same
-   lastGen result, so this re-runs onResult directly instead of marking
-   stale/regenerating through the worker. */
-$('debugDisableContourRelayCleanup').addEventListener('change', () => {
-  if (lastGen) onResult(lastGen);
-});
+/* ================= debug: raw contour edges export =================
+   Same two-variant pattern as the raw edges export above, but the worker
+   selects edges via generateRawContourEdges — the Contour layer's own
+   front/back topological test (isSilTopo in generate()), chained via the
+   same welded-vertex/junction-pairing walk as generate()'s siChains, with
+   no occlusion, backdrop test, or dedup — so this isolates whether an issue
+   is in that raw chain topology or later in the pipeline. m.chains is an
+   array of flat [x0,y0,x1,y1,...] polylines, one per chain (or per
+   camera-visible run within a chain — see generateRawContourEdges). */
+let pendingDebugContourExportMode = null;   // 'raw' | 'paper'
+function triggerDebugRawContourEdgesExport(mode){
+  if (!modelMesh){ $('statusL').textContent = 'load a model first'; return; }
+  pendingDebugContourExportMode = mode;
+  worker.postMessage({
+    type: 'debugRawContourEdges',
+    cam: buildCamMessage(),
+  });
+}
+function handleDebugRawContourEdgesResult(m){
+  const mode = pendingDebugContourExportMode;
+  pendingDebugContourExportMode = null;
+  const chains = m.chains;
+  const d = [];
+  let nSegs = 0;
+  for (const pts of chains){
+    d.push('M', pts[0].toFixed(2), pts[1].toFixed(2));
+    for (let i=2; i<pts.length; i+=2) d.push('L', pts[i].toFixed(2), pts[i+1].toFixed(2));
+    nSegs += pts.length/2 - 1;
+  }
+  const dStr = d.join(' ');
+  let svgStr, filename;
+  if (mode === 'paper'){
+    const layout = computePaperLayout({ w: m.w, h: m.h });
+    const strokeW = (0.3 / Math.max(1e-6, layout.scale)).toFixed(3);
+    svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + layout.paperW.toFixed(2) + 'mm" height="' + layout.paperH.toFixed(2) + 'mm" ' +
+      'viewBox="0 0 ' + layout.paperW.toFixed(3) + ' ' + layout.paperH.toFixed(3) + '">' +
+      '<g transform="translate(' + layout.offX.toFixed(3) + ',' + layout.offY.toFixed(3) + ') scale(' + layout.scale.toFixed(6) + ')">' +
+      '<path d="' + dStr + '" fill="none" stroke="#000" stroke-width="' + strokeW + '"/>' +
+      '</g></svg>';
+    filename = modelName.replace(/\.(stl|obj)$/i, '') + '-debug-raw-contour-paper.svg';
+  } else {
+    svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + m.w + ' ' + m.h + '">' +
+      '<path d="' + dStr + '" fill="none" stroke="#000" stroke-width="1"/>' +
+      '</svg>';
+    filename = modelName.replace(/\.(stl|obj)$/i, '') + '-debug-raw-contour.svg';
+  }
+  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  $('statusL').textContent = 'exported raw contour edges (' + chains.length + ' chains, ' + nSegs + ' segments)';
+}
+$('debugRawContourEdgesRawBtn').addEventListener('click', () => triggerDebugRawContourEdgesExport('raw'));
+$('debugRawContourEdgesPaperBtn').addEventListener('click', () => triggerDebugRawContourEdgesExport('paper'));
 
 /* ================= debug: Silhouette vs Individual pre-dedup overlay =================
    Exports the raw so/iv geometry EXACTLY as computed, before subtractCovered

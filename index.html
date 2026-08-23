@@ -582,10 +582,17 @@
         </p>
         <button type="button" class="btn" id="debugRawEdgesRawBtn" style="width:100%;margin-bottom:8px">Export raw edges (screen px)</button>
         <button type="button" class="btn" id="debugRawEdgesPaperBtn" style="width:100%;margin-bottom:8px">Export raw edges (paper-aligned)</button>
+        <p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.4">
+          Exports Contour's raw edge chains (front/back facing test +
+          junction-paired chain walk, no crease angle involved) as
+          continuous polylines, completely bypassing occlusion and dedup —
+          for isolating whether an issue is in the raw chain topology or
+          later in the pipeline.
+        </p>
+        <button type="button" class="btn" id="debugRawContourEdgesRawBtn" style="width:100%;margin-bottom:8px">Export raw contour edges (screen px)</button>
+        <button type="button" class="btn" id="debugRawContourEdgesPaperBtn" style="width:100%;margin-bottom:8px">Export raw contour edges (paper-aligned)</button>
         <button type="button" class="btn" id="debugSoIvOverlayBtn" style="width:100%;margin-bottom:8px">Export Silhouette vs Individual (pre-dedup)</button>
-        <label class="chk" style="margin:10px 0 0"><input type="checkbox" id="debugDisableContourRelayCleanup">
-          Disable Contour relay cleanup (cleanupContourRelay)</label>
-        <label class="chk" style="margin:8px 0 0"><input type="checkbox" id="debugShowPathEndpoints">
+        <label class="chk" style="margin:10px 0 0"><input type="checkbox" id="debugShowPathEndpoints">
           Mark path endpoints (Silhouette / Individual / Contour)</label>
       </div>
     </div>
