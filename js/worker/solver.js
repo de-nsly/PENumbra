@@ -964,29 +964,29 @@ function generate(cam, S, shadingBuffer){
     }
     chainStart[siChains.length] = p;
   }
-  // TEMPORARY DEBUG BYPASS — see debugContourBypassOcclusion checkbox
-  // (index.html) / gatherSettings (panel-controls.js). When on: every
-  // Contour edge is treated as fully visible (hid=[]), which — as a direct
-  // consequence, no code below needs to change — also collapses run
-  // assembly to exactly one run per chain (curState never changes, so
-  // flushRun only fires once), and dedupCollinear is skipped for sv/sh
-  // below. Lets the raw, unoccluded, unprocessed chain geometry reach the
-  // live 2D viewport/SVG directly, for backdrop-test experimentation.
-  // Revert: delete this const, the ternary using it just below, and the
-  // `if (debugContourRaw) continue;` in the dedup loop further down.
-  const debugContourRaw = !!S.debugContourBypassOcclusion;
-  // Distinct runId per flushRun() call below, shared across every siChain —
-  // never reset per-chain, so two runs can never collide even when their
-  // endpoints happen to coincide on screen (the whole point of Phase 3a:
-  // stop the exporter from inferring connectivity from coordinates).
+  // Phase 3b (see PHASE3b-contour-run-identity.md) — Step 2+3: decompose
+  // each chain into its TRUE occlusion runs — one occlude() call per whole
+  // mesh edge (never per crossing-split sub-segment — occlude()'s own
+  // interior-noise denoise only protects a single call's own t=0/1
+  // boundary, and calling it more finely measurably increases spurious
+  // fragmentation), concatenated across the chain exactly as before, then
+  // grouped into maximal same-visibility runs. Each run gets a PERMANENT
+  // id right here, from a counter shared across every siChain (never reset
+  // per-chain, so two runs can never collide even when their endpoints
+  // happen to coincide on screen). Nothing downstream may ever reassign or
+  // re-infer this identity — the crossing-split/backdrop-depth test below
+  // (Step 4, inside the widened Silhouette guard) and the drop application
+  // (Step 5/6, right after it) can only ever SUBTRACT from a run's own
+  // geometry, never split its identity into two or merge two into one.
   let contourRunSeq = 0;
+  const contourRuns = [];
   if (layerOn.sv || layerOn.sh) for (let ci=0; ci<siChains.length; ci++){
     const segStart = chainStart[ci], segEnd = chainStart[ci+1], cycle = !!chainClosed[ci];
     const pieces = [];
     for (let p=segStart; p<segEnd; p++){
       const seg = chainSeg[p], rev = !!chainRev[p];
       const e = csEdge[seg];
-      const hid = debugContourRaw ? [] : occlude(csX0[seg],csY0[seg],csZ0[seg],csX1[seg],csY1[seg],csZ1[seg],
+      const hid = occlude(csX0[seg],csY0[seg],csZ0[seg],csX1[seg],csY1[seg],csZ1[seg],
                            csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
       const nat = [];
       let t=0;
@@ -999,53 +999,52 @@ function generate(cam, S, shadingBuffer){
       const walked = rev ? nat.slice().reverse().map(([st,a,b])=>[st,1-b,1-a]) : nat;
       for (const [st,s0,s1] of walked){
         const t0 = rev ? 1-s0 : s0, t1w = rev ? 1-s1 : s1;
-        pieces.push([st,
-          [csX0[seg]+(csX1[seg]-csX0[seg])*t0, csY0[seg]+(csY1[seg]-csY0[seg])*t0],
-          [csX0[seg]+(csX1[seg]-csX0[seg])*t1w, csY0[seg]+(csY1[seg]-csY0[seg])*t1w]]);
+        // seg/tEdge0/tEdge1 (the edge's OWN csX0→csX1 parametrization, same
+        // basis Silhouette's siCuts uses below) ride along with each piece
+        // so Step 5 can later locate a drop interval within it — p0/p1 are
+        // exactly the points at tEdge0/tEdge1 respectively, by construction
+        // of the interpolation just below.
+        pieces.push({ st, seg, tEdge0: t0, tEdge1: t1w,
+          p0: [csX0[seg]+(csX1[seg]-csX0[seg])*t0, csY0[seg]+(csY1[seg]-csY0[seg])*t0],
+          p1: [csX0[seg]+(csX1[seg]-csX0[seg])*t1w, csY0[seg]+(csY1[seg]-csY0[seg])*t1w] });
       }
     }
     if (!pieces.length) continue;
-    let ordered = pieces;
-    if (cycle && pieces.length>1){
-      let rotateAt=-1;
-      for (let i=0;i<pieces.length;i++){
-        const prev = pieces[(i-1+pieces.length)%pieces.length];
-        if (pieces[i][0] !== prev[0]){ rotateAt=i; break; }
-      }
-      if (rotateAt>0) ordered = pieces.slice(rotateAt).concat(pieces.slice(0,rotateAt));
+    // group consecutive same-state pieces into runs — plain grouping, no
+    // identity assigned yet
+    const runs = [];
+    for (const piece of pieces){
+      const last = runs.length ? runs[runs.length-1] : null;
+      if (last && last.st === piece.st) last.pieces.push(piece);
+      else runs.push({ st: piece.st, pieces: [piece] });
     }
-    let curState=null, runPts=[];
-    const flushRun = () => {
-      // One id per flush, whether or not it actually emits anything below
-      // (the layer being off, or too few points, just means this id ends up
-      // unused — never reused by a later, different run).
-      const rid = contourRunSeq++;
-      if (runPts.length>=2){
-        const isV = curState==='v';
-        let rl=0; for (let i=1;i<runPts.length;i++) rl+=Math.hypot(runPts[i][0]-runPts[i-1][0], runPts[i][1]-runPts[i-1][1]);
-        (isV ? contourRunLens.sv : contourRunLens.sh).push(rl);
-        const arr = isV ? (layerOn.sv ? groups.sv : null) : (layerOn.sh ? groups.sh : null);
-        if (arr){
-          const runArr = isV ? runIds.sv : runIds.sh;
-          const seqArr = isV ? seqs.sv : seqs.sh;
-          let seq = 0;
-          for (let i=0;i+1<runPts.length;i++)
-            // emit() silently drops sub-MIN_SEG pieces — only push the
-            // parallel identity entry when a segment actually landed, or
-            // groups.sv/sh and runIds.sv/sh desync.
-            if (emit(arr, runPts[i][0],runPts[i][1], runPts[i+1][0],runPts[i+1][1], 0, 1)){
-              runArr.push(rid); seqArr.push(seq++);
-            }
-        }
-      }
-      runPts=[];
-    };
-    for (const [st,p0,p1] of ordered){
-      if (st!==curState){ flushRun(); curState=st; runPts=[p0]; }
-      runPts.push(p1);
+    // close the chain's own cycle seam here, immediately: if cycle and the
+    // first/last run share a state, they're the same physical run split
+    // only by the walk's arbitrary start point. No drops exist yet at this
+    // stage, so this merge is always a plain touching-endpoint join.
+    if (cycle && runs.length>1 && runs[0].st === runs[runs.length-1].st){
+      const lastRun = runs.pop();
+      runs[0].pieces = lastRun.pieces.concat(runs[0].pieces);
     }
-    flushRun();
+    // A run with no true endpoint at all — the whole cycle is one
+    // unbroken same-visibility loop — only when the chain is itself a
+    // cycle AND collapsed to exactly one run above.
+    const isClosedLoop = cycle && runs.length===1;
+    for (const run of runs){
+      run.id = contourRunSeq++;
+      run.isClosedLoop = isClosedLoop;
+      let rl=0; for (const pc of run.pieces) rl += Math.hypot(pc.p1[0]-pc.p0[0], pc.p1[1]-pc.p0[1]);
+      (run.st==='v' ? contourRunLens.sv : contourRunLens.sh).push(rl);
+      contourRuns.push(run);
+    }
   }
+  // Phase 3b Step 4's output (drop [t0,t1] intervals per segment, edge's
+  // own csX0→csX1 parametrization) — declared here, at Contour's own outer
+  // scope, since Step 4 itself has to run inside the widened Silhouette
+  // guard below (it needs that block's siList/siCuts/pickBackdropFace
+  // machinery) while Step 5/6 (which consume it) run after that guard
+  // closes, alongside every other Contour-only step.
+  const contourDrops = (layerOn.sv || layerOn.sh) ? new Array(nCS) : null;
 
   // Shared by ground-shadow and cast-shadow texture (further below): a
   // point-in-triangle coverage/nearest-face lookup against the same
@@ -1123,8 +1122,14 @@ function generate(cam, S, shadingBuffer){
         filter table exactly. Silhouette has no hidden-line variant (never
         meaningfully "occluded", only "backdropped" — matching the old
         Scene Outline's own behavior); Silhouette individual does. */
-  if (layerOn.so || layerOn.iv || layerOn.ih){
-  const pickBackdropFace = (px, py, skipA, skipB) => {
+  if (layerOn.so || layerOn.iv || layerOn.ih || layerOn.sv || layerOn.sh){
+  // pickBackdropFaceWithDepth (Phase 3b — see PHASE3b-contour-run-identity.md
+  // Step 1): same nearest-other-front-facing-triangle query Silhouette
+  // always used, factored to also return the matched triangle's
+  // interpolated depth — needed by Contour's own drop rule below, which
+  // Silhouette itself has no use for. Pure refactor: pickBackdropFace stays
+  // a one-line wrapper, zero behavior change for Silhouette's own calls.
+  const pickBackdropFaceWithDepth = (px, py, skipA, skipB) => {
     const ci = cellY(py)*gw + cellX(px);
     let bestF = -1, bestIz = -Infinity;
     for (let li=cellStart[ci]; li<cellStart[ci+1]; li++){
@@ -1145,8 +1150,9 @@ function generate(cam, S, shadingBuffer){
       const pointIz = w0*az + w1*bz + w2*cz;
       if (pointIz > bestIz){ bestIz = pointIz; bestF = f; }
     }
-    return bestF;   // -1 = nothing behind (open background)
+    return { f: bestF, iz: bestIz };   // f=-1 = nothing behind (open background)
   };
+  const pickBackdropFace = (px, py, skipA, skipB) => pickBackdropFaceWithDepth(px, py, skipA, skipB).f;
 
   const siList = [];      // compact list of valid stage-1 segment indices
   const siFlat = [];      // parallel flat [x0,y0,x1,y1,...] for buildSegGrid
@@ -1322,6 +1328,169 @@ function generate(cam, S, shadingBuffer){
       flushRun();
     }
   }
+
+  /* Phase 3b Step 4 (see PHASE3b-contour-run-identity.md) — Contour's own
+     crossing-split + backdrop-depth test, purely SUBTRACTIVE: never touches
+     occlude(), never decides visible/hidden, only ever produces drop
+     [t0,t1] intervals per segment — in the edge's own csX0→csX1
+     parametrization, the exact same basis Step 2/3's tEdge0/tEdge1 already
+     use, so applying a drop to a run's pieces below needs no re-projection.
+     Reuses Silhouette's own siList/siFlat/siCuts/idxOfSeg (now built
+     whenever Contour needs them too, per the widened guard above) — no
+     separate crossing-split computation for Contour. */
+  // Tested starting value (see spec) — self-scales via the point's own
+  // depth magnitude, mirroring occlude()'s own fpEps pattern; tunable, not
+  // final.
+  const CONTOUR_DEPTH_SIMILAR_FRAC = 0.015;
+  if (contourDrops) for (let idx=0; idx<siList.length; idx++){
+    const seg = siList[idx];
+    const shell = siShellOfIdx[idx];
+    const e = csEdge[seg];
+    const cuts = siCuts[idx].slice().sort((a,b)=>a.t-b.t);
+    // outward-nudge direction — identical to buildEdgePieces' own block
+    // above (same OUTWARD_EPS, same reference-face/third-vertex sign
+    // resolution).
+    const OUTWARD_EPS = 0.01;
+    let ox=0, oy=0;
+    {
+      const ex = csX1[seg]-csX0[seg], ey = csY1[seg]-csY0[seg];
+      const elen = Math.hypot(ex,ey) || 1;
+      let nx = -ey/elen, ny = ex/elen;
+      const refFace = (csFaceB[seg]<0 || front[csFaceA[seg]]) ? csFaceA[seg] : csFaceB[seg];
+      const va=tri[refFace*3], vb=tri[refFace*3+1], vc=tri[refFace*3+2];
+      const tv = (va!==ea[e] && va!==eb[e]) ? va : (vb!==ea[e] && vb!==eb[e]) ? vb : vc;
+      const emx=(csX0[seg]+csX1[seg])/2, emy=(csY0[seg]+csY1[seg])/2;
+      const tvx = sx[tv]-emx, tvy = sy[tv]-emy;
+      if (nx*tvx + ny*tvy > 0){ nx=-nx; ny=-ny; }
+      ox=nx*OUTWARD_EPS; oy=ny*OUTWARD_EPS;
+    }
+    let drops = null;
+    for (let k=0; k+1<cuts.length; k++){
+      const ca=cuts[k], cb=cuts[k+1];
+      if (cb.t - ca.t < 1e-6) continue;
+      const tm = (ca.t+cb.t)/2;
+      const mx = csX0[seg]+(csX1[seg]-csX0[seg])*tm, my = csY0[seg]+(csY1[seg]-csY0[seg])*tm;
+      const back = pickBackdropFaceWithDepth(mx+ox, my+oy, csFaceA[seg], csFaceB[seg]);
+      // no backdrop, or a backdrop belonging to a different shell — always
+      // keep (open background, or a genuine boundary against another
+      // object — exactly Silhouette's own "always keep" cases)
+      if (back.f < 0 || COMP[back.f] !== shell) continue;
+      // same shell — ambiguous, resolved by comparing the outward
+      // backdrop's depth against THIS point's own interpolated depth:
+      // near-identical means the "backdrop" is really this same local
+      // surface (artifact, drop); a real gap means a genuine fold (keep)
+      const edgeIz = csZ0[seg] + (csZ1[seg]-csZ0[seg])*tm;
+      const thresh = Math.abs(edgeIz) * CONTOUR_DEPTH_SIMILAR_FRAC;
+      if (Math.abs(back.iz - edgeIz) >= thresh) continue;
+      if (!drops) drops = [];
+      drops.push(ca.t, cb.t);
+    }
+    if (drops) contourDrops[seg] = drops;
+  }
+  }
+
+  /* Phase 3b Step 5+6 — subtract Step 4's drops from each run's own
+     geometry (never losing or reassigning run.id, only ever splitting its
+     point sequence), absorb whatever sub-MIN_SEG slivers that splitting
+     leaves behind (mirroring occlude()'s own denoise, but scoped to
+     WHATEVER remains after splitting — Step 5's drops are themselves never
+     length-filtered, they're identified artifacts, not noise), then emit —
+     bridging any surviving gap with a direct connector, exactly the Phase
+     3a flushRun convention (push the resuming fragment's own start point,
+     then continue; the emitted segment between two flat-array-adjacent
+     points IS the bridge, real touch or not). */
+  if (contourDrops) for (const run of contourRuns){
+    // Step 5: split each piece against contourDrops[seg] (if any), into an
+    // ordered fragment list — 'keep' fragments carry a running point list,
+    // 'drop' fragments carry no data at all (their length is never tested,
+    // only their presence as a separator matters). Adjacent same-type
+    // fragments are merged as they're produced, so the list always
+    // strictly alternates once built.
+    const frags = [];
+    const pushFrag = (frag) => {
+      const last = frags.length ? frags[frags.length-1] : null;
+      if (last && last.type === frag.type){
+        if (frag.type === 'keep') last.pts.push(...frag.pts.slice(1));
+        return;
+      }
+      frags.push(frag);
+    };
+    for (const pc of run.pieces){
+      const drops = contourDrops[pc.seg];
+      if (!drops){ pushFrag({ type:'keep', pts:[pc.p0, pc.p1] }); continue; }
+      const denom = pc.tEdge1 - pc.tEdge0;
+      const subs = [];   // [s0,s1] in [0,1] along p0→p1
+      for (let i=0;i+1<drops.length;i+=2){
+        let s0 = (drops[i]-pc.tEdge0)/denom, s1 = (drops[i+1]-pc.tEdge0)/denom;
+        if (s0>s1){ const tmp=s0; s0=s1; s1=tmp; }
+        s0 = Math.max(0, s0); s1 = Math.min(1, s1);
+        if (s1 - s0 > 1e-9) subs.push([s0,s1]);
+      }
+      if (!subs.length){ pushFrag({ type:'keep', pts:[pc.p0, pc.p1] }); continue; }
+      subs.sort((a,b)=>a[0]-b[0]);
+      const pointAt = (s) => [ pc.p0[0]+(pc.p1[0]-pc.p0[0])*s, pc.p0[1]+(pc.p1[1]-pc.p0[1])*s ];
+      let cur = 0;
+      for (const [s0,s1] of subs){
+        if (s0 > cur + 1e-9) pushFrag({ type:'keep', pts:[pointAt(cur), pointAt(s0)] });
+        pushFrag({ type:'drop' });
+        cur = s1;
+      }
+      if (cur < 1 - 1e-9) pushFrag({ type:'keep', pts:[pointAt(cur), pointAt(1)] });
+    }
+    if (!frags.length) continue;
+    let frags2 = frags, closed = run.isClosedLoop;
+    // closed loop: fold the wraparound seam BEFORE absorption (same
+    // reasoning as Step 2/3's own seam-close) so the absorption pass below
+    // never has to reason about the array boundary as anything other than
+    // an ordinary adjacency.
+    if (closed && frags2.length>1 && frags2[0].type===frags2[frags2.length-1].type){
+      const lastF = frags2[frags2.length-1];
+      frags2 = frags2.slice(0, frags2.length-1);
+      if (lastF.type==='keep') frags2[0] = { type:'keep', pts: lastF.pts.concat(frags2[0].pts.slice(1)) };
+    }
+    for (const f of frags2) if (f.type==='keep'){
+      let l=0; for (let i=1;i<f.pts.length;i++) l+=Math.hypot(f.pts[i][0]-f.pts[i-1][0], f.pts[i][1]-f.pts[i-1][1]);
+      f.len = l;
+    }
+    // Absorb interior keep fragments shorter than MIN_SEG into their
+    // surrounding drop. Protect the two true endpoints of an open run from
+    // ever being absorbed away; a closed loop has none, so every fragment
+    // — including the wrap-around seam — is eligible.
+    for (let guard=frags2.length+2; guard>0 && frags2.length>1; guard--){
+      let shortest=-1, shortLen=MIN_SEG;
+      for (let i=0;i<frags2.length;i++){
+        if (frags2[i].type!=='keep') continue;
+        if (!closed && (i===0 || i===frags2.length-1)) continue;
+        if (frags2[i].len < shortLen){ shortLen=frags2[i].len; shortest=i; }
+      }
+      if (shortest<0) break;
+      if (shortest>0 && shortest<frags2.length-1){
+        frags2.splice(shortest-1, 3, { type:'drop' });
+      } else if (shortest===0){
+        // wrap-around: merges frags2[last] + frags2[0] + frags2[1]
+        frags2 = [{ type:'drop' }, ...frags2.slice(2, frags2.length-1)];
+      } else {
+        // wrap-around: merges frags2[last-1] + frags2[last] + frags2[0]
+        frags2 = [{ type:'drop' }, ...frags2.slice(1, frags2.length-2)];
+      }
+    }
+    // Step 6 emit: flat-concatenate every surviving keep fragment's own
+    // points, in order — consecutive points from different fragments are
+    // exactly the "direct connector" bridge across whatever was dropped
+    // between them.
+    const outPts = [];
+    for (const f of frags2) if (f.type==='keep') outPts.push(...f.pts);
+    if (outPts.length<2) continue;
+    const isV = run.st==='v';
+    const arr = isV ? (layerOn.sv ? groups.sv : null) : (layerOn.sh ? groups.sh : null);
+    if (!arr) continue;
+    const runArr = isV ? runIds.sv : runIds.sh;
+    const seqArr = isV ? seqs.sv : seqs.sh;
+    let seq = 0;
+    for (let i=0;i+1<outPts.length;i++)
+      if (emit(arr, outPts[i][0],outPts[i][1], outPts[i+1][0],outPts[i+1][1], 0, 1)){
+        runArr.push(run.id); seqArr.push(seq++);
+      }
   }
 
   /* 2.6 · circles pattern — one unified layer (single checkbox), drawing
@@ -2075,20 +2244,23 @@ function generate(cam, S, shadingBuffer){
     if (capped) counts.hatchCapped = true;
     if (shadowExhausted) counts.shadowCapped = true;   // budget hit — remainder rendered as lit
   }
-  /* Collinear-overlap dedup — every straight-line edge layer (hatch is
-     deliberately excluded: those strokes are evenly spaced by construction
-     and never coincide, so there's nothing for intra-layer dedup to find,
-     just wasted work checking). This is pass 1: merge duplicates/overlaps
-     WITHIN each layer, since same-layer strokes share a pen and merging
-     loses nothing. */
-  for (const k of ['sv','sh','cv','ch','so']){
-    if (k==='sv' || k==='sh'){
-      if (debugContourRaw) continue;   // TEMPORARY DEBUG BYPASS — see debugContourRaw above
-      const res = dedupCollinear(groups[k], effOffTol, effGapTol, runIds[k], seqs[k]);
-      groups[k] = res.arr; runIds[k] = res.runIds; seqs[k] = res.seqs;
-    } else {
-      groups[k] = dedupCollinear(groups[k], effOffTol, effGapTol);
-    }
+  /* Collinear-overlap dedup — every straight-line edge layer except Contour
+     (hatch is deliberately excluded too: those strokes are evenly spaced by
+     construction and never coincide, so there's nothing for intra-layer
+     dedup to find). This is pass 1: merge duplicates/overlaps WITHIN each
+     layer, since same-layer strokes share a pen and merging loses nothing.
+     sv/sh are skipped outright (Phase 3b — see PHASE3b-contour-run-identity.md
+     Step 7): dedupCollinear's clustering is purely 2D (angle + perpendicular
+     offset), blind to depth or runId, so on a self-crossing/self-overlapping
+     model it can silently merge two genuinely different strands of Contour
+     that only LOOK collinear in 2D — confirmed directly (a self-crossing
+     torus knot went from 81 fragmented paths to 22, one closed, purely by
+     disabling this for Contour, everything else held constant). Contour's
+     own run identity (Step 2/3 above) already guarantees no duplicate ink
+     within a run, and cross-run duplicate ink is vanishingly rare compared
+     to the corruption risk, so it's never run here at all. */
+  for (const k of ['cv','ch','so']){
+    groups[k] = dedupCollinear(groups[k], effOffTol, effGapTol);
   }
   /* Pass 2: cross-layer ink-avoidance across the FULL drawing-priority
      hierarchy (highest first): Scene outline > Silhouette > Silhouette-
