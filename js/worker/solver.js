@@ -1368,7 +1368,7 @@ function generate(cam, S, shadingBuffer){
   // Tested starting value (see spec) — self-scales via the point's own
   // depth magnitude, mirroring occlude()'s own fpEps pattern; tunable, not
   // final.
-  const CONTOUR_DEPTH_SIMILAR_FRAC = 0.015;
+  const CONTOUR_DEPTH_SIMILAR_FRAC = 0.01;
   if (contourDrops) for (let idx=0; idx<siList.length; idx++){
     const seg = siList[idx];
     const shell = siShellOfIdx[idx];

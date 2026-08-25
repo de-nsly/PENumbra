@@ -793,14 +793,17 @@ function chainByRun(segs, runIds, seqs){
        prevId/nextId (walked past any number of ALSO-vanished neighbors,
        in case several artifact runs sit back to back) name the two chains
        that should be bridged, in a known, non-ambiguous direction.
-   (b) bit-identical endpoints — two runs whose emitted tips land on the
-       exact same point regardless of adjacency, most likely two different
-       siChains sharing one mesh vertex (pairJunctionArms only pairs one
-       straightest continuation per junction — see that phase doc's own
-       "open risk" note). Tight-epsilon exact match only (reusing
-       js/worker/dedup.js's EXACT_DUP_EPS convention) — never a proximity
-       search, so this can never accidentally fuse two merely-nearby but
-       genuinely different curves.
+   (b) near-coincident endpoints — two runs whose emitted tips land within
+       MIN_SEG (0.3px, the pipeline's own "not worth a separate pen mark"
+       floor) of each other regardless of adjacency, most likely two
+       different siChains sharing one mesh vertex (pairJunctionArms only
+       pairs one straightest continuation per junction — see that phase
+       doc's own "open risk" note), or two independently-computed copies
+       of what's really the same point. Averaged to a shared midpoint
+       (mergeSilhouetteClose's own convention for exactly this) rather
+       than bridged — MIN_SEG is small enough that the averaging can never
+       visibly displace real geometry, so this never needs to distinguish
+       WHY the two tips are close, only that they are.
 
    Both resolve to an explicit (chain, tip) pairing, then get walked
    exactly like mergeSilhouetteClose's own tip graph (open runs only;
@@ -868,24 +871,50 @@ function mergeContourRunSplits(chains, adjacency){
     if (!paired.has(ta) && !paired.has(tb)) link(ta, tb);
   }
 
-  // (b) bit-identical tip pairs, across DIFFERENT run.ids only (same-run
-  // splits are already stitched by chainByRun's own touch check).
+  // (b) near-coincident tip pairs within MIN_SEG, across DIFFERENT run.ids
+  // only (same-run splits are already stitched by chainByRun's own touch
+  // check). Unlike (a)'s deliberate bridge across real removed material,
+  // a pair found here is treated as the SAME real point, just resolved to
+  // slightly different coordinates by two independently-computed runs —
+  // averaged to a shared midpoint (same convention mergeSilhouetteClose
+  // already uses for its own proximity merges) so the walk below sees a
+  // genuine touch, not a bridge. Candidates are collected and consumed
+  // nearest-first (also mirroring mergeSilhouetteClose) so an ambiguous
+  // 3-way near-coincidence resolves to its closest pairing rather than
+  // whichever one happened to be tested first.
+  // MIN_SEG (0.3px) is the pipeline's own "not worth a separate pen mark"
+  // floor (see dedup.js) — small enough that averaging two points within
+  // it can never visibly displace real geometry, regardless of whether
+  // the gap turns out to be occlusion noise, a crossing-split trim, or a
+  // shared/near-shared mesh vertex.
+  const MIN_SEG = 0.3;
+  const tipPos = (ci,end) => end===1 ? open[ci].pts[open[ci].pts.length-1] : open[ci].pts[0];
+  const setTip = (ci,end,pt) => { if (end===1) open[ci].pts[open[ci].pts.length-1] = pt.slice(); else open[ci].pts[0] = pt.slice(); };
+  const proxCand = [];
   for (let i=0;i<N;i++){
-    if (paired.has(tipKey(i,0)) && paired.has(tipKey(i,1))) continue;
-    for (let j=i+1;j<N;j++){
-      if (open[i].runId === open[j].runId) continue;
-      const pi = [open[i].pts[0], open[i].pts[open[i].pts.length-1]];
-      const pj = [open[j].pts[0], open[j].pts[open[j].pts.length-1]];
-      for (let ei=0; ei<2; ei++){
-        const ta = tipKey(i,ei);
-        if (paired.has(ta)) continue;
+    for (let ei=0; ei<2; ei++){
+      const ta = tipKey(i,ei);
+      if (paired.has(ta)) continue;
+      const pa = tipPos(i,ei);
+      for (let j=i+1;j<N;j++){
+        if (open[i].runId === open[j].runId) continue;
         for (let ej=0; ej<2; ej++){
           const tb = tipKey(j,ej);
           if (paired.has(tb)) continue;
-          if (eq(pi[ei], pj[ej])){ link(ta, tb); break; }
+          const pb = tipPos(j,ej);
+          const d = Math.hypot(pa[0]-pb[0], pa[1]-pb[1]);
+          if (d < MIN_SEG) proxCand.push({ ta, tb, d, ci:i, ei, cj:j, ej });
         }
       }
     }
+  }
+  proxCand.sort((x,y) => x.d - y.d);
+  for (const c of proxCand){
+    if (paired.has(c.ta) || paired.has(c.tb)) continue;
+    const pa = tipPos(c.ci,c.ei), pb = tipPos(c.cj,c.ej);
+    const mid = [(pa[0]+pb[0])/2, (pa[1]+pb[1])/2];
+    setTip(c.ci,c.ei,mid); setTip(c.cj,c.ej,mid);
+    link(c.ta, c.tb);
   }
 
   // Walk the pairing graph — same structure as mergeSilhouetteClose's own
