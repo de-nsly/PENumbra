@@ -743,7 +743,10 @@ function mergeSilhouetteClose(chains, tolMerge, protectedPoints){
    subtractCovered punches holes when a higher-priority layer covers part
    of it — so consecutive same-run segments that don't actually share an
    endpoint (same ~0.02px tolerance chainSegments/splitSelfTouching use)
-   start a fresh polyline rather than being stitched across the hole. */
+   start a fresh polyline rather than being stitched across the hole.
+   Each returned chain carries the run.id its segments came from (multiple
+   chains can share one runId, in seq order, when subtractCovered punched
+   a hole) — mergeContourRunSplits below is the consumer. */
 function chainByRun(segs, runIds, seqs){
   const eq = (x1,y1,x2,y2) => Math.abs(x1-x2)<0.02 && Math.abs(y1-y2)<0.02;
   const n = segs.length/4;
@@ -755,20 +758,210 @@ function chainByRun(segs, runIds, seqs){
     list.push(i);
   }
   const polys = [];
-  for (const list of byRun.values()){
+  for (const [rid, list] of byRun){
     list.sort((a,b) => seqs[a]-seqs[b]);
     let cur = null;
     for (const i of list){
       const x0=segs[i*4],y0=segs[i*4+1],x1=segs[i*4+2],y1=segs[i*4+3];
       if (cur && eq(cur[cur.length-1][0], cur[cur.length-1][1], x0,y0)) cur.push([x1,y1]);
-      else { if (cur) polys.push(cur); cur = [[x0,y0],[x1,y1]]; }
+      else { if (cur) polys.push({ pts: cur, runId: rid }); cur = [[x0,y0],[x1,y1]]; }
     }
-    if (cur) polys.push(cur);
+    if (cur) polys.push({ pts: cur, runId: rid });
   }
-  return polys.map(pts => {
+  return polys.map(({ pts, runId }) => {
     const closed = pts.length>2 && eq(pts[0][0],pts[0][1], pts[pts.length-1][0],pts[pts.length-1][1]);
-    return { pts: closed ? pts.slice(0,-1) : pts, closed };
+    return { pts: closed ? pts.slice(0,-1) : pts, closed, runId };
   });
+}
+
+/* mergeContourRunSplits — Contour run-identity merge, built on top of
+   chainByRun's own runId-tagged chains. Two DIFFERENT run.ids can
+   legitimately need joining into one visual stroke, and neither case is
+   safe for chainByRun's own local touch-check to catch (that only ever
+   looks within one runId's own segment list):
+
+   (a) "sandwich" — a run that's (almost) entirely triangulation-diagonal
+       artifact (see PHASE3b-contour-run-identity.md) ends up with ALL its
+       own material dropped by Step 4/5 in the worker, so it never reaches
+       here at all — but it used to sit, in the worker's own chain-walk
+       order, between two OTHER runs (always the opposite state, by
+       construction) that are now left with nothing between them. The
+       worker posts every run's prevId/nextId (js/worker/solver.js's Step
+       2/3, counts.contourAdjacency) precisely so this can be recognized
+       here: an id present in that adjacency table but absent from this
+       layer's own chains is exactly such a vanished run, and its
+       prevId/nextId (walked past any number of ALSO-vanished neighbors,
+       in case several artifact runs sit back to back) name the two chains
+       that should be bridged, in a known, non-ambiguous direction.
+   (b) bit-identical endpoints — two runs whose emitted tips land on the
+       exact same point regardless of adjacency, most likely two different
+       siChains sharing one mesh vertex (pairJunctionArms only pairs one
+       straightest continuation per junction — see that phase doc's own
+       "open risk" note). Tight-epsilon exact match only (reusing
+       js/worker/dedup.js's EXACT_DUP_EPS convention) — never a proximity
+       search, so this can never accidentally fuse two merely-nearby but
+       genuinely different curves.
+
+   Both resolve to an explicit (chain, tip) pairing, then get walked
+   exactly like mergeSilhouetteClose's own tip graph (open runs only;
+   closed loops need no merge, they already have no open tip) — reused
+   here rather than reinvented, just driven by these specific pairs
+   instead of a distance search. When several runs merge, the merged
+   result is labeled with the LOWEST contributing run.id (bookkeeping
+   only — the exported path is pure geometry and carries no id). */
+function mergeContourRunSplits(chains, adjacency){
+  if (!adjacency || !adjacency.length) return chains;
+  const EPS = 1e-4;   // exact-computation match, not a proximity tolerance — see dedup.js's EXACT_DUP_EPS
+  const eq = (a,b) => Math.abs(a[0]-b[0])<EPS && Math.abs(a[1]-b[1])<EPS;
+
+  const open = [], closedOut = [];
+  chains.forEach(c => { if (c.closed || c.pts.length<2) closedOut.push(c); else open.push(c); });
+  const N = open.length;
+  if (N < 2) return chains;
+
+  // first/last chain-piece index for each runId — chainByRun already
+  // emits multiple pieces of one runId in seq order, so "first"/"last"
+  // here are that run's own head/tail ends.
+  const firstOfRun = new Map(), lastOfRun = new Map();
+  open.forEach((c,i) => {
+    if (!firstOfRun.has(c.runId)) firstOfRun.set(c.runId, i);
+    lastOfRun.set(c.runId, i);
+  });
+
+  const tipKey = (ci,end) => ci*2+end;   // end: 0=start, 1=end
+  const paired = new Map();
+  const link = (ta, tb) => { paired.set(ta,tb); paired.set(tb,ta); };
+
+  // (a) sandwich pairs — walk past any run of consecutively-vanished
+  // neighbors to find the nearest run on each side that actually HAS
+  // content, then bridge those two, in the known prevId→nextId direction.
+  // Deliberately keyed on the worker's own hasContent flag, NOT on whether
+  // a run's segments actually made it into `chains` — those are two
+  // different questions. A run can have real, worker-computed content and
+  // still be entirely absent from `chains` simply because its own layer
+  // checkbox (Contour hidden, say) is off; that says nothing about
+  // whether real occlusion put a genuine gap there, and bridging across it
+  // would replace a deliberate hidden-line break with a false straight
+  // line. Only a run Step 4/5 itself left with nothing (artifact,
+  // genuinely eliminated) is eligible to be walked past/bridged over.
+  const adjById = new Map(adjacency.map(a => [a.id, a]));
+  const hasContentIds = new Set(adjacency.filter(a => a.hasContent).map(a => a.id));
+  const nearestSurviving = (startId, dir) => {
+    let cur = startId, guard = adjacency.length + 2;
+    while (guard-- > 0){
+      if (cur == null || cur < 0) return null;
+      if (hasContentIds.has(cur)) return cur;
+      const a = adjById.get(cur);
+      if (!a) return null;
+      cur = a[dir];
+    }
+    return null;
+  };
+  for (const a of adjacency){
+    if (a.hasContent) continue;   // only start from a run Step 4/5 left with nothing at all
+    const prevSurv = nearestSurviving(a.prevId, 'prevId');
+    const nextSurv = nearestSurviving(a.nextId, 'nextId');
+    if (prevSurv == null || nextSurv == null || prevSurv === nextSurv) continue;
+    const ai = lastOfRun.get(prevSurv), bi = firstOfRun.get(nextSurv);
+    if (ai == null || bi == null) continue;   // has content, but isn't drawn in THIS layer (own checkbox off) — nothing to bridge to
+    const ta = tipKey(ai,1), tb = tipKey(bi,0);
+    if (!paired.has(ta) && !paired.has(tb)) link(ta, tb);
+  }
+
+  // (b) bit-identical tip pairs, across DIFFERENT run.ids only (same-run
+  // splits are already stitched by chainByRun's own touch check).
+  for (let i=0;i<N;i++){
+    if (paired.has(tipKey(i,0)) && paired.has(tipKey(i,1))) continue;
+    for (let j=i+1;j<N;j++){
+      if (open[i].runId === open[j].runId) continue;
+      const pi = [open[i].pts[0], open[i].pts[open[i].pts.length-1]];
+      const pj = [open[j].pts[0], open[j].pts[open[j].pts.length-1]];
+      for (let ei=0; ei<2; ei++){
+        const ta = tipKey(i,ei);
+        if (paired.has(ta)) continue;
+        for (let ej=0; ej<2; ej++){
+          const tb = tipKey(j,ej);
+          if (paired.has(tb)) continue;
+          if (eq(pi[ei], pj[ej])){ link(ta, tb); break; }
+        }
+      }
+    }
+  }
+
+  // Walk the pairing graph — same structure as mergeSilhouetteClose's own
+  // walk (open-chain pass, then closed-loop-only fallback), minus its
+  // proximity-merge midpoint averaging: every tip here is either an exact
+  // match or a deliberate worker-adjacency bridge, never nudged.
+  function orientedPts(ci, exitEnd){ const p = open[ci].pts; return exitEnd===1 ? p.slice() : p.slice().reverse(); }
+  const visited = new Uint8Array(N);
+  const result = [];
+  for (let ci=0; ci<N; ci++){
+    if (visited[ci]) continue;
+    const t0 = tipKey(ci,0), t1 = tipKey(ci,1);
+    const p0 = paired.get(t0), p1 = paired.get(t1);
+    if (p0 === t1 || p1 === t0){
+      visited[ci] = 1;
+      const pts = open[ci].pts.slice(); pts.pop();
+      result.push({ pts, closed:true, runId: open[ci].runId });
+      continue;
+    }
+    if (p0 != null && p1 != null) continue;   // interior of a longer run — reached from its own true end below
+    visited[ci] = 1;
+    const exitEnd = p0 != null ? 0 : 1;
+    let pts = orientedPts(ci, exitEnd);
+    let minRunId = open[ci].runId;
+    let curTip = tipKey(ci, exitEnd);
+    for (let guard=N+2; guard>0; guard--){
+      const partner = paired.get(curTip);
+      if (partner == null) break;
+      const nci = (partner/2)|0, nend = partner%2;
+      if (visited[nci]) break;
+      visited[nci] = 1;
+      if (open[nci].runId < minRunId) minRunId = open[nci].runId;
+      const nextExitEnd = nend===1 ? 0 : 1;
+      const nextPts = orientedPts(nci, nextExitEnd);
+      // Unlike mergeSilhouetteClose (whose tips were already overwritten
+      // to a shared midpoint before this same walk runs, so its neighbor's
+      // leading point is always a guaranteed duplicate), a sandwich pair
+      // here is a genuine BRIDGE across a real gap — its two endpoints are
+      // deliberately different points. Only drop the neighbor's leading
+      // point when it's actually the same point (the bit-identical case);
+      // otherwise keep it, so the bridge segment itself gets emitted.
+      const bridging = !eq(pts[pts.length-1], nextPts[0]);
+      pts = pts.concat(bridging ? nextPts : nextPts.slice(1));
+      curTip = tipKey(nci, nextExitEnd);
+    }
+    result.push({ pts, closed:false, runId: minRunId });
+  }
+  for (let ci=0; ci<N; ci++){   // whatever's left must be pure cycles
+    if (visited[ci]) continue;
+    visited[ci] = 1;
+    let pts = orientedPts(ci, 1);
+    let minRunId = open[ci].runId;
+    let curTip = tipKey(ci, 1);
+    for (let guard=N+2; guard>0; guard--){
+      const partner = paired.get(curTip);
+      if (partner == null) break;
+      const nci = (partner/2)|0, nend = partner%2;
+      if (visited[nci]) break;
+      visited[nci] = 1;
+      if (open[nci].runId < minRunId) minRunId = open[nci].runId;
+      const nextExitEnd = nend===1 ? 0 : 1;
+      const nextPts = orientedPts(nci, nextExitEnd);
+      // Unlike mergeSilhouetteClose (whose tips were already overwritten
+      // to a shared midpoint before this same walk runs, so its neighbor's
+      // leading point is always a guaranteed duplicate), a sandwich pair
+      // here is a genuine BRIDGE across a real gap — its two endpoints are
+      // deliberately different points. Only drop the neighbor's leading
+      // point when it's actually the same point (the bit-identical case);
+      // otherwise keep it, so the bridge segment itself gets emitted.
+      const bridging = !eq(pts[pts.length-1], nextPts[0]);
+      pts = pts.concat(bridging ? nextPts : nextPts.slice(1));
+      curTip = tipKey(nci, nextExitEnd);
+    }
+    result.push({ pts, closed:true, runId: minRunId });
+  }
+  return result.concat(closedOut);
 }
 
 function buildChainedPathD(segs, stats, silMergeOpts){
@@ -1567,10 +1760,18 @@ function onResult(m){
     if (L.key === 'sv' || L.key === 'sh'){
       // Contour — built straight from the worker's own runId/seq chain
       // identity (Phase 3a), never from coordinate re-matching. See
-      // chainByRun's own comment. Tail is the same as every other chained
-      // layer: split-self-touching safety net, collinear simplify, path
-      // emit, stats.
-      for (const chain of chainByRun(segs, m.runIds[L.key], m.seqs[L.key]))
+      // chainByRun's own comment. mergeContourRunSplits then re-joins any
+      // run that's permanently split across a vanished-artifact run or a
+      // shared-vertex coincidence (see its own comment) — passed the FULL
+      // adjacency table (both sv and sh) since a vanished run's
+      // prevId/nextId always name the OPPOSITE state's runs; it silently
+      // no-ops for the state that isn't relevant here. Tail is the same as
+      // every other chained layer: split-self-touching safety net,
+      // collinear simplify, path emit, stats.
+      const contourChains = mergeContourRunSplits(
+        chainByRun(segs, m.runIds[L.key], m.seqs[L.key]),
+        m.counts && m.counts.contourAdjacency);
+      for (const chain of contourChains)
         for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed)){
           const pts = simplifyCollinear(rawPts, closed);
           if (layerOn) accumulatePathStats(pathStats, pts, closed);

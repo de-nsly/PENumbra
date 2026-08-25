@@ -1030,14 +1030,41 @@ function generate(cam, S, shadingBuffer){
     // unbroken same-visibility loop — only when the chain is itself a
     // cycle AND collapsed to exactly one run above.
     const isClosedLoop = cycle && runs.length===1;
-    for (const run of runs){
-      run.id = contourRunSeq++;
+    for (const run of runs) run.id = contourRunSeq++;
+    for (let ri=0; ri<runs.length; ri++){
+      const run = runs[ri];
       run.isClosedLoop = isClosedLoop;
+      // Adjacent run (always the OPPOSITE state, by construction — Step
+      // 2/3 only ever starts a new run on a state change) in ORIGINAL
+      // chain-walk order. Consumed downstream by js/svg-export.js's
+      // mergeContourRunSplits: when this run itself turns out to be
+      // (almost) entirely artifact and Step 4/5 drops all of it, its two
+      // flanking runs — otherwise permanently different run.ids — get
+      // bridged back together using exactly this adjacency. -1 = no
+      // neighbor (a true open-chain end, or — for a single-run closed
+      // loop wrapping to itself — deliberately excluded downstream via a
+      // prevId===nextId check, since there's nothing external to bridge).
+      run.prevId = ri>0 ? runs[ri-1].id : (cycle ? runs[runs.length-1].id : -1);
+      run.nextId = ri<runs.length-1 ? runs[ri+1].id : (cycle ? runs[0].id : -1);
       let rl=0; for (const pc of run.pieces) rl += Math.hypot(pc.p1[0]-pc.p0[0], pc.p1[1]-pc.p0[1]);
       (run.st==='v' ? contourRunLens.sv : contourRunLens.sh).push(rl);
       contourRuns.push(run);
     }
   }
+  // DIAGNOSTIC (temporary, at user's request) — full snapshot of every
+  // Step 2/3 run's own point sequence, BEFORE Step 4 (crossing-split +
+  // backdrop test) ever touches it. Read from devtools console (main
+  // thread, after Generate) as:
+  //   console.table(lastGen.counts.dbgStep23.map(r=>({id:r.id,st:r.st,closed:r.closed,npts:r.pts.length/2})))
+  // or dump one run's raw points as lastGen.counts.dbgStep23[i].pts.
+  counts.dbgStep23 = contourRuns.map(run => {
+    const pts = [];
+    for (const pc of run.pieces){
+      if (!pts.length) pts.push(pc.p0[0], pc.p0[1]);
+      pts.push(pc.p1[0], pc.p1[1]);
+    }
+    return { id: run.id, st: run.st, closed: run.isClosedLoop, pts };
+  });
   // Phase 3b Step 4's output (drop [t0,t1] intervals per segment, edge's
   // own csX0→csX1 parametrization) — declared here, at Contour's own outer
   // scope, since Step 4 itself has to run inside the widened Silhouette
@@ -1388,6 +1415,16 @@ function generate(cam, S, shadingBuffer){
     if (drops) contourDrops[seg] = drops;
   }
   }
+  // DIAGNOSTIC (temporary, at user's request) — every segment Step 4 found
+  // at least one drop interval on (edge's own csX0→csX1 t parametrization,
+  // same basis dbgStep23's pts don't use but tEdge0/tEdge1 on each Step 2/3
+  // piece do). Read from devtools console as:
+  //   console.table(lastGen.counts.dbgStep4)
+  if (contourDrops){
+    const dbg = [];
+    for (let seg=0; seg<nCS; seg++) if (contourDrops[seg]) dbg.push({ seg, edge: csEdge[seg], drops: contourDrops[seg].slice() });
+    counts.dbgStep4 = dbg;
+  }
 
   /* Phase 3b Step 5+6 — subtract Step 4's drops from each run's own
      geometry (never losing or reassigning run.id, only ever splitting its
@@ -1480,18 +1517,52 @@ function generate(cam, S, shadingBuffer){
     // between them.
     const outPts = [];
     for (const f of frags2) if (f.type==='keep') outPts.push(...f.pts);
-    if (outPts.length<2) continue;
+    // Recorded independent of layerOn.sv/sh below — this is "did Step 4/5
+    // actually eliminate this run's own material," the thing
+    // js/svg-export.js's mergeContourRunSplits needs to tell a genuine
+    // artifact apart from a run that simply isn't being drawn because its
+    // OWN layer checkbox is off (which says nothing about whether real
+    // occlusion put real content there — bridging across that would paper
+    // over a real, deliberate hidden-line gap with a false straight line).
+    run.hasContent = outPts.length>=2;
+    if (!run.hasContent) continue;
     const isV = run.st==='v';
     const arr = isV ? (layerOn.sv ? groups.sv : null) : (layerOn.sh ? groups.sh : null);
     if (!arr) continue;
     const runArr = isV ? runIds.sv : runIds.sh;
     const seqArr = isV ? seqs.sv : seqs.sh;
+    // Every consecutive pair is pushed directly, deliberately bypassing
+    // emit()'s own MIN_SEG filter. That filter exists to stop a genuinely
+    // isolated, too-short 2-point piece from becoming a spurious
+    // standalone dot — the right call for Silhouette/Crease's independent
+    // per-edge pieces, each of which really does stand alone. outPts is
+    // not that: it's already one continuous, Step-5-absorbed point
+    // sequence for this ONE run (the absorption pass above is what
+    // removes genuinely-too-short interior material — a survivor here is
+    // real geometry). A pair measuring under MIN_SEG here is just two
+    // adjacent points on a fine curve, not noise; filtering it used to
+    // silently sever the run's own continuity into two separately-chained
+    // polylines sharing one run.id, with a gap smaller than MIN_SEG but
+    // larger than chainByRun's own 0.02px touch tolerance — invisible to
+    // both that and mergeContourRunSplits (which only ever looks at
+    // DIFFERENT run.ids). Only a literal duplicate point (exactly zero
+    // length) is skipped — that's not a short segment, it's nothing.
     let seq = 0;
-    for (let i=0;i+1<outPts.length;i++)
-      if (emit(arr, outPts[i][0],outPts[i][1], outPts[i+1][0],outPts[i+1][1], 0, 1)){
-        runArr.push(run.id); seqArr.push(seq++);
-      }
+    for (let i=0;i+1<outPts.length;i++){
+      const ax=outPts[i][0], ay=outPts[i][1], bx=outPts[i+1][0], by=outPts[i+1][1];
+      if (ax===bx && ay===by) continue;
+      arr.push(ax,ay,bx,by);
+      runArr.push(run.id); seqArr.push(seq++);
+    }
   }
+  // Run-adjacency table (id/state/prevId/nextId/hasContent for EVERY run,
+  // whether or not it's actually being drawn) — posted AFTER Step 5/6 so
+  // hasContent reflects what Step 4/5 actually did, not whether the
+  // layer's own on/off checkbox happened to be set. See js/svg-export.js's
+  // mergeContourRunSplits, the actual consumer of this.
+  counts.contourAdjacency = contourRuns.map(run => ({
+    id: run.id, st: run.st, prevId: run.prevId, nextId: run.nextId, hasContent: !!run.hasContent
+  }));
 
   /* 2.6 · circles pattern — one unified layer (single checkbox), drawing
      BOTH a ground-plane ring set (gated by the existing Ground shadow
