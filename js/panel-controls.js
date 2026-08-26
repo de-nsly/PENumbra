@@ -51,6 +51,10 @@ function refreshValLabel(el){
   if (presets){ v.textContent = fmtBigCount(presets[+el.value]); return; }
   if (el.id === 'camShiftX' || el.id === 'camShiftY'){ v.textContent = (+el.value).toFixed(2); return; }
   if (el.id === 'dedupOffMult' || el.id === 'dedupGapMult'){ v.textContent = (+el.value).toFixed(2) + '×'; return; }
+  // A bare fraction of the model radius, small enough to need 4 decimals and
+  // with no unit at all (the generic fallback below would otherwise suffix it
+  // with a degree sign, since it sits among the angle controls).
+  if (el.id === 'contourCleanup'){ v.textContent = (+el.value).toFixed(4); return; }
   if (el.id === 'layoutOverlayOpacity'){ v.textContent = el.value + '%'; return; }
   const bid = baseTexId(el.id);
   const isTexAngle = bid === 'texAngleMin' || bid === 'texAngleMax';
@@ -82,6 +86,7 @@ function refreshValLabel(el){
 function valUnitFor(id){
   if (id === 'camShiftX' || id === 'camShiftY') return '';
   if (id === 'dedupOffMult' || id === 'dedupGapMult') return '×';
+  if (id === 'contourCleanup') return '';
   if (id === 'layoutOverlayOpacity') return '%';
   const bid = baseTexId(id);
   if (bid.startsWith('tex')) return (bid === 'texWobbleVariation' || bid === 'texCirclesThr') ? '' : (bid === 'texAngleMin' || bid === 'texAngleMax') ? '°' : 'mm';
@@ -231,6 +236,12 @@ function gatherSettings(){
     // reintroduced as a bug by a user-facing absolute value.
     dedupOffMult: +$('dedupOffMult').value,
     dedupGapMult: +$('dedupGapMult').value,
+    // Contour's backdrop depth-similarity tolerance (Lines section), plus the
+    // Debug panel's kill-switch for the same test. The worker keeps its own
+    // literal default for whenever contourCleanup isn't a finite number, so a
+    // scene saved before this control existed still solves identically.
+    contourCleanup: +$('contourCleanup').value,
+    debugNoStep4: $('debugNoStep4').checked,
     smoothShading: $('smoothShading').checked,
     creaseDeg: +$('creaseDeg').value,
     light: lightVec(),

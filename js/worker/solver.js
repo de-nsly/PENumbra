@@ -1072,6 +1072,53 @@ function generate(cam, S, shadingBuffer){
   // machinery) while Step 5/6 (which consume it) run after that guard
   // closes, alongside every other Contour-only step.
   const contourDrops = (layerOn.sv || layerOn.sh) ? new Array(nCS) : null;
+  // Step 4's own threshold, kill-switch and diagnostic buffer — declared out
+  // here for exactly the reason contourDrops is (Step 4 runs inside the
+  // widened Silhouette guard; the diagnostic dump that reports it runs after
+  // that guard closes).
+  //
+  // World-space depth-similarity tolerance, as a fraction of the model's
+  // own bounding-sphere radius — same convention as worldNoiseFloor above
+  // (dedup's own world-scale tolerance). Replaces an earlier version that
+  // scaled with the point's own iz (1/dist for perspective) directly:
+  // that has the WRONG power of distance. A fixed real-world depth gap
+  // between two surfaces produces an iz-difference that shrinks as
+  // 1/dist² (derivative of 1/dist), but a threshold scaled by edgeIz
+  // itself only shrinks as 1/dist — so at typical framing distances the
+  // threshold ends up relatively too wide compared to the true gap,
+  // swallowing real folds (e.g. a letterform's bowl passing close to its
+  // own stem) that only re-separate correctly once the camera moves close
+  // enough that the quadratic real gap catches back up. Comparing in
+  // actual world-space depth (converting iz back to view-space z for
+  // perspective) removes the distance-dependence entirely. Tunable, not
+  // final.
+  //
+  // Exposed as a user-facing control ("Contour cleanup", Lines section)
+  // rather than kept as a fixed constant, because no single value serves
+  // every model: measured across the test set, most models want somewhere in
+  // 0.022–0.050, while faceted 3D text needs 0.0225 at most before real folds
+  // (a letterform's bowl passing close to its own stem) start being swallowed.
+  // That leaves a ~2% window where one constant technically satisfies all of
+  // them — too narrow to be worth defending, and the judgment involved ("is
+  // this line desirable ink on paper") is genuinely per-model rather than
+  // geometric. 0.022 is the default: the bottom of the common range, and just
+  // inside the text case's ceiling.
+  const CONTOUR_DEPTH_SIMILAR_FRAC_WORLD =
+    (Number.isFinite(S.contourCleanup) && S.contourCleanup >= 0) ? S.contourCleanup : 0.022;
+  // DEBUG kill-switch (Debug panel) — skips the whole test, so contourDrops
+  // stays allocated but empty and Step 5/6 run their normal path over zero
+  // drops. Distinct from simply setting Contour cleanup to 0, which still
+  // runs every decision and can still drop on an exactly-coincident backdrop.
+  // The discriminator for "is Step 4 even the thing removing this geometry":
+  // if a contour is still missing with this on, the cause is upstream
+  // (occlude()/Step 2/3), not Step 4's backdrop test.
+  const step4Off = !!S.debugNoStep4;
+  // DIAGNOSTIC — one record per same-shell decision Step 4 actually makes,
+  // KEPT ones included (a keep that only just cleared the threshold is
+  // exactly as informative as a drop when hunting for a value that works
+  // across models). Capped so a dense model can't balloon the posted result.
+  const dbg4 = [];
+  const DBG4_CAP = 4000;
 
   // Shared by ground-shadow and cast-shadow texture (further below): a
   // point-in-triangle coverage/nearest-face lookup against the same
@@ -1364,12 +1411,13 @@ function generate(cam, S, shadingBuffer){
      use, so applying a drop to a run's pieces below needs no re-projection.
      Reuses Silhouette's own siList/siFlat/siCuts/idxOfSeg (now built
      whenever Contour needs them too, per the widened guard above) — no
-     separate crossing-split computation for Contour. */
-  // Tested starting value (see spec) — self-scales via the point's own
-  // depth magnitude, mirroring occlude()'s own fpEps pattern; tunable, not
-  // final.
-  const CONTOUR_DEPTH_SIMILAR_FRAC = 0.01;
-  if (contourDrops) for (let idx=0; idx<siList.length; idx++){
+     separate crossing-split computation for Contour.
+     Its threshold/kill-switch/diagnostic state (CONTOUR_DEPTH_SIMILAR_FRAC_WORLD,
+     step4Off, dbg4) is declared alongside contourDrops itself, out at
+     Contour's own scope — same reason contourDrops is: the diagnostic dump
+     that reports them runs after this guard block closes. */
+  const r4 = v => Number.isFinite(v) ? +v.toFixed(4) : v;
+  if (contourDrops && !step4Off) for (let idx=0; idx<siList.length; idx++){
     const seg = siList[idx];
     const shell = siShellOfIdx[idx];
     const e = csEdge[seg];
@@ -1407,8 +1455,41 @@ function generate(cam, S, shadingBuffer){
       // near-identical means the "backdrop" is really this same local
       // surface (artifact, drop); a real gap means a genuine fold (keep)
       const edgeIz = csZ0[seg] + (csZ1[seg]-csZ0[seg])*tm;
-      const thresh = Math.abs(edgeIz) * CONTOUR_DEPTH_SIMILAR_FRAC;
-      if (Math.abs(back.iz - edgeIz) >= thresh) continue;
+      // Undo the 1/dist warp before comparing — see CONTOUR_DEPTH_SIMILAR_FRAC_WORLD
+      // above. Perspective iz is 1/dist, so the world gap between two depths
+      // is |Δiz| / (izEdge·izBack) EXACTLY; /edgeIz² is only that expression's
+      // first-order approximation about edgeIz, and the error is not
+      // cosmetic — it's largest precisely where the gap is largest. A
+      // genuinely distant backdrop has back.iz well below edgeIz, so edgeIz²
+      // over-states the denominator and UNDER-states the real gap, biasing
+      // the test toward calling a real fold "similar" and dropping it. Ortho's
+      // iz is already linear view-space z, so no correction needed there.
+      const dIz = Math.abs(back.iz - edgeIz);
+      let realGapWorld;
+      if (ortho) realGapWorld = dIz;
+      else {
+        // Both are 1/dist for points in front of the camera, hence positive;
+        // a non-positive product can only come from degenerate/clipped input,
+        // where "these two depths are near-identical" is not a claim worth
+        // making — fall through as a keep.
+        const denom = edgeIz * back.iz;
+        realGapWorld = denom > 1e-12 ? dIz/denom : Infinity;
+      }
+      const thresh = M.radius * CONTOUR_DEPTH_SIMILAR_FRAC_WORLD;
+      const dropIt = realGapWorld < thresh;
+      if (dbg4.length < DBG4_CAP) dbg4.push({
+        seg, edge: e, shell,
+        t0: r4(ca.t), t1: r4(cb.t),
+        x: r4(mx), y: r4(my),
+        edgeDist: r4(ortho ? -edgeIz : (edgeIz>1e-12 ? 1/edgeIz : Infinity)),
+        backDist: r4(ortho ? -back.iz : (back.iz>1e-12 ? 1/back.iz : Infinity)),
+        gapWorld: r4(realGapWorld), thresh: r4(thresh),
+        // < 1 dropped, >= 1 kept. The single most useful column: sort by it
+        // to read off what threshold THIS model would actually have needed.
+        ratio: r4(realGapWorld/thresh),
+        drop: dropIt,
+      });
+      if (!dropIt) continue;
       if (!drops) drops = [];
       drops.push(ca.t, cb.t);
     }
@@ -1420,10 +1501,20 @@ function generate(cam, S, shadingBuffer){
   // same basis dbgStep23's pts don't use but tEdge0/tEdge1 on each Step 2/3
   // piece do). Read from devtools console as:
   //   console.table(lastGen.counts.dbgStep4)
+  // dbgStep4Detail is the per-decision companion (drops AND keeps, see dbg4
+  // above) — the one to read when asking "what threshold would this model
+  // have needed":
+  //   const d = lastGen.counts.dbgStep4Detail;
+  //   console.table(d.filter(r=>r.drop).sort((a,b)=>b.ratio-a.ratio).slice(0,40))  // closest calls that DID drop
+  //   console.table(d.filter(r=>!r.drop).sort((a,b)=>a.ratio-b.ratio).slice(0,40)) // closest calls that survived
   if (contourDrops){
     const dbg = [];
     for (let seg=0; seg<nCS; seg++) if (contourDrops[seg]) dbg.push({ seg, edge: csEdge[seg], drops: contourDrops[seg].slice() });
     counts.dbgStep4 = dbg;
+    counts.dbgStep4Detail = dbg4;
+    counts.dbgStep4Off = step4Off;
+    counts.dbgStep4Frac = CONTOUR_DEPTH_SIMILAR_FRAC_WORLD;
+    counts.dbgStep4Truncated = dbg4.length >= DBG4_CAP;
   }
 
   /* Phase 3b Step 5+6 — subtract Step 4's drops from each run's own
