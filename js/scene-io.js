@@ -248,6 +248,7 @@ $('exportSceneBtn').addEventListener('click', () => {
   }
   const camState = {
     theta: orbit.theta, phi: orbit.phi, radius: orbit.radius,
+    exactPole: orbit.exactPole,
     target: [orbit.target.x, orbit.target.y, orbit.target.z],
     ortho: camera === orthoCam,
   };
@@ -325,6 +326,12 @@ function applyImportedScene(data){
   if (Number.isFinite(cs.theta))  orbit.theta  = cs.theta;
   if (Number.isFinite(cs.phi))    orbit.phi    = cs.phi;
   if (Number.isFinite(cs.radius)) orbit.radius = cs.radius;
+  // Fallback to 0 for scenes saved before exactPole was captured here — must
+  // be reset explicitly rather than left alone, since a leftover pole-lock
+  // from whatever view was active before the import would otherwise make
+  // orbit.apply() below ignore the restored theta/phi entirely (see the
+  // exactPole branch in orbit.apply, viewport3d.js).
+  orbit.exactPole = Number.isFinite(cs.exactPole) ? cs.exactPole : 0;
   if (Array.isArray(cs.target))   orbit.target.set(cs.target[0], cs.target[1], cs.target[2]);
   orbit.apply();                 // also updates the frustum for the restored FOV/ortho state
   syncShadowUI(); syncSoftShadowsUI(); syncShadowCasting(); syncGroundCatcher();
