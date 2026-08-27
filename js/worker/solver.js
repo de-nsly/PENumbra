@@ -1475,6 +1475,18 @@ function generate(cam, S, shadingBuffer){
       // occlusion put real content there — bridging across that would paper
       // over a real, deliberate hidden-line gap with a false straight line).
       run.hasContent = outPts.length>=2;
+      // This run's TRUE endpoints, as emitted here — before the cross-layer
+      // cascade further below can trim or delete any of its segments.
+      // js/svg-export.js's mergeContourRunSplits needs them to tell a chain
+      // that genuinely ends where this run ended from one subtractCovered
+      // cut short: it may only bridge a vanished neighbour from a real run
+      // end, since a cut end means higher-priority ink occupies that gap and
+      // the gap is therefore correct. Recorded independent of layerOn.sv/sh
+      // below, for the same reason hasContent is.
+      if (run.hasContent){
+        run.tipP0 = [outPts[0][0], outPts[0][1]];
+        run.tipP1 = [outPts[outPts.length-1][0], outPts[outPts.length-1][1]];
+      }
       if (!run.hasContent) continue;
       const isV = run.st==='v';
       const arr = isV ? (layerOn.sv ? groups.sv : null) : (layerOn.sh ? groups.sh : null);
@@ -1511,7 +1523,8 @@ function generate(cam, S, shadingBuffer){
     // layer's own on/off checkbox happened to be set. See js/svg-export.js's
     // mergeContourRunSplits, the actual consumer of this.
     counts.contourAdjacency = contourRuns.map(run => ({
-      id: run.id, st: run.st, prevId: run.prevId, nextId: run.nextId, hasContent: !!run.hasContent
+      id: run.id, st: run.st, prevId: run.prevId, nextId: run.nextId, hasContent: !!run.hasContent,
+      tipP0: run.tipP0 || null, tipP1: run.tipP1 || null
     }));
   }
   emitContourRuns(contourRuns, contourDrops);

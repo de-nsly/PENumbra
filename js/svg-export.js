@@ -797,6 +797,12 @@ function chainByRun(segs, runIds, seqs){
        prevId/nextId (walked past any number of ALSO-vanished neighbors,
        in case several artifact runs sit back to back) name the two chains
        that should be bridged, in a known, non-ambiguous direction.
+       Bridged ONLY from both runs' genuine endpoints (tipP0/tipP1, also
+       posted by the worker before the cross-layer cascade runs). With a
+       Silhouette layer enabled, subtractCovered can trim a Contour run's
+       own head or tail away entirely, leaving this pass anchored to an
+       arbitrary interior cut — see the check in the loop below for why
+       that must not be bridged.
    (b) near-coincident endpoints — two runs whose emitted tips land within
        MIN_SEG (0.3px, the pipeline's own "not worth a separate pen mark"
        floor) of each other regardless of adjacency, most likely two
@@ -871,6 +877,23 @@ function mergeContourRunSplits(chains, adjacency){
     if (prevSurv == null || nextSurv == null || prevSurv === nextSurv) continue;
     const ai = lastOfRun.get(prevSurv), bi = firstOfRun.get(nextSurv);
     if (ai == null || bi == null) continue;   // has content, but isn't drawn in THIS layer (own checkbox off) — nothing to bridge to
+    // Only bridge from the two runs' GENUINE ends. When a higher-priority
+    // layer is enabled, subtractCovered (worker, cross-layer cascade) trims
+    // and deletes sv/sh segments — so one runId can arrive here as several
+    // chains, and a run's own head or tail segments may be gone entirely.
+    // lastOfRun/firstOfRun then point at a piece whose end/start is an
+    // arbitrary interior cut rather than the run's real tip, and bridging
+    // those draws a long straight line between two points that were never
+    // adjacent. That is exactly the case that must NOT be bridged: a cut end
+    // means higher-priority ink occupies the gap, so the gap is correct.
+    // The worker posts each run's true tips (tipP0/tipP1) before the cascade
+    // can touch them; compare exactly (EPS above), since nothing has moved
+    // these coordinates yet — simplifyCollinear/splitSelfTouching run later.
+    const prevAdj = adjById.get(prevSurv), nextAdj = adjById.get(nextSurv);
+    if (!prevAdj || !prevAdj.tipP1 || !nextAdj || !nextAdj.tipP0) continue;
+    const aPts = open[ai].pts, bPts = open[bi].pts;
+    if (!eq(aPts[aPts.length-1], prevAdj.tipP1)) continue;   // prev run cut short at its tail
+    if (!eq(bPts[0], nextAdj.tipP0)) continue;               // next run cut short at its head
     const ta = tipKey(ai,1), tb = tipKey(bi,0);
     if (!paired.has(ta) && !paired.has(tb)) link(ta, tb);
   }
