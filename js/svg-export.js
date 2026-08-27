@@ -399,10 +399,14 @@ function chainSegments(segs){
   const TWO_PI = Math.PI * 2;
   // Each vertex's adjacency now also carries the outgoing angle of that
   // half-edge — needed to resolve junctions (3+ segment-ends sharing a
-  // vertex) the same way chainWithZ (worker side) already does: take the
-  // next half-edge in consistent rotational order from the reverse of the
+  // vertex) by a stable rule rather than by arrival order: take the next
+  // half-edge in consistent rotational order from the reverse of the
   // direction just arrived on, rather than "first unused candidate" in
-  // whatever order they happened to be pushed. The naive first-match choice
+  // whatever order they happened to be pushed. (The worker resolves its own
+  // junctions on a different signal — pairJunctionArms takes the straightest
+  // continuation from world-space tangents, so its choice stays stable as the
+  // camera orbits. This pass only ever sees screen coordinates, so rotational
+  // order is the strongest signal available to it.) The naive first-match choice
   // at a junction can walk onto the wrong branch, stranding the actual
   // continuation to be discovered later as its own separate, disconnected
   // chain — confirmed directly against real output: two subpaths sharing
@@ -561,18 +565,18 @@ function accumulatePathStats(stats, pts, closed){
 
 /* ================================================================
    mergeSilhouetteClose — post-chain cleanup for Silhouette (so/iv/ih).
-   Much simpler than Contour's relay-trim pass: no trimming, no whisker
-   deletion, no angle-continuity discrimination — every open chain, by
-   nature, is expected to be part of a closed boundary, so any nearby tip
-   (including a chain's own OTHER end, for self-closure) is a legitimate
-   merge target. Two small steps:
+   Deliberately permissive: no angle-continuity discrimination at all —
+   every open chain, by nature, is expected to be part of a closed boundary,
+   so any nearby tip (including a chain's own OTHER end, for self-closure)
+   is a legitimate merge target. Two small steps:
 
    1. trimTipFoldback — a narrow, targeted fix for a specific artifact:
       occasionally a chain's very last segment folds back almost 180° over
       its own previous segment, with the true tip ending up projected back
       onto that prior segment (see the fold-back diagram this was built
-      from). This has no equivalent in Contour's pipeline since Silhouette
-      never goes through Contour's own dedup/overlap-removal machinery.
+      from). Contour has no equivalent pass: it chains by run identity
+      carried from the worker (chainByRun) rather than by coordinate
+      re-matching, and is deliberately excluded from dedupCollinear.
       Left alone, the spurious extra point sits between the chain's real
       endpoint and its neighbor, hiding what would otherwise be an exact
       (zero-gap) merge point. Trimmed before any merge search runs.
@@ -1017,7 +1021,7 @@ function buildChainedPathD(segs, stats, silMergeOpts){
    pushed as array-adjacent segments with matching endpoints, using
    straightness-based pairing at junctions rather than screen coincidence.
    Unlike chainSegments() above — a GLOBAL coordinate search, safe for
-   sv/sh/so since those are always simple non-branching curves by
+   so/iv/ih since those are always simple non-branching curves by
    construction — crease networks have real junctions, so a global search
    here could silently undo the worker's pairing by reconnecting to
    whichever OTHER candidate happens to sit at the same point first. This
@@ -1047,17 +1051,20 @@ function mergeAdjacentTouching(segs){
 /* SECOND, fallback pass for crease/hidden-crease — screen-space, deliberately
    more permissive than mergeAdjacentTouching() above.
 
-   Why this is needed: not every crease edge ever enters the worker's
-   world-space topology graph. In particular, an edge that's classified as
-   Silhouette at generate() time (because it sits on a front/back boundary)
-   but later gets "demoted" back to Crease by the Contour Silhouette merge —
-   because it turns out to be an interior fold rather than real outline, the
-   `cFall` path in generate() §6.5 — is pushed straight into groups.cv/ch as
-   a lone 2-point piece, never having been part of the topology pass at all.
+   Why this is needed: the worker's crease topology pass (generate() 6.1)
+   pairs at most ONE continuation per junction. pairJunctionArms maximises
+   the NUMBER of pairs, but it deliberately refuses to pair a near-total
+   fold-back, and an odd-valence junction always leaves at least one arm
+   over regardless. So wherever three or more crease edges meet, the walk
+   emits several SEPARATE chains that genuinely terminate at the same welded
+   mesh vertex — and therefore at the same screen point.
    A right-angle box corner or window-frame rectangle is exactly this case:
-   every edge of it can be a demoted silhouette edge, so all four sides land
-   here disconnected, and mergeAdjacentTouching's array-adjacency check can't
-   place them next to each other because nothing ordered them that way.
+   every corner is a 3-way junction, so the four sides arrive here as
+   disconnected chains, and mergeAdjacentTouching's array-adjacency check
+   can't place them next to each other because nothing ordered them that way.
+   (Contour hits the identical phenomenon — see mergeContourRunSplits case
+   (b) — but resolves it differently, since Contour carries run identity and
+   Crease does not.)
 
    This pass repairs that by matching leftover polyline ENDPOINTS by screen
    coordinate — never interior points, so it can never splice into the
@@ -1079,9 +1086,10 @@ function mergeAdjacentTouching(segs){
    mergeAdjacentTouching left as a loose end, so in principle two unrelated
    dangling ends that merely happen to project to the same pixel could be
    joined. In practice this only ever touches genuine chain termini (never
-   interior points), and it only runs on segments the topology pass already
-   couldn't place — the same trade-off the user asked for to fix box/building
-   facades, where every corner is an exact on-screen coincidence anyway. */
+   interior points), and it only runs on ends the topology pass left unpaired
+   and mergeAdjacentTouching couldn't join — the same trade-off the user asked
+   for to fix box/building facades, where every corner is an exact on-screen
+   coincidence anyway. */
 function mergeCreaseScreenSpace(polys){
   const key = (x,y) => Math.round(x*50) + '_' + Math.round(y*50);   // ~0.02px buckets, same as above
 
@@ -1644,7 +1652,7 @@ function onResult(m){
   content.classList.toggle('blendMultiply', $('blendMultiplyOn').checked);
   svg.appendChild(content);
 
-  // Silhouette (classic or contour) and Scene Outline segments already trace
+  // Silhouette and Silhouette individual (so/iv/ih) segments already trace
   // connected curves geometrically — they're just emitted as independent 2-point
   // pieces. Chain touching pieces into maximal polylines (open where a curve is
   // genuinely broken by occlusion, closed where it loops back on itself) so the
@@ -1654,7 +1662,8 @@ function onResult(m){
   // junctions: first mergeAdjacentTouching (conservative, LOCAL, trusts the
   // worker's world-space topology ordering), then mergeCreaseScreenSpace
   // (a screen-space fallback that mops up whatever the first pass couldn't
-  // place, e.g. edges the topology graph never saw at all). See each
+  // place, e.g. the extra arms pairJunctionArms left unpaired at a 3+-way
+  // junction, which arrive as separate chains meeting at one point). See each
   // function's own comment for why neither one alone is safe/sufficient on
   // its own. Hatch is untouched — it already has its own, different
   // optimization (straight-line runs reduced to 2 points per carrier).
@@ -1678,7 +1687,7 @@ function onResult(m){
   // the user changes a dash setting without re-generating. See refreshStatusR.
   const rawLenByLayer = {};
   // Paint order is the REVERSE of the hierarchy in LAYERS: the highest-
-  // priority layer (Scene outline, first in LAYERS) must end up LAST in the
+  // priority layer (Silhouette, first in LAYERS) must end up LAST in the
   // SVG so it paints on top, and the lowest (Deep shadow, last in LAYERS)
   // paints first/underneath everything else.
   for (const L of LAYERS.slice().reverse()){

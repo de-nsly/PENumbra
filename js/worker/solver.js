@@ -642,7 +642,7 @@ function generate(cam, S, shadingBuffer){
   // instead of only the old single Silhouette layer's visible+hidden pair).
   const wantS = !!(layerOn.so || layerOn.iv || layerOn.ih || layerOn.sv || layerOn.sh);
 
-  /* Crease-chain topology (world-space, camera-independent — see the design
+  /* 6.1 · Crease-chain topology (world-space, camera-independent — see the design
      spec). Built once here, before projection/occlusion, using the mesh's
      own vertex adjacency: two crease edges are connected iff they share a
      WELDED vertex index (`ea`/`eb` are exact integers, so this needs no
@@ -760,7 +760,7 @@ function generate(cam, S, shadingBuffer){
     if ((e & 511)===0) post({type:'progress', v: 0.05 + 0.45*e/ne});
   }
 
-  /* 6.4 · emit crease chains — walks each chain from the topology pass above
+  /* 6.2 · emit crease chains — walks each chain from the topology pass above
      in geometric order, calling occlude() per edge exactly as the old
      per-edge path did, but concatenating consecutive same-state (visible or
      hidden) pieces ACROSS edge boundaries into one output polyline. A chain
@@ -835,7 +835,7 @@ function generate(cam, S, shadingBuffer){
   }
 
   /* ================================================================
-     6.4b · Contour (Blender: silhouette_filtering = NONE) — chains
+     6.3 · Contour (Blender: silhouette_filtering = NONE) — chains
      silhouette-classified edges via actual mesh-vertex-index adjacency —
      the exact same mechanism ccChains/pairJunctionArms above already gives
      Crease — instead of reconstructing connectivity from screen-space
@@ -927,7 +927,7 @@ function generate(cam, S, shadingBuffer){
     const csFaceA=new Int32Array(nCS), csFaceB=new Int32Array(nCS);
     const csShell=new Int32Array(nCS);
     const csEdge=new Int32Array(nCS);
-    const csValid=new Uint8Array(nCS);   // stage 2 needs to know which segments actually got projected
+    const csValid=new Uint8Array(nCS);   // 6.4 needs to know which segments actually got projected
     for (let e=0;e<ne;e++){
       if (!isSilTopo[e]) continue;
       const i = edgeToSeg[e];
@@ -1134,13 +1134,14 @@ function generate(cam, S, shadingBuffer){
   };
 
   /* ================================================================
-     Shared silhouette-family machinery — the topological chain set of
-     6.4b above, split at every screen-space crossing, plus the depth-aware
-     backdrop query. Read by BOTH consumers below: Contour Step 4 and 6.5
-     Silhouette. Sits outside either one's guard so neither has to be
-     nested inside the other's scope to reach it — which is what used to
-     force Contour Step 4 to run inside the Silhouette block while its own
-     Steps 5/6 ran after it, with the shared state hoisted between them.
+     6.4 · Shared silhouette-family machinery — the topological chain set
+     of 6.3 above, split at every screen-space crossing, plus the
+     depth-aware backdrop query. Read by BOTH consumers below: 6.5 Contour
+     cleanup and 6.7 Silhouette. Sits outside either one's guard so neither
+     has to be nested inside the other's scope to reach it — which is what
+     used to force Contour's backdrop test to run inside the Silhouette
+     block while its own emit ran after it, with the shared state hoisted
+     between them.
      ================================================================ */
   function buildSilhouetteSplits(topo){
     const { nCS, csValid, csX0, csY0, csX1, csY1, csShell } = topo;
@@ -1175,7 +1176,7 @@ function generate(cam, S, shadingBuffer){
     };
     const pickBackdropFace = (px, py, skipA, skipB) => pickBackdropFaceWithDepth(px, py, skipA, skipB).f;
 
-    const siList = [];      // compact list of valid stage-1 segment indices
+    const siList = [];      // compact list of the valid segment indices 6.3 projected
     const siFlat = [];      // parallel flat [x0,y0,x1,y1,...] for buildSegGrid
     if (wantS) for (let seg=0;seg<nCS;seg++){
       if (!csValid[seg]) continue;
@@ -1205,9 +1206,9 @@ function generate(cam, S, shadingBuffer){
   }
   const splits = buildSilhouetteSplits(topo);
 
-  /* Contour Step 4 — see the block comment inside. Returns the per-segment
-     drop-interval table Step 5/6 consumes; writes its own diagnostics to
-     counts. Reads the shared splits built above, never 6.5 Silhouette. */
+  /* 6.5 · Contour cleanup (Phase 3b Step 4 — see the block comment inside).
+     Returns the per-segment drop-interval table 6.6 consumes; writes its own
+     diagnostics to counts. Reads 6.4's shared splits, never 6.7 Silhouette. */
   function buildContourDrops(topo, splits){
     const { nCS, csX0, csY0, csZ0, csX1, csY1, csZ1,
             csFaceA, csFaceB, csEdge } = topo;
@@ -1269,7 +1270,7 @@ function generate(cam, S, shadingBuffer){
        use, so applying a drop to a run's pieces below needs no re-projection.
        Reads the shared silhouette-family machinery built above (siList,
        siShellOfIdx, siCuts, pickBackdropFaceWithDepth) — no separate
-       crossing-split computation for Contour, and no dependency on 6.5
+       crossing-split computation for Contour, and no dependency on 6.7
        Silhouette's own back-end, which now runs after this. */
     const r4 = v => Number.isFinite(v) ? +v.toFixed(4) : v;
     if (contourDrops && !step4Off) for (let idx=0; idx<siList.length; idx++){
@@ -1374,7 +1375,7 @@ function generate(cam, S, shadingBuffer){
   }
   const contourDrops = buildContourDrops(topo, splits);
 
-  /* Phase 3b Step 5+6 — subtract Step 4's drops from each run's own
+  /* 6.6 · Contour emit (Phase 3b Step 5+6) — subtract Step 4's drops from each run's own
      geometry (never losing or reassigning run.id, only ever splitting its
      point sequence), absorb whatever sub-MIN_SEG slivers that splitting
      leaves behind (mirroring occlude()'s own denoise, but scoped to
@@ -1516,7 +1517,7 @@ function generate(cam, S, shadingBuffer){
   emitContourRuns(contourRuns, contourDrops);
 
   /* ================================================================
-     6.5 · Silhouette / Silhouette individual (Blender: silhouette_filtering
+     6.7 · Silhouette / Silhouette individual (Blender: silhouette_filtering
      = GROUP / INDIVIDUAL) — crossing-split + depth-aware backdrop filter,
      built on top of the same topological chain set Contour uses above.
 
@@ -1693,7 +1694,7 @@ function generate(cam, S, shadingBuffer){
   }
   if (layerOn.so || layerOn.iv || layerOn.ih) emitSilhouetteChains(topo, splits);
 
-  /* 2.6 · circles pattern — one unified layer (single checkbox), drawing
+  /* 7 · circles pattern — one unified layer (single checkbox), drawing
      BOTH a ground-plane ring set (gated by the existing Ground shadow
      checkbox) and a model-surface ring set (gated by Cast shadows / Soft
      shadows), sharing one Center X/Y and reading spacing directly from
@@ -2463,15 +2464,19 @@ function generate(cam, S, shadingBuffer){
     groups[k] = dedupCollinear(groups[k], effOffTol, effGapTol);
   }
   /* Pass 2: cross-layer ink-avoidance across the FULL drawing-priority
-     hierarchy (highest first): Scene outline > Silhouette > Silhouette-
-     hidden > Crease > Crease-hidden > Hatch > Crosshatch > Deep shadow.
+     hierarchy (highest first): Silhouette > Silhouette individual >
+     Silhouette individual hidden > Contour > Contour hidden > Crease >
+     Crease hidden > Hatch > Crosshatch > Deep shadow — i.e. HIER below
+     (so/iv/ih/sv/sh/cv/ch) plus the three hatch layers, which are still
+     excluded from the cascade for the reason noted just after it.
      A lower-priority layer never re-strokes ink an enabled higher-priority
      layer already covers — applied as a sequential cascade (each layer
      subtracts every higher one in turn), which is equivalent to subtracting
      the union since coverage only ever shrinks a segment, never grows it
      back. This can't simply merge layers together since each keeps its own
-     pen/weight on purpose (Scene outline is a deliberately bold re-stroke of
-     the boundary for emphasis) — the covered portion is removed instead,
+     pen/weight on purpose (Silhouette is a deliberately bold re-stroke of
+     the boundary for emphasis — 1.2mm black against Contour's 0.8mm, see
+     LAYERS in main.js) — the covered portion is removed instead,
      and any uncovered remainder still draws in its own style.
      Every subtraction is gated on the higher layer being ACTUALLY enabled:
      e.g. if Silhouette's pen is off, Silhouette individual and Contour draw
@@ -2513,7 +2518,7 @@ function generate(cam, S, shadingBuffer){
   counts.contourRunLensSv = contourRunLens.sv;
   counts.contourRunLensSh = contourRunLens.sh;
 
-  /* 8 · package result */
+  /* 9 · package result */
   const out={}, transfer=[];
   for (const k in groups){
     counts[k]=groups[k].length/4;
@@ -2612,7 +2617,7 @@ function generateRawContourEdges(cam){
     const cx=(vx[a]+vx[b]+vx[c])/3, cy=(vy[a]+vy[b]+vy[c])/3, cz=(vz[a]+vz[b]+vz[c])/3;
     front[f] = ortho ? (nvz > EPS_FRONT_TIE ? 1 : 0) : ((nvx*cx + nvy*cy + nvz*cz) < 0 ? 1 : 0);
   }
-  // isSilTopo — same test as generate()'s Contour section (6.4b)
+  // isSilTopo — same test as generate()'s Contour section (6.3)
   const isSilTopo = new Uint8Array(ne);
   for (let e=0; e<ne; e++){
     const t1x = et1[e];

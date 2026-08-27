@@ -440,7 +440,7 @@ function createBlockDom(block){
   const layerGroups = {};
   // LAYERS is ordered highest-priority-first (see main.js); paint order
   // needs the OPPOSITE — later-appended SVG elements draw on top, so
-  // iterating in reverse here puts Scene Outline last/on top and Hatch/
+  // iterating in reverse here puts Silhouette last/on top and Hatch/
   // Crosshatch/Deep shadow first/underneath, matching exactly how
   // svg-export.js's onResult() builds the live preview's paint order
   // (LAYERS.slice().reverse()). A previous version iterated forward here,
