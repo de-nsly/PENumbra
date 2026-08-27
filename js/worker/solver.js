@@ -847,123 +847,130 @@ function generate(cam, S, shadingBuffer){
      Contour: standard occlusion, nothing more. Silhouette and Silhouette
      individual (both need an additional per-point backdrop test) are
      built on top of this same chain set further below. */
-  const isSilTopo = new Uint8Array(ne);
-  for (let e=0;e<ne;e++){
-    const t1x=et1[e];
-    if (t1x>=0){
-      if (front[et0[e]]!==front[t1x]) isSilTopo[e]=1;
-    } else {
-      isSilTopo[e]=1;   // open/non-manifold edge — always a contour, no front/back test possible (matches Blender)
+  function buildContourTopology(){
+    const isSilTopo = new Uint8Array(ne);
+    for (let e=0;e<ne;e++){
+      const t1x=et1[e];
+      if (t1x>=0){
+        if (front[et0[e]]!==front[t1x]) isSilTopo[e]=1;
+      } else {
+        isSilTopo[e]=1;   // open/non-manifold edge — always a contour, no front/back test possible (matches Blender)
+      }
     }
-  }
-  const siCont0 = new Int32Array(ne).fill(-1), siCont1 = new Int32Array(ne).fill(-1);
-  {
-    const incident = new Map();
+    const siCont0 = new Int32Array(ne).fill(-1), siCont1 = new Int32Array(ne).fill(-1);
+    {
+      const incident = new Map();
+      for (let e=0;e<ne;e++){
+        if (!isSilTopo[e]) continue;
+        const a=ea[e], b=eb[e];
+        if (a===b) continue;
+        let la=incident.get(a); if(!la){la=[];incident.set(a,la);} la.push([e,0]);
+        let lb=incident.get(b); if(!lb){lb=[];incident.set(b,lb);} lb.push([e,1]);
+      }
+      for (const [v, list] of incident){
+        if (list.length < 2) continue;
+        if (list.length === 2){
+          const [e0,end0]=list[0], [e1,end1]=list[1];
+          if (end0===0) siCont0[e0]=e1; else siCont1[e0]=e1;
+          if (end1===0) siCont0[e1]=e0; else siCont1[e1]=e0;
+          continue;
+        }
+        const arms = list.map(([e,end]) => {
+          const other = end===0 ? eb[e] : ea[e];
+          const dx=pos[other*3]-pos[v*3], dy=pos[other*3+1]-pos[v*3+1], dz=pos[other*3+2]-pos[v*3+2];
+          const L=Math.hypot(dx,dy,dz)||1;
+          return [dx/L,dy/L,dz/L];
+        });
+        for (const [i,j] of pairJunctionArms(arms)){
+          const [ei,endi]=list[i], [ej,endj]=list[j];
+          if (endi===0) siCont0[ei]=ej; else siCont1[ei]=ej;
+          if (endj===0) siCont0[ej]=ei; else siCont1[ej]=ei;
+        }
+      }
+    }
+    const siChains = [];
+    {
+      const visited = new Uint8Array(ne);
+      const walk = (startE, startRev) => {
+        const edges=[]; let curE=startE, curRev=startRev;
+        for(;;){
+          edges.push({e:curE, rev:curRev});
+          visited[curE]=1;
+          const arriveV = curRev ? ea[curE] : eb[curE];
+          const nextE = curRev ? siCont0[curE] : siCont1[curE];
+          if (nextE===-1) return { edges, cycle:false };
+          if (visited[nextE]) return { edges, cycle:(nextE===startE) };
+          curRev = eb[nextE]===arriveV;
+          curE = nextE;
+        }
+      };
+      for (let e=0;e<ne;e++){
+        if (!isSilTopo[e] || visited[e]) continue;
+        if (siCont0[e]===-1){ siChains.push(walk(e,false)); continue; }
+        if (siCont1[e]===-1){ siChains.push(walk(e,true));  continue; }
+      }
+      for (let e=0;e<ne;e++){
+        if (!isSilTopo[e] || visited[e]) continue;
+        siChains.push(walk(e,false));
+      }
+    }
+    // segment records — one per silhouette-topology edge, ready to also host
+    // non-edge (face-interior) segments in a future phase; see comment above.
+    // csX0/Y0/Z0 and csX1/Y1/Z1 keep the edge's OWN ea→eb direction (never
+    // normalised to chain-walk direction — that direction now lives in
+    // chainRev below, exactly where `rev` lived in the old edge-indexed walk).
+    let nCS = 0;
+    const edgeToSeg = new Int32Array(ne).fill(-1);
+    for (let e=0;e<ne;e++) if (isSilTopo[e]) edgeToSeg[e] = nCS++;
+    const csX0=new Float32Array(nCS), csY0=new Float32Array(nCS), csZ0=new Float32Array(nCS);
+    const csX1=new Float32Array(nCS), csY1=new Float32Array(nCS), csZ1=new Float32Array(nCS);
+    const csFaceA=new Int32Array(nCS), csFaceB=new Int32Array(nCS);
+    const csShell=new Int32Array(nCS);
+    const csEdge=new Int32Array(nCS);
+    const csValid=new Uint8Array(nCS);   // stage 2 needs to know which segments actually got projected
     for (let e=0;e<ne;e++){
       if (!isSilTopo[e]) continue;
+      const i = edgeToSeg[e];
+      csEdge[i]=e; csFaceA[i]=et0[e]; csFaceB[i]=et1[e]; csShell[i]=COMP[et0[e]];
       const a=ea[e], b=eb[e];
-      if (a===b) continue;
-      let la=incident.get(a); if(!la){la=[];incident.set(a,la);} la.push([e,0]);
-      let lb=incident.get(b); if(!lb){lb=[];incident.set(b,lb);} lb.push([e,1]);
-    }
-    for (const [v, list] of incident){
-      if (list.length < 2) continue;
-      if (list.length === 2){
-        const [e0,end0]=list[0], [e1,end1]=list[1];
-        if (end0===0) siCont0[e0]=e1; else siCont1[e0]=e1;
-        if (end1===0) siCont0[e1]=e0; else siCont1[e1]=e0;
-        continue;
+      let X0,Y0,Z0,X1,Y1,Z1;
+      if (ok[a]&&ok[b]){ X0=sx[a];Y0=sy[a];Z0=iz[a]; X1=sx[b];Y1=sy[b];Z1=iz[b]; }
+      else {
+        let pa=[vx[a],vy[a],vz[a]], pb=[vx[b],vy[b],vz[b]];
+        if (pa[2]>nearZ && pb[2]>nearZ) continue;
+        const clip=(p,q)=>{ const t=(nearZ-p[2])/(q[2]-p[2]);
+          return [p[0]+t*(q[0]-p[0]), p[1]+t*(q[1]-p[1]), nearZ]; };
+        if (pa[2]>nearZ) pa=clip(pa,pb); else if (pb[2]>nearZ) pb=clip(pb,pa);
+        const A2=projView(pa[0],pa[1],pa[2]), B2=projView(pb[0],pb[1],pb[2]);
+        X0=A2[0];Y0=A2[1];Z0=A2[2]; X1=B2[0];Y1=B2[1];Z1=B2[2];
       }
-      const arms = list.map(([e,end]) => {
-        const other = end===0 ? eb[e] : ea[e];
-        const dx=pos[other*3]-pos[v*3], dy=pos[other*3+1]-pos[v*3+1], dz=pos[other*3+2]-pos[v*3+2];
-        const L=Math.hypot(dx,dy,dz)||1;
-        return [dx/L,dy/L,dz/L];
-      });
-      for (const [i,j] of pairJunctionArms(arms)){
-        const [ei,endi]=list[i], [ej,endj]=list[j];
-        if (endi===0) siCont0[ei]=ej; else siCont1[ei]=ej;
-        if (endj===0) siCont0[ej]=ei; else siCont1[ej]=ei;
+      csX0[i]=X0; csY0[i]=Y0; csZ0[i]=Z0; csX1[i]=X1; csY1[i]=Y1; csZ1[i]=Z1;
+      csValid[i]=1;
+    }
+    // chains, CSR over segment indices — same chain/segment order as the walk
+    // above, just relabeled from edge index to segment index via edgeToSeg.
+    const chainStart = new Int32Array(siChains.length + 1);
+    let chainSegTotal = 0;
+    for (const c of siChains) chainSegTotal += c.edges.length;
+    const chainSeg = new Int32Array(chainSegTotal);
+    const chainRev = new Uint8Array(chainSegTotal);
+    const chainClosed = new Uint8Array(siChains.length);
+    {
+      let p = 0;
+      for (let ci=0; ci<siChains.length; ci++){
+        const c = siChains[ci];
+        chainStart[ci] = p;
+        for (const {e, rev} of c.edges){ chainSeg[p]=edgeToSeg[e]; chainRev[p]=rev?1:0; p++; }
+        chainClosed[ci] = c.cycle ? 1 : 0;
       }
+      chainStart[siChains.length] = p;
     }
+    return { siChains, nCS,
+             csX0, csY0, csZ0, csX1, csY1, csZ1,
+             csFaceA, csFaceB, csShell, csEdge, csValid,
+             chainStart, chainSeg, chainRev, chainClosed };
   }
-  const siChains = [];
-  {
-    const visited = new Uint8Array(ne);
-    const walk = (startE, startRev) => {
-      const edges=[]; let curE=startE, curRev=startRev;
-      for(;;){
-        edges.push({e:curE, rev:curRev});
-        visited[curE]=1;
-        const arriveV = curRev ? ea[curE] : eb[curE];
-        const nextE = curRev ? siCont0[curE] : siCont1[curE];
-        if (nextE===-1) return { edges, cycle:false };
-        if (visited[nextE]) return { edges, cycle:(nextE===startE) };
-        curRev = eb[nextE]===arriveV;
-        curE = nextE;
-      }
-    };
-    for (let e=0;e<ne;e++){
-      if (!isSilTopo[e] || visited[e]) continue;
-      if (siCont0[e]===-1){ siChains.push(walk(e,false)); continue; }
-      if (siCont1[e]===-1){ siChains.push(walk(e,true));  continue; }
-    }
-    for (let e=0;e<ne;e++){
-      if (!isSilTopo[e] || visited[e]) continue;
-      siChains.push(walk(e,false));
-    }
-  }
-  // segment records — one per silhouette-topology edge, ready to also host
-  // non-edge (face-interior) segments in a future phase; see comment above.
-  // csX0/Y0/Z0 and csX1/Y1/Z1 keep the edge's OWN ea→eb direction (never
-  // normalised to chain-walk direction — that direction now lives in
-  // chainRev below, exactly where `rev` lived in the old edge-indexed walk).
-  let nCS = 0;
-  const edgeToSeg = new Int32Array(ne).fill(-1);
-  for (let e=0;e<ne;e++) if (isSilTopo[e]) edgeToSeg[e] = nCS++;
-  const csX0=new Float32Array(nCS), csY0=new Float32Array(nCS), csZ0=new Float32Array(nCS);
-  const csX1=new Float32Array(nCS), csY1=new Float32Array(nCS), csZ1=new Float32Array(nCS);
-  const csFaceA=new Int32Array(nCS), csFaceB=new Int32Array(nCS);
-  const csShell=new Int32Array(nCS);
-  const csEdge=new Int32Array(nCS);
-  const csValid=new Uint8Array(nCS);   // stage 2 needs to know which segments actually got projected
-  for (let e=0;e<ne;e++){
-    if (!isSilTopo[e]) continue;
-    const i = edgeToSeg[e];
-    csEdge[i]=e; csFaceA[i]=et0[e]; csFaceB[i]=et1[e]; csShell[i]=COMP[et0[e]];
-    const a=ea[e], b=eb[e];
-    let X0,Y0,Z0,X1,Y1,Z1;
-    if (ok[a]&&ok[b]){ X0=sx[a];Y0=sy[a];Z0=iz[a]; X1=sx[b];Y1=sy[b];Z1=iz[b]; }
-    else {
-      let pa=[vx[a],vy[a],vz[a]], pb=[vx[b],vy[b],vz[b]];
-      if (pa[2]>nearZ && pb[2]>nearZ) continue;
-      const clip=(p,q)=>{ const t=(nearZ-p[2])/(q[2]-p[2]);
-        return [p[0]+t*(q[0]-p[0]), p[1]+t*(q[1]-p[1]), nearZ]; };
-      if (pa[2]>nearZ) pa=clip(pa,pb); else if (pb[2]>nearZ) pb=clip(pb,pa);
-      const A2=projView(pa[0],pa[1],pa[2]), B2=projView(pb[0],pb[1],pb[2]);
-      X0=A2[0];Y0=A2[1];Z0=A2[2]; X1=B2[0];Y1=B2[1];Z1=B2[2];
-    }
-    csX0[i]=X0; csY0[i]=Y0; csZ0[i]=Z0; csX1[i]=X1; csY1[i]=Y1; csZ1[i]=Z1;
-    csValid[i]=1;
-  }
-  // chains, CSR over segment indices — same chain/segment order as the walk
-  // above, just relabeled from edge index to segment index via edgeToSeg.
-  const chainStart = new Int32Array(siChains.length + 1);
-  let chainSegTotal = 0;
-  for (const c of siChains) chainSegTotal += c.edges.length;
-  const chainSeg = new Int32Array(chainSegTotal);
-  const chainRev = new Uint8Array(chainSegTotal);
-  const chainClosed = new Uint8Array(siChains.length);
-  {
-    let p = 0;
-    for (let ci=0; ci<siChains.length; ci++){
-      const c = siChains[ci];
-      chainStart[ci] = p;
-      for (const {e, rev} of c.edges){ chainSeg[p]=edgeToSeg[e]; chainRev[p]=rev?1:0; p++; }
-      chainClosed[ci] = c.cycle ? 1 : 0;
-    }
-    chainStart[siChains.length] = p;
-  }
+  const topo = buildContourTopology();
   // Phase 3b (see PHASE3b-contour-run-identity.md) — Step 2+3: decompose
   // each chain into its TRUE occlusion runs — one occlude() call per whole
   // mesh edge (never per crossing-split sub-segment — occlude()'s own
@@ -978,147 +985,100 @@ function generate(cam, S, shadingBuffer){
   // (Step 4, inside the widened Silhouette guard) and the drop application
   // (Step 5/6, right after it) can only ever SUBTRACT from a run's own
   // geometry, never split its identity into two or merge two into one.
-  let contourRunSeq = 0;
-  const contourRuns = [];
-  if (layerOn.sv || layerOn.sh) for (let ci=0; ci<siChains.length; ci++){
-    const segStart = chainStart[ci], segEnd = chainStart[ci+1], cycle = !!chainClosed[ci];
-    const pieces = [];
-    for (let p=segStart; p<segEnd; p++){
-      const seg = chainSeg[p], rev = !!chainRev[p];
-      const e = csEdge[seg];
-      const hid = occlude(csX0[seg],csY0[seg],csZ0[seg],csX1[seg],csY1[seg],csZ1[seg],
-                           csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
-      const nat = [];
-      let t=0;
-      for (let i=0;i<hid.length;i+=2){
-        if (hid[i]>t) nat.push(['v', t, hid[i]]);
-        nat.push(['h', hid[i], hid[i+1]]);
-        t=hid[i+1];
+  function buildContourRuns(topo){
+    const { siChains, csX0, csY0, csZ0, csX1, csY1, csZ1,
+            csFaceA, csFaceB, csEdge,
+            chainStart, chainSeg, chainRev, chainClosed } = topo;
+    let contourRunSeq = 0;
+    const contourRuns = [];
+    if (layerOn.sv || layerOn.sh) for (let ci=0; ci<siChains.length; ci++){
+      const segStart = chainStart[ci], segEnd = chainStart[ci+1], cycle = !!chainClosed[ci];
+      const pieces = [];
+      for (let p=segStart; p<segEnd; p++){
+        const seg = chainSeg[p], rev = !!chainRev[p];
+        const e = csEdge[seg];
+        const hid = occlude(csX0[seg],csY0[seg],csZ0[seg],csX1[seg],csY1[seg],csZ1[seg],
+                             csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
+        const nat = [];
+        let t=0;
+        for (let i=0;i<hid.length;i+=2){
+          if (hid[i]>t) nat.push(['v', t, hid[i]]);
+          nat.push(['h', hid[i], hid[i+1]]);
+          t=hid[i+1];
+        }
+        if (t<1) nat.push(['v', t, 1]);
+        const walked = rev ? nat.slice().reverse().map(([st,a,b])=>[st,1-b,1-a]) : nat;
+        for (const [st,s0,s1] of walked){
+          const t0 = rev ? 1-s0 : s0, t1w = rev ? 1-s1 : s1;
+          // seg/tEdge0/tEdge1 (the edge's OWN csX0→csX1 parametrization, same
+          // basis Silhouette's siCuts uses below) ride along with each piece
+          // so Step 5 can later locate a drop interval within it — p0/p1 are
+          // exactly the points at tEdge0/tEdge1 respectively, by construction
+          // of the interpolation just below.
+          pieces.push({ st, seg, tEdge0: t0, tEdge1: t1w,
+            p0: [csX0[seg]+(csX1[seg]-csX0[seg])*t0, csY0[seg]+(csY1[seg]-csY0[seg])*t0],
+            p1: [csX0[seg]+(csX1[seg]-csX0[seg])*t1w, csY0[seg]+(csY1[seg]-csY0[seg])*t1w] });
+        }
       }
-      if (t<1) nat.push(['v', t, 1]);
-      const walked = rev ? nat.slice().reverse().map(([st,a,b])=>[st,1-b,1-a]) : nat;
-      for (const [st,s0,s1] of walked){
-        const t0 = rev ? 1-s0 : s0, t1w = rev ? 1-s1 : s1;
-        // seg/tEdge0/tEdge1 (the edge's OWN csX0→csX1 parametrization, same
-        // basis Silhouette's siCuts uses below) ride along with each piece
-        // so Step 5 can later locate a drop interval within it — p0/p1 are
-        // exactly the points at tEdge0/tEdge1 respectively, by construction
-        // of the interpolation just below.
-        pieces.push({ st, seg, tEdge0: t0, tEdge1: t1w,
-          p0: [csX0[seg]+(csX1[seg]-csX0[seg])*t0, csY0[seg]+(csY1[seg]-csY0[seg])*t0],
-          p1: [csX0[seg]+(csX1[seg]-csX0[seg])*t1w, csY0[seg]+(csY1[seg]-csY0[seg])*t1w] });
+      if (!pieces.length) continue;
+      // group consecutive same-state pieces into runs — plain grouping, no
+      // identity assigned yet
+      const runs = [];
+      for (const piece of pieces){
+        const last = runs.length ? runs[runs.length-1] : null;
+        if (last && last.st === piece.st) last.pieces.push(piece);
+        else runs.push({ st: piece.st, pieces: [piece] });
+      }
+      // close the chain's own cycle seam here, immediately: if cycle and the
+      // first/last run share a state, they're the same physical run split
+      // only by the walk's arbitrary start point. No drops exist yet at this
+      // stage, so this merge is always a plain touching-endpoint join.
+      if (cycle && runs.length>1 && runs[0].st === runs[runs.length-1].st){
+        const lastRun = runs.pop();
+        runs[0].pieces = lastRun.pieces.concat(runs[0].pieces);
+      }
+      // A run with no true endpoint at all — the whole cycle is one
+      // unbroken same-visibility loop — only when the chain is itself a
+      // cycle AND collapsed to exactly one run above.
+      const isClosedLoop = cycle && runs.length===1;
+      for (const run of runs) run.id = contourRunSeq++;
+      for (let ri=0; ri<runs.length; ri++){
+        const run = runs[ri];
+        run.isClosedLoop = isClosedLoop;
+        // Adjacent run (always the OPPOSITE state, by construction — Step
+        // 2/3 only ever starts a new run on a state change) in ORIGINAL
+        // chain-walk order. Consumed downstream by js/svg-export.js's
+        // mergeContourRunSplits: when this run itself turns out to be
+        // (almost) entirely artifact and Step 4/5 drops all of it, its two
+        // flanking runs — otherwise permanently different run.ids — get
+        // bridged back together using exactly this adjacency. -1 = no
+        // neighbor (a true open-chain end, or — for a single-run closed
+        // loop wrapping to itself — deliberately excluded downstream via a
+        // prevId===nextId check, since there's nothing external to bridge).
+        run.prevId = ri>0 ? runs[ri-1].id : (cycle ? runs[runs.length-1].id : -1);
+        run.nextId = ri<runs.length-1 ? runs[ri+1].id : (cycle ? runs[0].id : -1);
+        let rl=0; for (const pc of run.pieces) rl += Math.hypot(pc.p1[0]-pc.p0[0], pc.p1[1]-pc.p0[1]);
+        (run.st==='v' ? contourRunLens.sv : contourRunLens.sh).push(rl);
+        contourRuns.push(run);
       }
     }
-    if (!pieces.length) continue;
-    // group consecutive same-state pieces into runs — plain grouping, no
-    // identity assigned yet
-    const runs = [];
-    for (const piece of pieces){
-      const last = runs.length ? runs[runs.length-1] : null;
-      if (last && last.st === piece.st) last.pieces.push(piece);
-      else runs.push({ st: piece.st, pieces: [piece] });
-    }
-    // close the chain's own cycle seam here, immediately: if cycle and the
-    // first/last run share a state, they're the same physical run split
-    // only by the walk's arbitrary start point. No drops exist yet at this
-    // stage, so this merge is always a plain touching-endpoint join.
-    if (cycle && runs.length>1 && runs[0].st === runs[runs.length-1].st){
-      const lastRun = runs.pop();
-      runs[0].pieces = lastRun.pieces.concat(runs[0].pieces);
-    }
-    // A run with no true endpoint at all — the whole cycle is one
-    // unbroken same-visibility loop — only when the chain is itself a
-    // cycle AND collapsed to exactly one run above.
-    const isClosedLoop = cycle && runs.length===1;
-    for (const run of runs) run.id = contourRunSeq++;
-    for (let ri=0; ri<runs.length; ri++){
-      const run = runs[ri];
-      run.isClosedLoop = isClosedLoop;
-      // Adjacent run (always the OPPOSITE state, by construction — Step
-      // 2/3 only ever starts a new run on a state change) in ORIGINAL
-      // chain-walk order. Consumed downstream by js/svg-export.js's
-      // mergeContourRunSplits: when this run itself turns out to be
-      // (almost) entirely artifact and Step 4/5 drops all of it, its two
-      // flanking runs — otherwise permanently different run.ids — get
-      // bridged back together using exactly this adjacency. -1 = no
-      // neighbor (a true open-chain end, or — for a single-run closed
-      // loop wrapping to itself — deliberately excluded downstream via a
-      // prevId===nextId check, since there's nothing external to bridge).
-      run.prevId = ri>0 ? runs[ri-1].id : (cycle ? runs[runs.length-1].id : -1);
-      run.nextId = ri<runs.length-1 ? runs[ri+1].id : (cycle ? runs[0].id : -1);
-      let rl=0; for (const pc of run.pieces) rl += Math.hypot(pc.p1[0]-pc.p0[0], pc.p1[1]-pc.p0[1]);
-      (run.st==='v' ? contourRunLens.sv : contourRunLens.sh).push(rl);
-      contourRuns.push(run);
-    }
+    // DIAGNOSTIC (temporary, at user's request) — full snapshot of every
+    // Step 2/3 run's own point sequence, BEFORE Step 4 (crossing-split +
+    // backdrop test) ever touches it. Read from devtools console (main
+    // thread, after Generate) as:
+    //   console.table(lastGen.counts.dbgStep23.map(r=>({id:r.id,st:r.st,closed:r.closed,npts:r.pts.length/2})))
+    // or dump one run's raw points as lastGen.counts.dbgStep23[i].pts.
+    counts.dbgStep23 = contourRuns.map(run => {
+      const pts = [];
+      for (const pc of run.pieces){
+        if (!pts.length) pts.push(pc.p0[0], pc.p0[1]);
+        pts.push(pc.p1[0], pc.p1[1]);
+      }
+      return { id: run.id, st: run.st, closed: run.isClosedLoop, pts };
+    });
+    return contourRuns;
   }
-  // DIAGNOSTIC (temporary, at user's request) — full snapshot of every
-  // Step 2/3 run's own point sequence, BEFORE Step 4 (crossing-split +
-  // backdrop test) ever touches it. Read from devtools console (main
-  // thread, after Generate) as:
-  //   console.table(lastGen.counts.dbgStep23.map(r=>({id:r.id,st:r.st,closed:r.closed,npts:r.pts.length/2})))
-  // or dump one run's raw points as lastGen.counts.dbgStep23[i].pts.
-  counts.dbgStep23 = contourRuns.map(run => {
-    const pts = [];
-    for (const pc of run.pieces){
-      if (!pts.length) pts.push(pc.p0[0], pc.p0[1]);
-      pts.push(pc.p1[0], pc.p1[1]);
-    }
-    return { id: run.id, st: run.st, closed: run.isClosedLoop, pts };
-  });
-  // Phase 3b Step 4's output (drop [t0,t1] intervals per segment, edge's
-  // own csX0→csX1 parametrization) — declared here, at Contour's own outer
-  // scope, since Step 4 itself has to run inside the widened Silhouette
-  // guard below (it needs that block's siList/siCuts/pickBackdropFace
-  // machinery) while Step 5/6 (which consume it) run after that guard
-  // closes, alongside every other Contour-only step.
-  const contourDrops = (layerOn.sv || layerOn.sh) ? new Array(nCS) : null;
-  // Step 4's own threshold, kill-switch and diagnostic buffer — declared out
-  // here for exactly the reason contourDrops is (Step 4 runs inside the
-  // widened Silhouette guard; the diagnostic dump that reports it runs after
-  // that guard closes).
-  //
-  // World-space depth-similarity tolerance, as a fraction of the model's
-  // own bounding-sphere radius — same convention as worldNoiseFloor above
-  // (dedup's own world-scale tolerance). Replaces an earlier version that
-  // scaled with the point's own iz (1/dist for perspective) directly:
-  // that has the WRONG power of distance. A fixed real-world depth gap
-  // between two surfaces produces an iz-difference that shrinks as
-  // 1/dist² (derivative of 1/dist), but a threshold scaled by edgeIz
-  // itself only shrinks as 1/dist — so at typical framing distances the
-  // threshold ends up relatively too wide compared to the true gap,
-  // swallowing real folds (e.g. a letterform's bowl passing close to its
-  // own stem) that only re-separate correctly once the camera moves close
-  // enough that the quadratic real gap catches back up. Comparing in
-  // actual world-space depth (converting iz back to view-space z for
-  // perspective) removes the distance-dependence entirely. Tunable, not
-  // final.
-  //
-  // Exposed as a user-facing control ("Contour cleanup", Lines section)
-  // rather than kept as a fixed constant, because no single value serves
-  // every model: measured across the test set, most models want somewhere in
-  // 0.022–0.050, while faceted 3D text needs 0.0225 at most before real folds
-  // (a letterform's bowl passing close to its own stem) start being swallowed.
-  // That leaves a ~2% window where one constant technically satisfies all of
-  // them — too narrow to be worth defending, and the judgment involved ("is
-  // this line desirable ink on paper") is genuinely per-model rather than
-  // geometric. 0.022 is the default: the bottom of the common range, and just
-  // inside the text case's ceiling.
-  const CONTOUR_DEPTH_SIMILAR_FRAC_WORLD =
-    (Number.isFinite(S.contourCleanup) && S.contourCleanup >= 0) ? S.contourCleanup : 0.022;
-  // DEBUG kill-switch (Debug panel) — skips the whole test, so contourDrops
-  // stays allocated but empty and Step 5/6 run their normal path over zero
-  // drops. Distinct from simply setting Contour cleanup to 0, which still
-  // runs every decision and can still drop on an exactly-coincident backdrop.
-  // The discriminator for "is Step 4 even the thing removing this geometry":
-  // if a contour is still missing with this on, the cause is upstream
-  // (occlude()/Step 2/3), not Step 4's backdrop test.
-  const step4Off = !!S.debugNoStep4;
-  // DIAGNOSTIC — one record per same-shell decision Step 4 actually makes,
-  // KEPT ones included (a keep that only just cleared the threshold is
-  // exactly as informative as a drop when hunting for a value that works
-  // across models). Capped so a dense model can't balloon the posted result.
-  const dbg4 = [];
-  const DBG4_CAP = 4000;
+  const contourRuns = buildContourRuns(topo);
 
   // Shared by ground-shadow and cast-shadow texture (further below): a
   // point-in-triangle coverage/nearest-face lookup against the same
@@ -1174,6 +1134,388 @@ function generate(cam, S, shadingBuffer){
   };
 
   /* ================================================================
+     Shared silhouette-family machinery — the topological chain set of
+     6.4b above, split at every screen-space crossing, plus the depth-aware
+     backdrop query. Read by BOTH consumers below: Contour Step 4 and 6.5
+     Silhouette. Sits outside either one's guard so neither has to be
+     nested inside the other's scope to reach it — which is what used to
+     force Contour Step 4 to run inside the Silhouette block while its own
+     Steps 5/6 ran after it, with the shared state hoisted between them.
+     ================================================================ */
+  function buildSilhouetteSplits(topo){
+    const { nCS, csValid, csX0, csY0, csX1, csY1, csShell } = topo;
+    // pickBackdropFaceWithDepth (Phase 3b — see PHASE3b-contour-run-identity.md
+    // Step 1): same nearest-other-front-facing-triangle query Silhouette
+    // always used, factored to also return the matched triangle's
+    // interpolated depth — needed by Contour's own drop rule below, which
+    // Silhouette itself has no use for. Pure refactor: pickBackdropFace stays
+    // a one-line wrapper, zero behavior change for Silhouette's own calls.
+    const pickBackdropFaceWithDepth = (px, py, skipA, skipB) => {
+      const ci = cellY(py)*gw + cellX(px);
+      let bestF = -1, bestIz = -Infinity;
+      for (let li=cellStart[ci]; li<cellStart[ci+1]; li++){
+        const j=cellItems[li], f=ofc[j];
+        if (!front[f]) continue;
+        if (f===skipA || f===skipB) continue;
+        const o=j*9;
+        const ax=ocp[o],ay=ocp[o+1],az=ocp[o+2], bx=ocp[o+3],by=ocp[o+4],bz=ocp[o+5], cx=ocp[o+6],cy2=ocp[o+7],cz=ocp[o+8];
+        const d=(bx-ax)*(cy2-ay)-(by-ay)*(cx-ax);
+        if (Math.abs(d)<1e-9) continue;
+        const s2=d>0?1:-1;
+        if (s2*((bx-ax)*(py-ay)-(by-ay)*(px-ax)) < -1e-7) continue;
+        if (s2*((cx-bx)*(py-by)-(cy2-by)*(px-bx)) < -1e-7) continue;
+        if (s2*((ax-cx)*(py-cy2)-(ay-cy2)*(px-cx)) < -1e-7) continue;
+        const w0 = ((bx-px)*(cy2-py)-(by-py)*(cx-px)) / d;
+        const w1 = ((cx-px)*(ay-py)-(cy2-py)*(ax-px)) / d;
+        const w2 = 1 - w0 - w1;
+        const pointIz = w0*az + w1*bz + w2*cz;
+        if (pointIz > bestIz){ bestIz = pointIz; bestF = f; }
+      }
+      return { f: bestF, iz: bestIz };   // f=-1 = nothing behind (open background)
+    };
+    const pickBackdropFace = (px, py, skipA, skipB) => pickBackdropFaceWithDepth(px, py, skipA, skipB).f;
+
+    const siList = [];      // compact list of valid stage-1 segment indices
+    const siFlat = [];      // parallel flat [x0,y0,x1,y1,...] for buildSegGrid
+    if (wantS) for (let seg=0;seg<nCS;seg++){
+      if (!csValid[seg]) continue;
+      siList.push(seg);
+      siFlat.push(csX0[seg], csY0[seg], csX1[seg], csY1[seg]);
+    }
+    const siShellOfIdx = siList.map(seg => csShell[seg]);
+    const siCuts = siList.map((seg) => [ {t:0, x:csX0[seg], y:csY0[seg]}, {t:1, x:csX1[seg], y:csY1[seg]} ]);
+    if (siList.length && siList.length <= 60000){
+      const siSplitGrid = buildSegGrid(siFlat);
+      for (let idx=0; idx<siList.length; idx++){
+        const seg = siList[idx];
+        const x0=csX0[seg], y0=csY0[seg], x1=csX1[seg], y1=csY1[seg];
+        siSplitGrid.query(x0,y0,x1,y1, jdx => {
+          if (jdx <= idx) return;               // each crossing pair handled once, from the lower index
+          const seg2 = siList[jdx];
+          const hit = intersectSegs(x0,y0,x1,y1, csX0[seg2],csY0[seg2],csX1[seg2],csY1[seg2]);
+          if (!hit) return;
+          // ONE shared point, computed from idx's own line, consumed by BOTH sides
+          const X = x0 + (x1-x0)*hit.t, Y = y0 + (y1-y0)*hit.t;
+          siCuts[idx].push({t: hit.t, x:X, y:Y});
+          siCuts[jdx].push({t: hit.u, x:X, y:Y});
+        });
+      }
+    }
+    return { siList, siShellOfIdx, siCuts, pickBackdropFace, pickBackdropFaceWithDepth };
+  }
+  const splits = buildSilhouetteSplits(topo);
+
+  /* Contour Step 4 — see the block comment inside. Returns the per-segment
+     drop-interval table Step 5/6 consumes; writes its own diagnostics to
+     counts. Reads the shared splits built above, never 6.5 Silhouette. */
+  function buildContourDrops(topo, splits){
+    const { nCS, csX0, csY0, csZ0, csX1, csY1, csZ1,
+            csFaceA, csFaceB, csEdge } = topo;
+    const { siList, siShellOfIdx, siCuts, pickBackdropFaceWithDepth } = splits;
+    // Phase 3b Step 4's output — drop [t0,t1] intervals per segment, in the
+    // edge's own csX0→csX1 parametrization (the same basis Step 2/3's
+    // tEdge0/tEdge1 already use, so Step 5 can apply a drop to a run's pieces
+    // with no re-projection). Allocated only when Contour actually draws;
+    // every consumer below tests it rather than the layer flags directly.
+    const contourDrops = (layerOn.sv || layerOn.sh) ? new Array(nCS) : null;
+    // World-space depth-similarity tolerance, as a fraction of the model's
+    // own bounding-sphere radius — same convention as worldNoiseFloor above
+    // (dedup's own world-scale tolerance). Replaces an earlier version that
+    // scaled with the point's own iz (1/dist for perspective) directly:
+    // that has the WRONG power of distance. A fixed real-world depth gap
+    // between two surfaces produces an iz-difference that shrinks as
+    // 1/dist² (derivative of 1/dist), but a threshold scaled by edgeIz
+    // itself only shrinks as 1/dist — so at typical framing distances the
+    // threshold ends up relatively too wide compared to the true gap,
+    // swallowing real folds (e.g. a letterform's bowl passing close to its
+    // own stem) that only re-separate correctly once the camera moves close
+    // enough that the quadratic real gap catches back up. Comparing in
+    // actual world-space depth (converting iz back to view-space z for
+    // perspective) removes the distance-dependence entirely. Tunable, not
+    // final.
+    //
+    // Exposed as a user-facing control ("Contour cleanup", Lines section)
+    // rather than kept as a fixed constant, because no single value serves
+    // every model: measured across the test set, most models want somewhere in
+    // 0.022–0.050, while faceted 3D text needs 0.0225 at most before real folds
+    // (a letterform's bowl passing close to its own stem) start being swallowed.
+    // That leaves a ~2% window where one constant technically satisfies all of
+    // them — too narrow to be worth defending, and the judgment involved ("is
+    // this line desirable ink on paper") is genuinely per-model rather than
+    // geometric. 0.022 is the default: the bottom of the common range, and just
+    // inside the text case's ceiling.
+    const CONTOUR_DEPTH_SIMILAR_FRAC_WORLD =
+      (Number.isFinite(S.contourCleanup) && S.contourCleanup >= 0) ? S.contourCleanup : 0.022;
+    // DEBUG kill-switch (Debug panel) — skips the whole test, so contourDrops
+    // stays allocated but empty and Step 5/6 run their normal path over zero
+    // drops. Distinct from simply setting Contour cleanup to 0, which still
+    // runs every decision and can still drop on an exactly-coincident backdrop.
+    // The discriminator for "is Step 4 even the thing removing this geometry":
+    // if a contour is still missing with this on, the cause is upstream
+    // (occlude()/Step 2/3), not Step 4's backdrop test.
+    const step4Off = !!S.debugNoStep4;
+    // DIAGNOSTIC — one record per same-shell decision Step 4 actually makes,
+    // KEPT ones included (a keep that only just cleared the threshold is
+    // exactly as informative as a drop when hunting for a value that works
+    // across models). Capped so a dense model can't balloon the posted result.
+    const dbg4 = [];
+    const DBG4_CAP = 4000;
+
+    /* Phase 3b Step 4 (see PHASE3b-contour-run-identity.md) — Contour's own
+       crossing-split + backdrop-depth test, purely SUBTRACTIVE: never touches
+       occlude(), never decides visible/hidden, only ever produces drop
+       [t0,t1] intervals per segment — in the edge's own csX0→csX1
+       parametrization, the exact same basis Step 2/3's tEdge0/tEdge1 already
+       use, so applying a drop to a run's pieces below needs no re-projection.
+       Reads the shared silhouette-family machinery built above (siList,
+       siShellOfIdx, siCuts, pickBackdropFaceWithDepth) — no separate
+       crossing-split computation for Contour, and no dependency on 6.5
+       Silhouette's own back-end, which now runs after this. */
+    const r4 = v => Number.isFinite(v) ? +v.toFixed(4) : v;
+    if (contourDrops && !step4Off) for (let idx=0; idx<siList.length; idx++){
+      const seg = siList[idx];
+      const shell = siShellOfIdx[idx];
+      const e = csEdge[seg];
+      const cuts = siCuts[idx].slice().sort((a,b)=>a.t-b.t);
+      // outward-nudge direction — identical to buildEdgePieces' own block
+      // above (same OUTWARD_EPS, same reference-face/third-vertex sign
+      // resolution).
+      const OUTWARD_EPS = 0.01;
+      let ox=0, oy=0;
+      {
+        const ex = csX1[seg]-csX0[seg], ey = csY1[seg]-csY0[seg];
+        const elen = Math.hypot(ex,ey) || 1;
+        let nx = -ey/elen, ny = ex/elen;
+        const refFace = (csFaceB[seg]<0 || front[csFaceA[seg]]) ? csFaceA[seg] : csFaceB[seg];
+        const va=tri[refFace*3], vb=tri[refFace*3+1], vc=tri[refFace*3+2];
+        const tv = (va!==ea[e] && va!==eb[e]) ? va : (vb!==ea[e] && vb!==eb[e]) ? vb : vc;
+        const emx=(csX0[seg]+csX1[seg])/2, emy=(csY0[seg]+csY1[seg])/2;
+        const tvx = sx[tv]-emx, tvy = sy[tv]-emy;
+        if (nx*tvx + ny*tvy > 0){ nx=-nx; ny=-ny; }
+        ox=nx*OUTWARD_EPS; oy=ny*OUTWARD_EPS;
+      }
+      let drops = null;
+      for (let k=0; k+1<cuts.length; k++){
+        const ca=cuts[k], cb=cuts[k+1];
+        if (cb.t - ca.t < 1e-6) continue;
+        const tm = (ca.t+cb.t)/2;
+        const mx = csX0[seg]+(csX1[seg]-csX0[seg])*tm, my = csY0[seg]+(csY1[seg]-csY0[seg])*tm;
+        const back = pickBackdropFaceWithDepth(mx+ox, my+oy, csFaceA[seg], csFaceB[seg]);
+        // no backdrop, or a backdrop belonging to a different shell — always
+        // keep (open background, or a genuine boundary against another
+        // object — exactly Silhouette's own "always keep" cases)
+        if (back.f < 0 || COMP[back.f] !== shell) continue;
+        // same shell — ambiguous, resolved by comparing the outward
+        // backdrop's depth against THIS point's own interpolated depth:
+        // near-identical means the "backdrop" is really this same local
+        // surface (artifact, drop); a real gap means a genuine fold (keep)
+        const edgeIz = csZ0[seg] + (csZ1[seg]-csZ0[seg])*tm;
+        // Undo the 1/dist warp before comparing — see CONTOUR_DEPTH_SIMILAR_FRAC_WORLD
+        // above. Perspective iz is 1/dist, so the world gap between two depths
+        // is |Δiz| / (izEdge·izBack) EXACTLY; /edgeIz² is only that expression's
+        // first-order approximation about edgeIz, and the error is not
+        // cosmetic — it's largest precisely where the gap is largest. A
+        // genuinely distant backdrop has back.iz well below edgeIz, so edgeIz²
+        // over-states the denominator and UNDER-states the real gap, biasing
+        // the test toward calling a real fold "similar" and dropping it. Ortho's
+        // iz is already linear view-space z, so no correction needed there.
+        const dIz = Math.abs(back.iz - edgeIz);
+        let realGapWorld;
+        if (ortho) realGapWorld = dIz;
+        else {
+          // Both are 1/dist for points in front of the camera, hence positive;
+          // a non-positive product can only come from degenerate/clipped input,
+          // where "these two depths are near-identical" is not a claim worth
+          // making — fall through as a keep.
+          const denom = edgeIz * back.iz;
+          realGapWorld = denom > 1e-12 ? dIz/denom : Infinity;
+        }
+        const thresh = M.radius * CONTOUR_DEPTH_SIMILAR_FRAC_WORLD;
+        const dropIt = realGapWorld < thresh;
+        if (dbg4.length < DBG4_CAP) dbg4.push({
+          seg, edge: e, shell,
+          t0: r4(ca.t), t1: r4(cb.t),
+          x: r4(mx), y: r4(my),
+          edgeDist: r4(ortho ? -edgeIz : (edgeIz>1e-12 ? 1/edgeIz : Infinity)),
+          backDist: r4(ortho ? -back.iz : (back.iz>1e-12 ? 1/back.iz : Infinity)),
+          gapWorld: r4(realGapWorld), thresh: r4(thresh),
+          // < 1 dropped, >= 1 kept. The single most useful column: sort by it
+          // to read off what threshold THIS model would actually have needed.
+          ratio: r4(realGapWorld/thresh),
+          drop: dropIt,
+        });
+        if (!dropIt) continue;
+        if (!drops) drops = [];
+        drops.push(ca.t, cb.t);
+      }
+      if (drops) contourDrops[seg] = drops;
+    }
+    // DIAGNOSTIC (temporary, at user's request) — every segment Step 4 found
+    // at least one drop interval on (edge's own csX0→csX1 t parametrization,
+    // same basis dbgStep23's pts don't use but tEdge0/tEdge1 on each Step 2/3
+    // piece do). Read from devtools console as:
+    //   console.table(lastGen.counts.dbgStep4)
+    // dbgStep4Detail is the per-decision companion (drops AND keeps, see dbg4
+    // above) — the one to read when asking "what threshold would this model
+    // have needed":
+    //   const d = lastGen.counts.dbgStep4Detail;
+    //   console.table(d.filter(r=>r.drop).sort((a,b)=>b.ratio-a.ratio).slice(0,40))  // closest calls that DID drop
+    //   console.table(d.filter(r=>!r.drop).sort((a,b)=>a.ratio-b.ratio).slice(0,40)) // closest calls that survived
+    if (contourDrops){
+      const dbg = [];
+      for (let seg=0; seg<nCS; seg++) if (contourDrops[seg]) dbg.push({ seg, edge: csEdge[seg], drops: contourDrops[seg].slice() });
+      counts.dbgStep4 = dbg;
+      counts.dbgStep4Detail = dbg4;
+      counts.dbgStep4Off = step4Off;
+      counts.dbgStep4Frac = CONTOUR_DEPTH_SIMILAR_FRAC_WORLD;
+      counts.dbgStep4Truncated = dbg4.length >= DBG4_CAP;
+    }
+    return contourDrops;
+  }
+  const contourDrops = buildContourDrops(topo, splits);
+
+  /* Phase 3b Step 5+6 — subtract Step 4's drops from each run's own
+     geometry (never losing or reassigning run.id, only ever splitting its
+     point sequence), absorb whatever sub-MIN_SEG slivers that splitting
+     leaves behind (mirroring occlude()'s own denoise, but scoped to
+     WHATEVER remains after splitting — Step 5's drops are themselves never
+     length-filtered, they're identified artifacts, not noise), then emit —
+     bridging any surviving gap with a direct connector, exactly the Phase
+     3a flushRun convention (push the resuming fragment's own start point,
+     then continue; the emitted segment between two flat-array-adjacent
+     points IS the bridge, real touch or not). */
+  function emitContourRuns(contourRuns, contourDrops){
+    if (contourDrops) for (const run of contourRuns){
+      // Step 5: split each piece against contourDrops[seg] (if any), into an
+      // ordered fragment list — 'keep' fragments carry a running point list,
+      // 'drop' fragments carry no data at all (their length is never tested,
+      // only their presence as a separator matters). Adjacent same-type
+      // fragments are merged as they're produced, so the list always
+      // strictly alternates once built.
+      const frags = [];
+      const pushFrag = (frag) => {
+        const last = frags.length ? frags[frags.length-1] : null;
+        if (last && last.type === frag.type){
+          if (frag.type === 'keep') last.pts.push(...frag.pts.slice(1));
+          return;
+        }
+        frags.push(frag);
+      };
+      for (const pc of run.pieces){
+        const drops = contourDrops[pc.seg];
+        if (!drops){ pushFrag({ type:'keep', pts:[pc.p0, pc.p1] }); continue; }
+        const denom = pc.tEdge1 - pc.tEdge0;
+        const subs = [];   // [s0,s1] in [0,1] along p0→p1
+        for (let i=0;i+1<drops.length;i+=2){
+          let s0 = (drops[i]-pc.tEdge0)/denom, s1 = (drops[i+1]-pc.tEdge0)/denom;
+          if (s0>s1){ const tmp=s0; s0=s1; s1=tmp; }
+          s0 = Math.max(0, s0); s1 = Math.min(1, s1);
+          if (s1 - s0 > 1e-9) subs.push([s0,s1]);
+        }
+        if (!subs.length){ pushFrag({ type:'keep', pts:[pc.p0, pc.p1] }); continue; }
+        subs.sort((a,b)=>a[0]-b[0]);
+        const pointAt = (s) => [ pc.p0[0]+(pc.p1[0]-pc.p0[0])*s, pc.p0[1]+(pc.p1[1]-pc.p0[1])*s ];
+        let cur = 0;
+        for (const [s0,s1] of subs){
+          if (s0 > cur + 1e-9) pushFrag({ type:'keep', pts:[pointAt(cur), pointAt(s0)] });
+          pushFrag({ type:'drop' });
+          cur = s1;
+        }
+        if (cur < 1 - 1e-9) pushFrag({ type:'keep', pts:[pointAt(cur), pointAt(1)] });
+      }
+      if (!frags.length) continue;
+      let frags2 = frags, closed = run.isClosedLoop;
+      // closed loop: fold the wraparound seam BEFORE absorption (same
+      // reasoning as Step 2/3's own seam-close) so the absorption pass below
+      // never has to reason about the array boundary as anything other than
+      // an ordinary adjacency.
+      if (closed && frags2.length>1 && frags2[0].type===frags2[frags2.length-1].type){
+        const lastF = frags2[frags2.length-1];
+        frags2 = frags2.slice(0, frags2.length-1);
+        if (lastF.type==='keep') frags2[0] = { type:'keep', pts: lastF.pts.concat(frags2[0].pts.slice(1)) };
+      }
+      for (const f of frags2) if (f.type==='keep'){
+        let l=0; for (let i=1;i<f.pts.length;i++) l+=Math.hypot(f.pts[i][0]-f.pts[i-1][0], f.pts[i][1]-f.pts[i-1][1]);
+        f.len = l;
+      }
+      // Absorb interior keep fragments shorter than MIN_SEG into their
+      // surrounding drop. Protect the two true endpoints of an open run from
+      // ever being absorbed away; a closed loop has none, so every fragment
+      // — including the wrap-around seam — is eligible.
+      for (let guard=frags2.length+2; guard>0 && frags2.length>1; guard--){
+        let shortest=-1, shortLen=MIN_SEG;
+        for (let i=0;i<frags2.length;i++){
+          if (frags2[i].type!=='keep') continue;
+          if (!closed && (i===0 || i===frags2.length-1)) continue;
+          if (frags2[i].len < shortLen){ shortLen=frags2[i].len; shortest=i; }
+        }
+        if (shortest<0) break;
+        if (shortest>0 && shortest<frags2.length-1){
+          frags2.splice(shortest-1, 3, { type:'drop' });
+        } else if (shortest===0){
+          // wrap-around: merges frags2[last] + frags2[0] + frags2[1]
+          frags2 = [{ type:'drop' }, ...frags2.slice(2, frags2.length-1)];
+        } else {
+          // wrap-around: merges frags2[last-1] + frags2[last] + frags2[0]
+          frags2 = [{ type:'drop' }, ...frags2.slice(1, frags2.length-2)];
+        }
+      }
+      // Step 6 emit: flat-concatenate every surviving keep fragment's own
+      // points, in order — consecutive points from different fragments are
+      // exactly the "direct connector" bridge across whatever was dropped
+      // between them.
+      const outPts = [];
+      for (const f of frags2) if (f.type==='keep') outPts.push(...f.pts);
+      // Recorded independent of layerOn.sv/sh below — this is "did Step 4/5
+      // actually eliminate this run's own material," the thing
+      // js/svg-export.js's mergeContourRunSplits needs to tell a genuine
+      // artifact apart from a run that simply isn't being drawn because its
+      // OWN layer checkbox is off (which says nothing about whether real
+      // occlusion put real content there — bridging across that would paper
+      // over a real, deliberate hidden-line gap with a false straight line).
+      run.hasContent = outPts.length>=2;
+      if (!run.hasContent) continue;
+      const isV = run.st==='v';
+      const arr = isV ? (layerOn.sv ? groups.sv : null) : (layerOn.sh ? groups.sh : null);
+      if (!arr) continue;
+      const runArr = isV ? runIds.sv : runIds.sh;
+      const seqArr = isV ? seqs.sv : seqs.sh;
+      // Every consecutive pair is pushed directly, deliberately bypassing
+      // emit()'s own MIN_SEG filter. That filter exists to stop a genuinely
+      // isolated, too-short 2-point piece from becoming a spurious
+      // standalone dot — the right call for Silhouette/Crease's independent
+      // per-edge pieces, each of which really does stand alone. outPts is
+      // not that: it's already one continuous, Step-5-absorbed point
+      // sequence for this ONE run (the absorption pass above is what
+      // removes genuinely-too-short interior material — a survivor here is
+      // real geometry). A pair measuring under MIN_SEG here is just two
+      // adjacent points on a fine curve, not noise; filtering it used to
+      // silently sever the run's own continuity into two separately-chained
+      // polylines sharing one run.id, with a gap smaller than MIN_SEG but
+      // larger than chainByRun's own 0.02px touch tolerance — invisible to
+      // both that and mergeContourRunSplits (which only ever looks at
+      // DIFFERENT run.ids). Only a literal duplicate point (exactly zero
+      // length) is skipped — that's not a short segment, it's nothing.
+      let seq = 0;
+      for (let i=0;i+1<outPts.length;i++){
+        const ax=outPts[i][0], ay=outPts[i][1], bx=outPts[i+1][0], by=outPts[i+1][1];
+        if (ax===bx && ay===by) continue;
+        arr.push(ax,ay,bx,by);
+        runArr.push(run.id); seqArr.push(seq++);
+      }
+    }
+    // Run-adjacency table (id/state/prevId/nextId/hasContent for EVERY run,
+    // whether or not it's actually being drawn) — posted AFTER Step 5/6 so
+    // hasContent reflects what Step 4/5 actually did, not whether the
+    // layer's own on/off checkbox happened to be set. See js/svg-export.js's
+    // mergeContourRunSplits, the actual consumer of this.
+    counts.contourAdjacency = contourRuns.map(run => ({
+      id: run.id, st: run.st, prevId: run.prevId, nextId: run.nextId, hasContent: !!run.hasContent
+    }));
+  }
+  emitContourRuns(contourRuns, contourDrops);
+
+  /* ================================================================
      6.5 · Silhouette / Silhouette individual (Blender: silhouette_filtering
      = GROUP / INDIVIDUAL) — crossing-split + depth-aware backdrop filter,
      built on top of the same topological chain set Contour uses above.
@@ -1196,464 +1538,160 @@ function generate(cam, S, shadingBuffer){
         filter table exactly. Silhouette has no hidden-line variant (never
         meaningfully "occluded", only "backdropped" — matching the old
         Scene Outline's own behavior); Silhouette individual does. */
-  if (layerOn.so || layerOn.iv || layerOn.ih || layerOn.sv || layerOn.sh){
-  // pickBackdropFaceWithDepth (Phase 3b — see PHASE3b-contour-run-identity.md
-  // Step 1): same nearest-other-front-facing-triangle query Silhouette
-  // always used, factored to also return the matched triangle's
-  // interpolated depth — needed by Contour's own drop rule below, which
-  // Silhouette itself has no use for. Pure refactor: pickBackdropFace stays
-  // a one-line wrapper, zero behavior change for Silhouette's own calls.
-  const pickBackdropFaceWithDepth = (px, py, skipA, skipB) => {
-    const ci = cellY(py)*gw + cellX(px);
-    let bestF = -1, bestIz = -Infinity;
-    for (let li=cellStart[ci]; li<cellStart[ci+1]; li++){
-      const j=cellItems[li], f=ofc[j];
-      if (!front[f]) continue;
-      if (f===skipA || f===skipB) continue;
-      const o=j*9;
-      const ax=ocp[o],ay=ocp[o+1],az=ocp[o+2], bx=ocp[o+3],by=ocp[o+4],bz=ocp[o+5], cx=ocp[o+6],cy2=ocp[o+7],cz=ocp[o+8];
-      const d=(bx-ax)*(cy2-ay)-(by-ay)*(cx-ax);
-      if (Math.abs(d)<1e-9) continue;
-      const s2=d>0?1:-1;
-      if (s2*((bx-ax)*(py-ay)-(by-ay)*(px-ax)) < -1e-7) continue;
-      if (s2*((cx-bx)*(py-by)-(cy2-by)*(px-bx)) < -1e-7) continue;
-      if (s2*((ax-cx)*(py-cy2)-(ay-cy2)*(px-cx)) < -1e-7) continue;
-      const w0 = ((bx-px)*(cy2-py)-(by-py)*(cx-px)) / d;
-      const w1 = ((cx-px)*(ay-py)-(cy2-py)*(ax-px)) / d;
-      const w2 = 1 - w0 - w1;
-      const pointIz = w0*az + w1*bz + w2*cz;
-      if (pointIz > bestIz){ bestIz = pointIz; bestF = f; }
-    }
-    return { f: bestF, iz: bestIz };   // f=-1 = nothing behind (open background)
-  };
-  const pickBackdropFace = (px, py, skipA, skipB) => pickBackdropFaceWithDepth(px, py, skipA, skipB).f;
-
-  const siList = [];      // compact list of valid stage-1 segment indices
-  const siFlat = [];      // parallel flat [x0,y0,x1,y1,...] for buildSegGrid
-  for (let seg=0;seg<nCS;seg++){
-    if (!csValid[seg]) continue;
-    siList.push(seg);
-    siFlat.push(csX0[seg], csY0[seg], csX1[seg], csY1[seg]);
-  }
-  const siShellOfIdx = siList.map(seg => csShell[seg]);
-  const siCuts = siList.map((seg) => [ {t:0, x:csX0[seg], y:csY0[seg]}, {t:1, x:csX1[seg], y:csY1[seg]} ]);
-  if (siList.length && siList.length <= 60000){
-    const siSplitGrid = buildSegGrid(siFlat);
-    for (let idx=0; idx<siList.length; idx++){
-      const seg = siList[idx];
-      const x0=csX0[seg], y0=csY0[seg], x1=csX1[seg], y1=csY1[seg];
-      siSplitGrid.query(x0,y0,x1,y1, jdx => {
-        if (jdx <= idx) return;               // each crossing pair handled once, from the lower index
-        const seg2 = siList[jdx];
-        const hit = intersectSegs(x0,y0,x1,y1, csX0[seg2],csY0[seg2],csX1[seg2],csY1[seg2]);
-        if (!hit) return;
-        // ONE shared point, computed from idx's own line, consumed by BOTH sides
-        const X = x0 + (x1-x0)*hit.t, Y = y0 + (y1-y0)*hit.t;
-        siCuts[idx].push({t: hit.t, x:X, y:Y});
-        siCuts[jdx].push({t: hit.u, x:X, y:Y});
-      });
-    }
-  }
-
-  const idxOfSeg = new Int32Array(nCS).fill(-1);
-  for (let idx=0; idx<siList.length; idx++) idxOfSeg[siList[idx]] = idx;
-  const lerp2 = (ca,cb,t) => [ca.x+(cb.x-ca.x)*t, ca.y+(cb.y-ca.y)*t];
-  // Builds ONE edge's ordered piece-or-break list (in the edge's own ea→eb
-  // direction). A "break" is an explicit backdrop-drop (self-occlusion) —
-  // a genuine discontinuity, never denoised away. Everything else is a
-  // 'v'/'h' piece from the standard occlude() pass on that sub-segment.
-  // Crucially, pieces from ADJACENT sub-segments (and adjacent edges, via
-  // the chain walk below) get concatenated into one continuous sequence
-  // BEFORE any state-run flushing happens — so a genuinely tiny hidden
-  // sliver that happens to fall near a crossing-cut boundary is exactly as
-  // denoisable as one that falls in the middle of a single mesh edge,
-  // instead of being artificially protected just because it's at the edge
-  // of what this section's own splitting invented. (Calling occlude()+emit()
-  // independently per cut sub-segment loses that continuity: each call's
-  // own denoise pass correctly protects ITS OWN t=0/1 boundary from being
-  // merged away per the earlier occlude() fix, but a crossing-cut boundary
-  // isn't a real chain endpoint, so a truly microscopic occlusion sliver
-  // right there would end up preserved as a genuine cut and then dropped
-  // by emit()'s length filter anyway — a real, if tiny, gap invisible
-  // until zoomed in.)
-  function buildEdgePieces(seg, wantIndividual){
-    const idx = idxOfSeg[seg];
-    const shell = siShellOfIdx[idx];
-    const e = csEdge[seg];
-    // Both modes now split at EVERY crossing, same-shell or not (previously
-    // Individual only split at same-shell crossings, leaving cross-shell
-    // occlusion boundaries — e.g. where one torus disappears behind another
-    // — to whatever point occlude()'s own per-triangle depth test happened
-    // to land on, independently of where the occluder's OWN silhouette line
-    // actually is). A cross-shell crossing is exactly where this edge meets
-    // the occluding shell's silhouette in screen space, computed via the
-    // same shared-point technique used elsewhere in this pipeline (one
-    // crossing, computed once, consumed by both sides) — so bounding the
-    // occlude() call tightly to that point means the resulting piece is
-    // already split exactly at the true boundary in the ordinary case,
-    // rather than leaving occlude() to locate its own transition somewhere
-    // across a much longer, unbounded stretch using a triangle-faceted
-    // approximation of the occluder's curved surface (which is where the
-    // per-instance over/undershoot was actually coming from).
-    const cuts = siCuts[idx].slice().sort((a,b)=>a.t-b.t);
-    // Backdrop-test sample point offset, OUTWARD (away from this edge's own
-    // solid material) rather than exactly on the edge. Sampling exactly on
-    // the edge can't tell "there's a real hole here, so of course something
-    // else is visible behind it" apart from "this happens to be a solid,
-    // symmetric shape whose own far side coincidentally projects to this
-    // exact same line" — a real hole's far side occupies the whole outward
-    // neighborhood, not just the boundary line itself, so nudging the
-    // sample point outward still finds it correctly; a coincidental
-    // alignment only ever lined up along that one exact line and stops
-    // matching as soon as the sample leaves it. Value chosen well below
-    // this pipeline's other small-distance thresholds (MIN_SEG=0.3px,
-    // DEDUP_OFF_TOL=0.15px default) so it can't be mistaken for a real
-    // geometric feature, while staying astronomically larger than any
-    // floating-point noise at typical screen-space coordinate magnitudes.
-    const OUTWARD_EPS = 0.01;
-    let ox=0, oy=0;
-    {
-      const ex = csX1[seg]-csX0[seg], ey = csY1[seg]-csY0[seg];
-      const elen = Math.hypot(ex,ey) || 1;
-      let nx = -ey/elen, ny = ex/elen;
-      const refFace = (csFaceB[seg]<0 || front[csFaceA[seg]]) ? csFaceA[seg] : csFaceB[seg];
-      const va=tri[refFace*3], vb=tri[refFace*3+1], vc=tri[refFace*3+2];
-      const tv = (va!==ea[e] && va!==eb[e]) ? va : (vb!==ea[e] && vb!==eb[e]) ? vb : vc;
-      const emx=(csX0[seg]+csX1[seg])/2, emy=(csY0[seg]+csY1[seg])/2;
-      const tvx = sx[tv]-emx, tvy = sy[tv]-emy;
-      // nx,ny should point AWAY from the material — if it currently points
-      // toward the reference face's own third vertex (into the material), flip it
-      if (nx*tvx + ny*tvy > 0){ nx=-nx; ny=-ny; }
-      ox=nx*OUTWARD_EPS; oy=ny*OUTWARD_EPS;
-    }
-    const out = [];
-    for (let k=0; k+1<cuts.length; k++){
-      const ca=cuts[k], cb=cuts[k+1];
-      if (cb.t - ca.t < 1e-6) continue;
-      const tm = (ca.t+cb.t)/2;
-      const mx = csX0[seg]+(csX1[seg]-csX0[seg])*tm, my = csY0[seg]+(csY1[seg]-csY0[seg])*tm;
-      const backF = pickBackdropFace(mx+ox, my+oy, csFaceA[seg], csFaceB[seg]);
-      const dropSelf = backF>=0 && COMP[backF]===shell;
-      const keep = wantIndividual ? !dropSelf : backF<0;
-      if (!keep){ out.push({brk:true}); continue; }
-      const sz0 = csZ0[seg]+(csZ1[seg]-csZ0[seg])*ca.t, sz1 = csZ0[seg]+(csZ1[seg]-csZ0[seg])*cb.t;
-      const hid = occlude(ca.x,ca.y,sz0, cb.x,cb.y,sz1, csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
-      let t=0;
-      for (let i=0;i<hid.length;i+=2){
-        if (hid[i]>t) out.push({st:'v', p0:lerp2(ca,cb,t), p1:lerp2(ca,cb,hid[i])});
-        out.push({st:'h', p0:lerp2(ca,cb,hid[i]), p1:lerp2(ca,cb,hid[i+1])});
-        t=hid[i+1];
+  function emitSilhouetteChains(topo, splits){
+    const { siChains, nCS, csX0, csY0, csZ0, csX1, csY1, csZ1,
+            csFaceA, csFaceB, csEdge,
+            chainStart, chainSeg, chainRev, chainClosed } = topo;
+    const { siList, siShellOfIdx, siCuts, pickBackdropFace } = splits;
+    const idxOfSeg = new Int32Array(nCS).fill(-1);
+    for (let idx=0; idx<siList.length; idx++) idxOfSeg[siList[idx]] = idx;
+    const lerp2 = (ca,cb,t) => [ca.x+(cb.x-ca.x)*t, ca.y+(cb.y-ca.y)*t];
+    // Builds ONE edge's ordered piece-or-break list (in the edge's own ea→eb
+    // direction). A "break" is an explicit backdrop-drop (self-occlusion) —
+    // a genuine discontinuity, never denoised away. Everything else is a
+    // 'v'/'h' piece from the standard occlude() pass on that sub-segment.
+    // Crucially, pieces from ADJACENT sub-segments (and adjacent edges, via
+    // the chain walk below) get concatenated into one continuous sequence
+    // BEFORE any state-run flushing happens — so a genuinely tiny hidden
+    // sliver that happens to fall near a crossing-cut boundary is exactly as
+    // denoisable as one that falls in the middle of a single mesh edge,
+    // instead of being artificially protected just because it's at the edge
+    // of what this section's own splitting invented. (Calling occlude()+emit()
+    // independently per cut sub-segment loses that continuity: each call's
+    // own denoise pass correctly protects ITS OWN t=0/1 boundary from being
+    // merged away per the earlier occlude() fix, but a crossing-cut boundary
+    // isn't a real chain endpoint, so a truly microscopic occlusion sliver
+    // right there would end up preserved as a genuine cut and then dropped
+    // by emit()'s length filter anyway — a real, if tiny, gap invisible
+    // until zoomed in.)
+    function buildEdgePieces(seg, wantIndividual){
+      const idx = idxOfSeg[seg];
+      const shell = siShellOfIdx[idx];
+      const e = csEdge[seg];
+      // Both modes now split at EVERY crossing, same-shell or not (previously
+      // Individual only split at same-shell crossings, leaving cross-shell
+      // occlusion boundaries — e.g. where one torus disappears behind another
+      // — to whatever point occlude()'s own per-triangle depth test happened
+      // to land on, independently of where the occluder's OWN silhouette line
+      // actually is). A cross-shell crossing is exactly where this edge meets
+      // the occluding shell's silhouette in screen space, computed via the
+      // same shared-point technique used elsewhere in this pipeline (one
+      // crossing, computed once, consumed by both sides) — so bounding the
+      // occlude() call tightly to that point means the resulting piece is
+      // already split exactly at the true boundary in the ordinary case,
+      // rather than leaving occlude() to locate its own transition somewhere
+      // across a much longer, unbounded stretch using a triangle-faceted
+      // approximation of the occluder's curved surface (which is where the
+      // per-instance over/undershoot was actually coming from).
+      const cuts = siCuts[idx].slice().sort((a,b)=>a.t-b.t);
+      // Backdrop-test sample point offset, OUTWARD (away from this edge's own
+      // solid material) rather than exactly on the edge. Sampling exactly on
+      // the edge can't tell "there's a real hole here, so of course something
+      // else is visible behind it" apart from "this happens to be a solid,
+      // symmetric shape whose own far side coincidentally projects to this
+      // exact same line" — a real hole's far side occupies the whole outward
+      // neighborhood, not just the boundary line itself, so nudging the
+      // sample point outward still finds it correctly; a coincidental
+      // alignment only ever lined up along that one exact line and stops
+      // matching as soon as the sample leaves it. Value chosen well below
+      // this pipeline's other small-distance thresholds (MIN_SEG=0.3px,
+      // DEDUP_OFF_TOL=0.15px default) so it can't be mistaken for a real
+      // geometric feature, while staying astronomically larger than any
+      // floating-point noise at typical screen-space coordinate magnitudes.
+      const OUTWARD_EPS = 0.01;
+      let ox=0, oy=0;
+      {
+        const ex = csX1[seg]-csX0[seg], ey = csY1[seg]-csY0[seg];
+        const elen = Math.hypot(ex,ey) || 1;
+        let nx = -ey/elen, ny = ex/elen;
+        const refFace = (csFaceB[seg]<0 || front[csFaceA[seg]]) ? csFaceA[seg] : csFaceB[seg];
+        const va=tri[refFace*3], vb=tri[refFace*3+1], vc=tri[refFace*3+2];
+        const tv = (va!==ea[e] && va!==eb[e]) ? va : (vb!==ea[e] && vb!==eb[e]) ? vb : vc;
+        const emx=(csX0[seg]+csX1[seg])/2, emy=(csY0[seg]+csY1[seg])/2;
+        const tvx = sx[tv]-emx, tvy = sy[tv]-emy;
+        // nx,ny should point AWAY from the material — if it currently points
+        // toward the reference face's own third vertex (into the material), flip it
+        if (nx*tvx + ny*tvy > 0){ nx=-nx; ny=-ny; }
+        ox=nx*OUTWARD_EPS; oy=ny*OUTWARD_EPS;
       }
-      if (t<1) out.push({st:'v', p0:lerp2(ca,cb,t), p1:lerp2(ca,cb,1)});
-    }
-    return out;
-  }
-  const wantedModes = [];
-  if (layerOn.iv || layerOn.ih) wantedModes.push(true);    // Silhouette individual
-  if (layerOn.so) wantedModes.push(false);                 // Silhouette
-  for (const wantIndividual of wantedModes){
-    for (let ci=0; ci<siChains.length; ci++){
-      const segStart = chainStart[ci], segEnd = chainStart[ci+1], cycle = !!chainClosed[ci];
-      // full chain walk, concatenating every segment's pieces (respecting
-      // rev) into one continuous sequence before any flushing happens
-      let pieces = [];
-      for (let pi=segStart; pi<segEnd; pi++){
-        const seg = chainSeg[pi], rev = !!chainRev[pi];
-        if (idxOfSeg[seg] < 0) continue;   // shouldn't happen, but stay defensive
-        const edgePieces = buildEdgePieces(seg, wantIndividual);
-        const walked = rev
-          ? edgePieces.slice().reverse().map(p => p.brk ? p : { st:p.st, p0:p.p1, p1:p.p0 })
-          : edgePieces;
-        pieces = pieces.concat(walked);
-      }
-      if (!pieces.length) continue;
-      // For a fully-kept cycle (no backdrop-drop breaks at all), rotate to
-      // start right after a genuine state change — same reasoning as
-      // Crease/Contour above — so the arbitrary walk-start seam never
-      // artificially splits one continuous run into two.
-      const hasBreak = pieces.some(p => p.brk);
-      if (cycle && !hasBreak && pieces.length>1){
-        let rotateAt=-1;
-        for (let i=0;i<pieces.length;i++){
-          const prev = pieces[(i-1+pieces.length)%pieces.length];
-          if (pieces[i].st !== prev.st){ rotateAt=i; break; }
+      const out = [];
+      for (let k=0; k+1<cuts.length; k++){
+        const ca=cuts[k], cb=cuts[k+1];
+        if (cb.t - ca.t < 1e-6) continue;
+        const tm = (ca.t+cb.t)/2;
+        const mx = csX0[seg]+(csX1[seg]-csX0[seg])*tm, my = csY0[seg]+(csY1[seg]-csY0[seg])*tm;
+        const backF = pickBackdropFace(mx+ox, my+oy, csFaceA[seg], csFaceB[seg]);
+        const dropSelf = backF>=0 && COMP[backF]===shell;
+        const keep = wantIndividual ? !dropSelf : backF<0;
+        if (!keep){ out.push({brk:true}); continue; }
+        const sz0 = csZ0[seg]+(csZ1[seg]-csZ0[seg])*ca.t, sz1 = csZ0[seg]+(csZ1[seg]-csZ0[seg])*cb.t;
+        const hid = occlude(ca.x,ca.y,sz0, cb.x,cb.y,sz1, csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
+        let t=0;
+        for (let i=0;i<hid.length;i+=2){
+          if (hid[i]>t) out.push({st:'v', p0:lerp2(ca,cb,t), p1:lerp2(ca,cb,hid[i])});
+          out.push({st:'h', p0:lerp2(ca,cb,hid[i]), p1:lerp2(ca,cb,hid[i+1])});
+          t=hid[i+1];
         }
-        if (rotateAt>0) pieces = pieces.slice(rotateAt).concat(pieces.slice(0,rotateAt));
+        if (t<1) out.push({st:'v', p0:lerp2(ca,cb,t), p1:lerp2(ca,cb,1)});
       }
-      let curState=null, runPts=[];
-      const flushRun = () => {
-        if (runPts.length>=2){
-          // Silhouette (wantIndividual=false) never has a hidden variant —
-          // 'h' runs simply don't draw there, matching the old Scene
-          // Outline's depth-blind, visible-only behavior.
-          const arr = wantIndividual
-            ? (curState==='v' ? (layerOn.iv ? groups.iv : null) : (layerOn.ih ? groups.ih : null))
-            : (curState==='v' ? (layerOn.so ? groups.so : null) : null);
-          if (arr) for (let i=0;i+1<runPts.length;i++)
-            emit(arr, runPts[i][0],runPts[i][1], runPts[i+1][0],runPts[i+1][1], 0, 1);
+      return out;
+    }
+    const wantedModes = [];
+    if (layerOn.iv || layerOn.ih) wantedModes.push(true);    // Silhouette individual
+    if (layerOn.so) wantedModes.push(false);                 // Silhouette
+    for (const wantIndividual of wantedModes){
+      for (let ci=0; ci<siChains.length; ci++){
+        const segStart = chainStart[ci], segEnd = chainStart[ci+1], cycle = !!chainClosed[ci];
+        // full chain walk, concatenating every segment's pieces (respecting
+        // rev) into one continuous sequence before any flushing happens
+        let pieces = [];
+        for (let pi=segStart; pi<segEnd; pi++){
+          const seg = chainSeg[pi], rev = !!chainRev[pi];
+          if (idxOfSeg[seg] < 0) continue;   // shouldn't happen, but stay defensive
+          const edgePieces = buildEdgePieces(seg, wantIndividual);
+          const walked = rev
+            ? edgePieces.slice().reverse().map(p => p.brk ? p : { st:p.st, p0:p.p1, p1:p.p0 })
+            : edgePieces;
+          pieces = pieces.concat(walked);
         }
-        runPts=[]; curState=null;
-      };
-      for (const p of pieces){
-        if (p.brk){ flushRun(); continue; }   // real backdrop-drop — never bridged
-        if (p.st!==curState){ flushRun(); curState=p.st; runPts=[p.p0]; }
-        runPts.push(p.p1);
+        if (!pieces.length) continue;
+        // For a fully-kept cycle (no backdrop-drop breaks at all), rotate to
+        // start right after a genuine state change — same reasoning as
+        // Crease/Contour above — so the arbitrary walk-start seam never
+        // artificially splits one continuous run into two.
+        const hasBreak = pieces.some(p => p.brk);
+        if (cycle && !hasBreak && pieces.length>1){
+          let rotateAt=-1;
+          for (let i=0;i<pieces.length;i++){
+            const prev = pieces[(i-1+pieces.length)%pieces.length];
+            if (pieces[i].st !== prev.st){ rotateAt=i; break; }
+          }
+          if (rotateAt>0) pieces = pieces.slice(rotateAt).concat(pieces.slice(0,rotateAt));
+        }
+        let curState=null, runPts=[];
+        const flushRun = () => {
+          if (runPts.length>=2){
+            // Silhouette (wantIndividual=false) never has a hidden variant —
+            // 'h' runs simply don't draw there, matching the old Scene
+            // Outline's depth-blind, visible-only behavior.
+            const arr = wantIndividual
+              ? (curState==='v' ? (layerOn.iv ? groups.iv : null) : (layerOn.ih ? groups.ih : null))
+              : (curState==='v' ? (layerOn.so ? groups.so : null) : null);
+            if (arr) for (let i=0;i+1<runPts.length;i++)
+              emit(arr, runPts[i][0],runPts[i][1], runPts[i+1][0],runPts[i+1][1], 0, 1);
+          }
+          runPts=[]; curState=null;
+        };
+        for (const p of pieces){
+          if (p.brk){ flushRun(); continue; }   // real backdrop-drop — never bridged
+          if (p.st!==curState){ flushRun(); curState=p.st; runPts=[p.p0]; }
+          runPts.push(p.p1);
+        }
+        flushRun();
       }
-      flushRun();
     }
   }
-
-  /* Phase 3b Step 4 (see PHASE3b-contour-run-identity.md) — Contour's own
-     crossing-split + backdrop-depth test, purely SUBTRACTIVE: never touches
-     occlude(), never decides visible/hidden, only ever produces drop
-     [t0,t1] intervals per segment — in the edge's own csX0→csX1
-     parametrization, the exact same basis Step 2/3's tEdge0/tEdge1 already
-     use, so applying a drop to a run's pieces below needs no re-projection.
-     Reuses Silhouette's own siList/siFlat/siCuts/idxOfSeg (now built
-     whenever Contour needs them too, per the widened guard above) — no
-     separate crossing-split computation for Contour.
-     Its threshold/kill-switch/diagnostic state (CONTOUR_DEPTH_SIMILAR_FRAC_WORLD,
-     step4Off, dbg4) is declared alongside contourDrops itself, out at
-     Contour's own scope — same reason contourDrops is: the diagnostic dump
-     that reports them runs after this guard block closes. */
-  const r4 = v => Number.isFinite(v) ? +v.toFixed(4) : v;
-  if (contourDrops && !step4Off) for (let idx=0; idx<siList.length; idx++){
-    const seg = siList[idx];
-    const shell = siShellOfIdx[idx];
-    const e = csEdge[seg];
-    const cuts = siCuts[idx].slice().sort((a,b)=>a.t-b.t);
-    // outward-nudge direction — identical to buildEdgePieces' own block
-    // above (same OUTWARD_EPS, same reference-face/third-vertex sign
-    // resolution).
-    const OUTWARD_EPS = 0.01;
-    let ox=0, oy=0;
-    {
-      const ex = csX1[seg]-csX0[seg], ey = csY1[seg]-csY0[seg];
-      const elen = Math.hypot(ex,ey) || 1;
-      let nx = -ey/elen, ny = ex/elen;
-      const refFace = (csFaceB[seg]<0 || front[csFaceA[seg]]) ? csFaceA[seg] : csFaceB[seg];
-      const va=tri[refFace*3], vb=tri[refFace*3+1], vc=tri[refFace*3+2];
-      const tv = (va!==ea[e] && va!==eb[e]) ? va : (vb!==ea[e] && vb!==eb[e]) ? vb : vc;
-      const emx=(csX0[seg]+csX1[seg])/2, emy=(csY0[seg]+csY1[seg])/2;
-      const tvx = sx[tv]-emx, tvy = sy[tv]-emy;
-      if (nx*tvx + ny*tvy > 0){ nx=-nx; ny=-ny; }
-      ox=nx*OUTWARD_EPS; oy=ny*OUTWARD_EPS;
-    }
-    let drops = null;
-    for (let k=0; k+1<cuts.length; k++){
-      const ca=cuts[k], cb=cuts[k+1];
-      if (cb.t - ca.t < 1e-6) continue;
-      const tm = (ca.t+cb.t)/2;
-      const mx = csX0[seg]+(csX1[seg]-csX0[seg])*tm, my = csY0[seg]+(csY1[seg]-csY0[seg])*tm;
-      const back = pickBackdropFaceWithDepth(mx+ox, my+oy, csFaceA[seg], csFaceB[seg]);
-      // no backdrop, or a backdrop belonging to a different shell — always
-      // keep (open background, or a genuine boundary against another
-      // object — exactly Silhouette's own "always keep" cases)
-      if (back.f < 0 || COMP[back.f] !== shell) continue;
-      // same shell — ambiguous, resolved by comparing the outward
-      // backdrop's depth against THIS point's own interpolated depth:
-      // near-identical means the "backdrop" is really this same local
-      // surface (artifact, drop); a real gap means a genuine fold (keep)
-      const edgeIz = csZ0[seg] + (csZ1[seg]-csZ0[seg])*tm;
-      // Undo the 1/dist warp before comparing — see CONTOUR_DEPTH_SIMILAR_FRAC_WORLD
-      // above. Perspective iz is 1/dist, so the world gap between two depths
-      // is |Δiz| / (izEdge·izBack) EXACTLY; /edgeIz² is only that expression's
-      // first-order approximation about edgeIz, and the error is not
-      // cosmetic — it's largest precisely where the gap is largest. A
-      // genuinely distant backdrop has back.iz well below edgeIz, so edgeIz²
-      // over-states the denominator and UNDER-states the real gap, biasing
-      // the test toward calling a real fold "similar" and dropping it. Ortho's
-      // iz is already linear view-space z, so no correction needed there.
-      const dIz = Math.abs(back.iz - edgeIz);
-      let realGapWorld;
-      if (ortho) realGapWorld = dIz;
-      else {
-        // Both are 1/dist for points in front of the camera, hence positive;
-        // a non-positive product can only come from degenerate/clipped input,
-        // where "these two depths are near-identical" is not a claim worth
-        // making — fall through as a keep.
-        const denom = edgeIz * back.iz;
-        realGapWorld = denom > 1e-12 ? dIz/denom : Infinity;
-      }
-      const thresh = M.radius * CONTOUR_DEPTH_SIMILAR_FRAC_WORLD;
-      const dropIt = realGapWorld < thresh;
-      if (dbg4.length < DBG4_CAP) dbg4.push({
-        seg, edge: e, shell,
-        t0: r4(ca.t), t1: r4(cb.t),
-        x: r4(mx), y: r4(my),
-        edgeDist: r4(ortho ? -edgeIz : (edgeIz>1e-12 ? 1/edgeIz : Infinity)),
-        backDist: r4(ortho ? -back.iz : (back.iz>1e-12 ? 1/back.iz : Infinity)),
-        gapWorld: r4(realGapWorld), thresh: r4(thresh),
-        // < 1 dropped, >= 1 kept. The single most useful column: sort by it
-        // to read off what threshold THIS model would actually have needed.
-        ratio: r4(realGapWorld/thresh),
-        drop: dropIt,
-      });
-      if (!dropIt) continue;
-      if (!drops) drops = [];
-      drops.push(ca.t, cb.t);
-    }
-    if (drops) contourDrops[seg] = drops;
-  }
-  }
-  // DIAGNOSTIC (temporary, at user's request) — every segment Step 4 found
-  // at least one drop interval on (edge's own csX0→csX1 t parametrization,
-  // same basis dbgStep23's pts don't use but tEdge0/tEdge1 on each Step 2/3
-  // piece do). Read from devtools console as:
-  //   console.table(lastGen.counts.dbgStep4)
-  // dbgStep4Detail is the per-decision companion (drops AND keeps, see dbg4
-  // above) — the one to read when asking "what threshold would this model
-  // have needed":
-  //   const d = lastGen.counts.dbgStep4Detail;
-  //   console.table(d.filter(r=>r.drop).sort((a,b)=>b.ratio-a.ratio).slice(0,40))  // closest calls that DID drop
-  //   console.table(d.filter(r=>!r.drop).sort((a,b)=>a.ratio-b.ratio).slice(0,40)) // closest calls that survived
-  if (contourDrops){
-    const dbg = [];
-    for (let seg=0; seg<nCS; seg++) if (contourDrops[seg]) dbg.push({ seg, edge: csEdge[seg], drops: contourDrops[seg].slice() });
-    counts.dbgStep4 = dbg;
-    counts.dbgStep4Detail = dbg4;
-    counts.dbgStep4Off = step4Off;
-    counts.dbgStep4Frac = CONTOUR_DEPTH_SIMILAR_FRAC_WORLD;
-    counts.dbgStep4Truncated = dbg4.length >= DBG4_CAP;
-  }
-
-  /* Phase 3b Step 5+6 — subtract Step 4's drops from each run's own
-     geometry (never losing or reassigning run.id, only ever splitting its
-     point sequence), absorb whatever sub-MIN_SEG slivers that splitting
-     leaves behind (mirroring occlude()'s own denoise, but scoped to
-     WHATEVER remains after splitting — Step 5's drops are themselves never
-     length-filtered, they're identified artifacts, not noise), then emit —
-     bridging any surviving gap with a direct connector, exactly the Phase
-     3a flushRun convention (push the resuming fragment's own start point,
-     then continue; the emitted segment between two flat-array-adjacent
-     points IS the bridge, real touch or not). */
-  if (contourDrops) for (const run of contourRuns){
-    // Step 5: split each piece against contourDrops[seg] (if any), into an
-    // ordered fragment list — 'keep' fragments carry a running point list,
-    // 'drop' fragments carry no data at all (their length is never tested,
-    // only their presence as a separator matters). Adjacent same-type
-    // fragments are merged as they're produced, so the list always
-    // strictly alternates once built.
-    const frags = [];
-    const pushFrag = (frag) => {
-      const last = frags.length ? frags[frags.length-1] : null;
-      if (last && last.type === frag.type){
-        if (frag.type === 'keep') last.pts.push(...frag.pts.slice(1));
-        return;
-      }
-      frags.push(frag);
-    };
-    for (const pc of run.pieces){
-      const drops = contourDrops[pc.seg];
-      if (!drops){ pushFrag({ type:'keep', pts:[pc.p0, pc.p1] }); continue; }
-      const denom = pc.tEdge1 - pc.tEdge0;
-      const subs = [];   // [s0,s1] in [0,1] along p0→p1
-      for (let i=0;i+1<drops.length;i+=2){
-        let s0 = (drops[i]-pc.tEdge0)/denom, s1 = (drops[i+1]-pc.tEdge0)/denom;
-        if (s0>s1){ const tmp=s0; s0=s1; s1=tmp; }
-        s0 = Math.max(0, s0); s1 = Math.min(1, s1);
-        if (s1 - s0 > 1e-9) subs.push([s0,s1]);
-      }
-      if (!subs.length){ pushFrag({ type:'keep', pts:[pc.p0, pc.p1] }); continue; }
-      subs.sort((a,b)=>a[0]-b[0]);
-      const pointAt = (s) => [ pc.p0[0]+(pc.p1[0]-pc.p0[0])*s, pc.p0[1]+(pc.p1[1]-pc.p0[1])*s ];
-      let cur = 0;
-      for (const [s0,s1] of subs){
-        if (s0 > cur + 1e-9) pushFrag({ type:'keep', pts:[pointAt(cur), pointAt(s0)] });
-        pushFrag({ type:'drop' });
-        cur = s1;
-      }
-      if (cur < 1 - 1e-9) pushFrag({ type:'keep', pts:[pointAt(cur), pointAt(1)] });
-    }
-    if (!frags.length) continue;
-    let frags2 = frags, closed = run.isClosedLoop;
-    // closed loop: fold the wraparound seam BEFORE absorption (same
-    // reasoning as Step 2/3's own seam-close) so the absorption pass below
-    // never has to reason about the array boundary as anything other than
-    // an ordinary adjacency.
-    if (closed && frags2.length>1 && frags2[0].type===frags2[frags2.length-1].type){
-      const lastF = frags2[frags2.length-1];
-      frags2 = frags2.slice(0, frags2.length-1);
-      if (lastF.type==='keep') frags2[0] = { type:'keep', pts: lastF.pts.concat(frags2[0].pts.slice(1)) };
-    }
-    for (const f of frags2) if (f.type==='keep'){
-      let l=0; for (let i=1;i<f.pts.length;i++) l+=Math.hypot(f.pts[i][0]-f.pts[i-1][0], f.pts[i][1]-f.pts[i-1][1]);
-      f.len = l;
-    }
-    // Absorb interior keep fragments shorter than MIN_SEG into their
-    // surrounding drop. Protect the two true endpoints of an open run from
-    // ever being absorbed away; a closed loop has none, so every fragment
-    // — including the wrap-around seam — is eligible.
-    for (let guard=frags2.length+2; guard>0 && frags2.length>1; guard--){
-      let shortest=-1, shortLen=MIN_SEG;
-      for (let i=0;i<frags2.length;i++){
-        if (frags2[i].type!=='keep') continue;
-        if (!closed && (i===0 || i===frags2.length-1)) continue;
-        if (frags2[i].len < shortLen){ shortLen=frags2[i].len; shortest=i; }
-      }
-      if (shortest<0) break;
-      if (shortest>0 && shortest<frags2.length-1){
-        frags2.splice(shortest-1, 3, { type:'drop' });
-      } else if (shortest===0){
-        // wrap-around: merges frags2[last] + frags2[0] + frags2[1]
-        frags2 = [{ type:'drop' }, ...frags2.slice(2, frags2.length-1)];
-      } else {
-        // wrap-around: merges frags2[last-1] + frags2[last] + frags2[0]
-        frags2 = [{ type:'drop' }, ...frags2.slice(1, frags2.length-2)];
-      }
-    }
-    // Step 6 emit: flat-concatenate every surviving keep fragment's own
-    // points, in order — consecutive points from different fragments are
-    // exactly the "direct connector" bridge across whatever was dropped
-    // between them.
-    const outPts = [];
-    for (const f of frags2) if (f.type==='keep') outPts.push(...f.pts);
-    // Recorded independent of layerOn.sv/sh below — this is "did Step 4/5
-    // actually eliminate this run's own material," the thing
-    // js/svg-export.js's mergeContourRunSplits needs to tell a genuine
-    // artifact apart from a run that simply isn't being drawn because its
-    // OWN layer checkbox is off (which says nothing about whether real
-    // occlusion put real content there — bridging across that would paper
-    // over a real, deliberate hidden-line gap with a false straight line).
-    run.hasContent = outPts.length>=2;
-    if (!run.hasContent) continue;
-    const isV = run.st==='v';
-    const arr = isV ? (layerOn.sv ? groups.sv : null) : (layerOn.sh ? groups.sh : null);
-    if (!arr) continue;
-    const runArr = isV ? runIds.sv : runIds.sh;
-    const seqArr = isV ? seqs.sv : seqs.sh;
-    // Every consecutive pair is pushed directly, deliberately bypassing
-    // emit()'s own MIN_SEG filter. That filter exists to stop a genuinely
-    // isolated, too-short 2-point piece from becoming a spurious
-    // standalone dot — the right call for Silhouette/Crease's independent
-    // per-edge pieces, each of which really does stand alone. outPts is
-    // not that: it's already one continuous, Step-5-absorbed point
-    // sequence for this ONE run (the absorption pass above is what
-    // removes genuinely-too-short interior material — a survivor here is
-    // real geometry). A pair measuring under MIN_SEG here is just two
-    // adjacent points on a fine curve, not noise; filtering it used to
-    // silently sever the run's own continuity into two separately-chained
-    // polylines sharing one run.id, with a gap smaller than MIN_SEG but
-    // larger than chainByRun's own 0.02px touch tolerance — invisible to
-    // both that and mergeContourRunSplits (which only ever looks at
-    // DIFFERENT run.ids). Only a literal duplicate point (exactly zero
-    // length) is skipped — that's not a short segment, it's nothing.
-    let seq = 0;
-    for (let i=0;i+1<outPts.length;i++){
-      const ax=outPts[i][0], ay=outPts[i][1], bx=outPts[i+1][0], by=outPts[i+1][1];
-      if (ax===bx && ay===by) continue;
-      arr.push(ax,ay,bx,by);
-      runArr.push(run.id); seqArr.push(seq++);
-    }
-  }
-  // Run-adjacency table (id/state/prevId/nextId/hasContent for EVERY run,
-  // whether or not it's actually being drawn) — posted AFTER Step 5/6 so
-  // hasContent reflects what Step 4/5 actually did, not whether the
-  // layer's own on/off checkbox happened to be set. See js/svg-export.js's
-  // mergeContourRunSplits, the actual consumer of this.
-  counts.contourAdjacency = contourRuns.map(run => ({
-    id: run.id, st: run.st, prevId: run.prevId, nextId: run.nextId, hasContent: !!run.hasContent
-  }));
+  if (layerOn.so || layerOn.iv || layerOn.ih) emitSilhouetteChains(topo, splits);
 
   /* 2.6 · circles pattern — one unified layer (single checkbox), drawing
      BOTH a ground-plane ring set (gated by the existing Ground shadow
