@@ -631,6 +631,42 @@ function generate(cam, S, shadingBuffer){
     arr.push(ax,ay,bx,by);
     return true;
   };
+  /* emitRun — push one CONTINUOUS point sequence, at run granularity rather
+     than pair granularity. Used by Crease (6.2) and Silhouette (6.7), whose
+     flushRun both accumulate a run across sub-segments AND across adjacent
+     edges (see buildEdgePieces' own comment) before flushing.
+
+     Routing such a run through emit() pair-by-pair was wrong. emit()'s
+     MIN_SEG filter exists to stop a genuinely isolated, too-short 2-point
+     piece from becoming a spurious standalone dot — correct for a piece that
+     really does stand alone, but applied to an INTERNAL pair of a continuous
+     run it doesn't skip a dot, it punches a GAP into the middle of it. The
+     result lands in a window that is invisible and unrecoverable: larger
+     than chainSegments()'s own 0.02px touch tolerance, so the two halves
+     never re-chain, yet smaller than a pixel, so nothing looks wrong until
+     the path count is read. An axis-snapped orthographic view is the worst
+     case — projected geometry collapses and crossing-splits multiply, so
+     sub-MIN_SEG consecutive pairs go from rare to everywhere, which is why
+     closed outlines there came out as dozens of open fragments.
+
+     Contour hit exactly this and its Step 6 was fixed the same way (see
+     PHASE3c-contour-followups.md §2); Crease and Silhouette were left on the
+     old path at the time. Contour can push pairs unconditionally because its
+     Step 5 absorption pass already removes too-short interior material;
+     these two have no such pass, so the anti-dot intent is kept here at the
+     granularity it was always meant for — the whole run is dropped when the
+     run itself is shorter than MIN_SEG. */
+  const emitRun=(arr, pts)=>{
+    if (!arr || pts.length < 2) return;
+    let total = 0;
+    for (let i=1;i<pts.length;i++) total += Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]);
+    if (total < MIN_SEG) return;
+    for (let i=0;i+1<pts.length;i++){
+      const ax=pts[i][0], ay=pts[i][1], bx=pts[i+1][0], by=pts[i+1][1];
+      if (ax===bx && ay===by) continue;   // literal duplicate point — that's nothing, not a short segment
+      arr.push(ax,ay,bx,by);
+    }
+  };
 
   const { ne, ea, eb, et0, et1, eang } = M;
   const wantC=S.types.c;
@@ -822,8 +858,7 @@ function generate(cam, S, shadingBuffer){
     const flushRun = () => {
       if (runPts.length>=2){
         const arr = curState==='v' ? (layerOn.cv ? groups.cv : null) : (layerOn.ch ? groups.ch : null);
-        if (arr) for (let i=0;i+1<runPts.length;i++)
-          emit(arr, runPts[i][0],runPts[i][1], runPts[i+1][0],runPts[i+1][1], 0, 1);
+        emitRun(arr, runPts);
       }
       runPts=[];
     };
@@ -1691,8 +1726,7 @@ function generate(cam, S, shadingBuffer){
             const arr = wantIndividual
               ? (curState==='v' ? (layerOn.iv ? groups.iv : null) : (layerOn.ih ? groups.ih : null))
               : (curState==='v' ? (layerOn.so ? groups.so : null) : null);
-            if (arr) for (let i=0;i+1<runPts.length;i++)
-              emit(arr, runPts[i][0],runPts[i][1], runPts[i+1][0],runPts[i+1][1], 0, 1);
+            emitRun(arr, runPts);
           }
           runPts=[]; curState=null;
         };
