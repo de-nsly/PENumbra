@@ -2506,8 +2506,19 @@ function generate(cam, S, shadingBuffer){
      disabling this for Contour, everything else held constant). Contour's
      own run identity (Step 2/3 above) already guarantees no duplicate ink
      within a run, and cross-run duplicate ink is vanishingly rare compared
-     to the corruption risk, so it's never run here at all. */
-  for (const k of ['cv','ch','so']){
+     to the corruption risk, so it's never run here at all.
+     iv/ih were missing from this list until now, which the paragraph above
+     never intended — they are straight-line edge layers and they are not
+     Contour. The omission dates from the layer-model split (the old single
+     Silhouette layer became so = GROUP plus iv/ih = INDIVIDUAL; so kept its
+     dedup, the two new keys never gained one), and it made so and iv diverge
+     for reasons that have nothing to do with their own keep rules. Worst in
+     axis-snapped orthographic views, where coincident collinear geometry is
+     everywhere: so came out deduped and clean while iv kept every duplicate
+     as its own fragment — on a 4-shell arches model, 18 segments / 4 paths
+     against 69 segments / 56 paths from geometry that is provably identical
+     at the point it leaves 6.7. */
+  for (const k of ['cv','ch','so','iv','ih']){
     groups[k] = dedupCollinear(groups[k], effOffTol, effGapTol);
   }
   /* Pass 2: cross-layer ink-avoidance across the FULL drawing-priority
