@@ -22,6 +22,13 @@
   --fs-hero:24px; --fs-brand:15px; --fs-btn:13px; --fs-control:12px;
   --fs-data:11px; --fs-caps:9px; --fs-caps-lg:10px;
   --ls-hero:.2em; --ls-caps:.12em; --ls-btn:.02em;
+
+  /* ---- shape / effect tokens ---------------------------------------------- */
+  --check-size:15px;                        /* every checkbox, one size */
+  --edge-glass:rgba(255,255,255,.09);       /* hairline on frosted-over-viewport chrome */
+  --divider:rgba(255,255,255,.05);          /* dashed row separators (layer / saved-view lists) */
+  --shadow-float:0 8px 24px rgba(0,0,0,.38);/* floating panels & context menu */
+  --disabled-opacity:.4;                    /* one faded state for :disabled / .ctlDisabled */
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
@@ -51,20 +58,16 @@ button,input,select{font:inherit;color:inherit}
 ::-webkit-scrollbar-button:horizontal:end{clip-path:polygon(75% 50%, 25% 20%, 25% 80%)}
 
 /* ---------- header ---------- */
-header{display:flex;align-items:center;justify-content:space-between;
-  position:relative;z-index:2;
-  padding:0 16px;border-bottom:0px solid var(--line);background:var(--panel)}
+/* header + footer share the same bar shell — see the grouped rule below */
+header,footer{display:flex;align-items:center;justify-content:space-between;
+  position:relative;z-index:2;background:var(--panel)}
+header{padding:0 16px}
 .brand{display:flex;align-items:baseline;gap:10px}
 .brand .mark{color:var(--accent);flex:none;transform:translateY(2px)}
 .brand .name{font-weight:700;letter-spacing:var(--ls-hero);font-size:var(--fs-brand)}
 .brand .sub{font-family:var(--mono);font-size:var(--fs-data);color:var(--muted)}
 .actions{display:flex;gap:22px;align-items:center}
 .actGroup{display:flex;gap:8px;align-items:center}
-.aboutBtn{flex:none;width:26px;height:26px;border-radius:50%;background:var(--panel2);
-  border:1px solid var(--line);color:var(--muted);cursor:pointer;
-  display:flex;align-items:center;justify-content:center;font-size:var(--fs-btn);font-weight:600;
-  font-family:var(--disp);line-height:1;padding:0}
-.aboutBtn:hover{border-color:var(--accent);color:var(--accent)}
 
 /* ---------- about / shortcuts modal ---------- */
 .aboutOverlay{position:fixed;inset:0;z-index:50;background:rgba(10,12,15,.55);
@@ -76,10 +79,6 @@ header{display:flex;align-items:center;justify-content:space-between;
   box-shadow:0 20px 60px rgba(0,0,0,.5);padding:20px 22px 18px}
 .aboutHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 .aboutTitle{font-weight:700;letter-spacing:var(--ls-hero);font-size:var(--fs-btn);color:var(--muted)}
-.aboutClose{flex:none;width:24px;height:24px;border-radius:50%;background:transparent;
-  border:1px solid var(--line);color:var(--muted);cursor:pointer;
-  display:flex;align-items:center;justify-content:center;font-size:var(--fs-data);padding:0}
-.aboutClose:hover{border-color:var(--accent);color:var(--accent)}
 .aboutLogoRow{display:flex;align-items:center;justify-content:center;gap:12px;
   margin:6px 0 22px}
 .aboutLogoMark{width:34px;height:34px;flex:none}
@@ -100,37 +99,27 @@ header{display:flex;align-items:center;justify-content:space-between;
   text-align:center;font-family:var(--mono);font-size:var(--fs-data);color:var(--muted)}
 .aboutFooter a{color:var(--accent);text-decoration:none}
 .aboutFooter a:hover{text-decoration:underline}
+/* buttons — one text button (.btn) + a family of square/round icon buttons.
+   All share: panel2 fill, hairline border, muted-until-hover, flex-centred.
+   The icon buttons differ only in size / radius / a couple of bg overrides. */
 .btn{background:var(--panel2);border:1px solid var(--line);border-radius:6px;
   padding:7px 14px;cursor:pointer;font-weight:600;font-size:var(--fs-btn);letter-spacing:var(--ls-btn)}
-.btn:hover{border-color:var(--accent);color:var(--accent)}
+.aboutBtn,.aboutClose,.cornerBtn,.addViewBtn,.svBtn{flex:none;display:flex;
+  align-items:center;justify-content:center;padding:0;line-height:1;cursor:pointer;
+  border:1px solid var(--line);background:var(--panel2);color:var(--muted)}
+.btn:hover,.aboutBtn:hover,.aboutClose:hover,.cornerBtn:hover,
+.addViewBtn:hover,.svBtn:hover,.vpBtn:hover{border-color:var(--accent);color:var(--accent)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .btn.primary:hover{filter:brightness(1.1);color:var(--accent-ink)}
-.btn.toggle{color:var(--muted)}
-#addToLayoutFloat .addToLayoutBtn{width:100%;text-align:center}
-#addToLayoutSaveViewWrap{margin-top:10px}
-#layoutOverlayWrap{margin-top:6px}
-/* label stays left, pill switch pushed to the right edge */
-#addToLayoutSaveViewWrap,#layoutOverlayWrap{width:100%;justify-content:space-between}
-#layoutOverlayControls{margin-top:2px}
-#layoutOverlayControls .projRow{margin:6px 0 2px}
-/* #addToLayoutFloat is only 224px wide (see #camFloat,#rotateFloat,#viewsFloat,
-   #genExportFloat,#addToLayoutFloat below) — the default .ctl label column is
-   too wide for a short label like "Opacity" at that width, same reason
-   #camFloat/#rotateFloat override it for their own narrow floats. */
-#addToLayoutFloat .ctl{grid-template-columns:50px 1fr 34px}
-#genRow{display:flex;align-items:center;gap:8px;margin:0 0 8px}
-#genRow .switchWrap{flex:none}
-#genRow #genBtn{flex:1;text-align:center}
-#genExportFloat #exportBtn{width:100%;text-align:center}
-/* Model file info — 3D viewport, under the axis gizmo, right-justified.
-   H shortcut (see panel-controls.js) hides it outright, no animation. */
-#modelInfoFloat{position:absolute;top:112px;right:12px;z-index:2;
-  max-width:200px;text-align:right;pointer-events:none}
-#addToLayoutMsg{width:224px;text-align:center;font-family:var(--mono);font-size:var(--fs-data);
-  color:var(--accent);height:14px;line-height:14px;margin-top:-4px;
-  opacity:0;transition:opacity .25s;pointer-events:none}
-#addToLayoutMsg.show{opacity:1}
-.btn.toggle.active{background:rgba(88,184,214,.16);border-color:var(--accent);color:var(--accent)}
+/* per-button size / shape (the rest comes from the two rules above) */
+.aboutBtn{width:26px;height:26px;border-radius:50%;font-size:var(--fs-btn);font-weight:600}
+.aboutClose{width:24px;height:24px;border-radius:50%;background:transparent;font-size:var(--fs-data)}
+.addViewBtn{width:22px;height:22px;border-radius:5px;font-size:var(--fs-brand)}
+.svBtn{width:22px;height:22px;border-radius:5px;font-size:var(--fs-data)}
+#clearBlocksBtn,#duplicateBlockBtn{width:auto;padding:0 10px;
+  font-size:var(--fs-control);font-weight:600;letter-spacing:var(--ls-btn)}
+/* one faded/inert state — native :disabled controls + JS-toggled .ctlDisabled rows */
+:disabled,.ctlDisabled{opacity:var(--disabled-opacity);pointer-events:none;cursor:default}
 /* pill switches — an unambiguous on/off affordance: track + sliding knob.
    'active' slides the knob right and lights the track (same class the JS
    already toggled on the old button styling). */
@@ -158,7 +147,6 @@ header{display:flex;align-items:center;justify-content:space-between;
   transition:color .15s}
 .projLbl:hover{color:var(--text)}
 .projLbl.active,.projLbl.active:hover{color:var(--accent-ink)}
-.btn:disabled{opacity:.45;cursor:default;pointer-events:none}
 
 /* ---------- main split ---------- */
 main{display:grid;grid-template-columns:1fr 1fr 322px;min-height:0;position:relative}
@@ -193,44 +181,29 @@ section,aside{position:relative;min-width:0;min-height:0}
 /* corner reset/recenter buttons — small square icon buttons sitting in
    each pane's bottom-left corner; same frosted treatment as the floating
    panels above them */
-.cornerBtn{position:absolute;left:10px;bottom:8px;z-index:2;
-  width:26px;height:26px;display:flex;align-items:center;justify-content:center;
-  background:rgba(23,26,31,.62);border:1px solid rgba(255,255,255,.09);border-radius:6px;
-  color:var(--muted);cursor:pointer;padding:0;
+.cornerBtn{position:absolute;left:10px;bottom:8px;z-index:2;width:26px;height:26px;
+  border-radius:6px;border-color:var(--edge-glass);
+  background:color-mix(in srgb, var(--bg) 62%, transparent);
   -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
-.cornerBtn:hover{border-color:var(--accent);color:var(--accent)}
 .cornerBtn svg{display:block}
 
-/* floating panels — frosted glass over a viewport, pure CSS (backdrop-filter),
-   no extra dependency; falls back to a plain translucent panel automatically
-   wherever backdrop-filter isn't supported. #camFloat + #rotateFloat stack
-   vertically over the 3D view (in #camPanelStack, so #rotateFloat always
-   sits right below #camFloat regardless of its content height — no guessed
-   pixel offset to keep in sync), #genExportFloat sits alone over the 2D
-   paper view — same visual treatment on all three. */
-#camPanelStack{position:absolute;top:12px;left:12px;z-index:2;
-  display:flex;flex-direction:column;gap:10px;width:224px;
-  transition:transform .25s ease}
-/* Mirrors #camPanelStack exactly, over the 2D pane instead of the 3D one:
-   #genExportFloat + #blocksFloat (when the Layout tab is active) stack
-   vertically with no guessed pixel offset between them. */
-#paperPanelStack{position:absolute;top:12px;left:12px;z-index:2;
-  display:flex;flex-direction:column;gap:10px;width:224px;
-  transition:transform .25s ease}
-/* H keyboard shortcut (see panel-controls.js) — slides both panel stacks
-   left, leaving a small sliver visible as a cue that they're still
-   there, just tucked away. Same class applied to both, toggled together. */
+/* Floating panels — frosted glass over a viewport (pure backdrop-filter, no
+   dependency; degrades to a plain translucent panel where unsupported).
+   The two panel stacks are identical — one over the 3D pane, one over the 2D;
+   each stacks its floats vertically with no guessed pixel offsets. The H
+   shortcut (panel-controls.js) slides both offscreen via .panelsHidden. */
+#camPanelStack,#paperPanelStack{position:absolute;top:12px;left:12px;z-index:2;
+  display:flex;flex-direction:column;gap:10px;width:224px;transition:transform .25s ease}
 #camPanelStack.panelsHidden,#paperPanelStack.panelsHidden{transform:translateX(-100%)}
+/* frosted glass — shared by every floating panel and the layer context menu;
+   backdrop-filter degrades to a plain translucent panel where unsupported. */
+#camFloat,#rotateFloat,#viewsFloat,#genExportFloat,#addToLayoutFloat,#blocksFloat,#layerContextMenu{
+  border:1px solid var(--edge-glass);border-radius:10px;box-shadow:var(--shadow-float);
+  padding:12px 12px 10px;
+  -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
 #camFloat,#rotateFloat,#viewsFloat,#genExportFloat,#addToLayoutFloat{width:224px;
-  background:color-mix(in srgb, var(--panel3), transparent 20%);border:1px solid rgba(255,255,255,.09);
-  border-radius:10px;padding:12px 12px 10px;
-  box-shadow:0 8px 24px rgba(0,0,0,.35);
-  -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
-#blocksFloat{width:270px;
-  background:rgba(23,26,31,.58);border:1px solid rgba(255,255,255,.09);
-  border-radius:10px;padding:12px 12px 10px;
-  box-shadow:0 8px 24px rgba(0,0,0,.35);
-  -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
+  background:color-mix(in srgb, var(--panel3), transparent 20%)}
+#blocksFloat{width:270px;background:color-mix(in srgb, var(--bg) 58%, transparent)}
 /* camFloat/rotateFloat labels are all 1-3 characters (FOV, X, Y, Z) — a much
    narrower label column than a settings-style row needs (room for something
    like "Orientation") hands the freed width straight to the slider track,
@@ -243,6 +216,28 @@ section,aside{position:relative;min-width:0;min-height:0}
 #camFloat select{width:100%}
 #blocksFloat .vpLabel:first-child{margin:0}
 
+/* genExport / addToLayout float internals */
+#genRow{display:flex;align-items:center;gap:8px;margin:0 0 8px}
+#genRow .switchWrap{flex:none}
+#genRow #genBtn{flex:1;text-align:center}
+#genExportFloat #exportBtn{width:100%;text-align:center}
+#addToLayoutFloat .addToLayoutBtn{width:100%;text-align:center}
+/* #addToLayoutFloat is only 224px wide, so its .ctl label column is tightened
+   (same reasoning as the #camFloat/#rotateFloat overrides above). */
+#addToLayoutFloat .ctl{grid-template-columns:50px 1fr 34px}
+#addToLayoutSaveViewWrap{margin-top:10px}
+#layoutOverlayWrap{margin-top:6px}
+#addToLayoutSaveViewWrap,#layoutOverlayWrap{width:100%;justify-content:space-between}
+#layoutOverlayControls{margin-top:2px}
+#layoutOverlayControls .projRow{margin:6px 0 2px}
+#addToLayoutMsg{width:224px;text-align:center;font-family:var(--mono);font-size:var(--fs-data);
+  color:var(--accent);height:14px;line-height:14px;margin-top:-4px;
+  opacity:0;transition:opacity .25s;pointer-events:none}
+#addToLayoutMsg.show{opacity:1}
+/* Model file info — 3D viewport, under the axis gizmo. H shortcut hides it. */
+#modelInfoFloat{position:absolute;top:112px;right:12px;z-index:2;
+  max-width:200px;text-align:right;pointer-events:none}
+
 /* Saved views panel — header row puts the label and add button on one line
    (vpLabel's own margin handles the vertical spacing, same as every other
    panel header), the list below is a simple scrollable stack of rows so an
@@ -250,14 +245,7 @@ section,aside{position:relative;min-width:0;min-height:0}
    UI around or grow the panel past the viewport height. */
 .svHeaderRow{display:flex;align-items:center;justify-content:space-between}
 .svHeaderRow .vpLabel{margin:0}
-.addViewBtn{width:22px;height:22px;display:flex;align-items:center;justify-content:center;
-  background:var(--panel2);border:1px solid var(--line);border-radius:5px;
-  color:var(--muted);cursor:pointer;padding:0;font-size:15px;line-height:1}
-.addViewBtn:hover{border-color:var(--accent);color:var(--accent)}
 .svHeaderBtns{display:flex;align-items:center;gap:6px}
-#clearBlocksBtn{width:auto;padding:0 10px;font-size:var(--fs-control);font-weight:600;letter-spacing:var(--ls-btn)}
-#duplicateBlockBtn{width:auto;padding:0 10px;font-size:var(--fs-control);font-weight:600;letter-spacing:var(--ls-btn)}
-#duplicateBlockBtn:disabled{opacity:.45;cursor:default;pointer-events:none}
 #viewsList,#blocksList{max-height:500px;overflow-y:auto;margin-top:10px}
 #blocksList{position:relative}
 /* Empty state (Saved Views only — the Layout Layers panel hides itself
@@ -269,7 +257,7 @@ section,aside{position:relative;min-width:0;min-height:0}
 #viewsFloat.svEmpty{display:flex;flex-direction:column;justify-content:center}
 #viewsFloat.svEmpty #viewsList{display:none}
 .savedView{display:grid;grid-template-columns:1fr 22px 22px;align-items:center;gap:5px;
-  padding:4px 6px;border-bottom:1px dashed rgba(255,255,255,.05)}
+  padding:4px 6px;border-bottom:1px dashed var(--divider)}
 /* Layout's blocksList rows have one more button (Lock, between Eye and
    Delete) than the base .savedView template accounts for — Saved Views
    (#viewsList, Update+Delete) and the layer-visibility context menu both
@@ -283,10 +271,6 @@ section,aside{position:relative;min-width:0;min-height:0}
 #blocksList .svInsertLine{position:absolute;left:6px;right:6px;height:2px;background:var(--accent);border-radius:1px;pointer-events:none}
 .savedView .svName{font-size:var(--fs-control);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:text;width:fit-content;max-width:100%}
 .savedView .svName[contenteditable="true"]{outline:none;-webkit-user-select:text;user-select:text;overflow:visible}
-.svBtn{width:22px;height:22px;display:flex;align-items:center;justify-content:center;
-  background:var(--panel2);border:1px solid var(--line);border-radius:5px;
-  color:var(--muted);cursor:pointer;padding:0;font-size:11px;line-height:1}
-.svBtn:hover{border-color:var(--accent);color:var(--accent)}
 .svBtn.svDelete:hover{border-color:var(--warn);color:var(--warn)}
 .svBtn.svLockActive{color:var(--accent)}
 .svBtn svg{display:block}
@@ -307,8 +291,8 @@ section,aside{position:relative;min-width:0;min-height:0}
    drawn into it are plain screen pixels (via canvasMmToScreen), not mm, so
    vector-effect:non-scaling-stroke isn't needed here — there's no zoom
    transform on this SVG to counteract in the first place. */
-#layoutOverlaySvg{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:1}
-#previewOverlaySvg{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:1}
+#layoutOverlaySvg,#previewOverlaySvg{position:fixed;inset:0;width:100vw;height:100vh;
+  pointer-events:none;z-index:1}
 .textureGizmo{fill:var(--accent);stroke:var(--accent-ink);stroke-width:1.5;
   vector-effect:non-scaling-stroke;pointer-events:auto;cursor:grab}
 .textureGizmo:active{cursor:grabbing}
@@ -317,36 +301,36 @@ section,aside{position:relative;min-width:0;min-height:0}
    so the radius below is literal screen px and stays put under zoom. The pale
    ring keeps a dot readable against both dark ink and a dark page colour. */
 .pathEndpointDot{fill:#ff2d2d;fill-opacity:.85;stroke:#fff;stroke-width:.75;stroke-opacity:.9;pointer-events:none}
-.layoutMarginGuide{fill:none;stroke:var(--guide-color);stroke-width:1;stroke-dasharray:3 3;
-  vector-effect:non-scaling-stroke;pointer-events:none}
-.layoutGridGuide{stroke:var(--guide-color);stroke-width:1.6;stroke-dasharray:1 3;
-  vector-effect:non-scaling-stroke;pointer-events:none;opacity:.85}
-.pvMarginGuide{fill:none;stroke:var(--guide-color);stroke-width:0.7;stroke-dasharray:2 2;
-  vector-effect:non-scaling-stroke;pointer-events:none}
-.pvGridGuide{stroke:var(--guide-color);stroke-width:0.9;stroke-dasharray:1 2;
-  vector-effect:non-scaling-stroke;pointer-events:none;opacity:.85}
-.layoutSelRect{fill:none;stroke:var(--sel-color);stroke-width:1.4;stroke-dasharray:5 3;pointer-events:none}
-.layoutSelRectMember{fill:none;stroke:var(--sel-color);stroke-width:1;stroke-dasharray:2 2;opacity:.55;pointer-events:none}
-.layoutSelHandle{fill:var(--accent);stroke:var(--accent-ink);stroke-width:1;pointer-events:none}
-.layoutRotateConnector{stroke:var(--sel-color);stroke-width:1;stroke-dasharray:3 2;pointer-events:none;opacity:.75}
-.layoutRotateGizmo{fill:var(--accent);stroke:var(--accent-ink);stroke-width:1;pointer-events:none}
-.layoutSnapGuide{stroke:var(--accent);stroke-width:1;stroke-dasharray:2 2;
-  vector-effect:non-scaling-stroke;pointer-events:none;opacity:.85}
-.layoutAxisLockGuide{stroke-width:1;stroke-dasharray:4 3;
-  vector-effect:non-scaling-stroke;pointer-events:none;opacity:.85}
+/* dashed reference / snap guides — all zoom-independent (non-scaling-stroke),
+   differing only in stroke width + dash pattern (+ colour for the axis locks) */
+.layoutMarginGuide,.layoutGridGuide,.pvMarginGuide,.pvGridGuide,.layoutSnapGuide,.layoutAxisLockGuide{
+  fill:none;vector-effect:non-scaling-stroke;pointer-events:none;stroke:var(--guide-color)}
+.layoutGridGuide,.pvGridGuide,.layoutSnapGuide,.layoutAxisLockGuide{opacity:.85}
+.layoutMarginGuide{stroke-width:1;stroke-dasharray:3 3}
+.layoutGridGuide{stroke-width:1.6;stroke-dasharray:1 3}
+.pvMarginGuide{stroke-width:0.7;stroke-dasharray:2 2}
+.pvGridGuide{stroke-width:0.9;stroke-dasharray:1 2}
+.layoutSnapGuide{stroke:var(--accent);stroke-width:1;stroke-dasharray:2 2}
+.layoutAxisLockGuide{stroke-width:1;stroke-dasharray:4 3}
 .layoutAxisLockGuide-x{stroke:#e5484d}
 .layoutAxisLockGuide-y{stroke:#30a46c}
+/* selection box + rotate connector (outlines) and the drag handles / rotate knob (fills) */
+.layoutSelRect,.layoutSelRectMember,.layoutRotateConnector{fill:none;stroke:var(--sel-color);
+  stroke-width:1;pointer-events:none}
+.layoutSelRect{stroke-width:1.4;stroke-dasharray:5 3}
+.layoutSelRectMember{stroke-dasharray:2 2;opacity:.55}
+.layoutRotateConnector{stroke-dasharray:3 2;opacity:.75}
+.layoutSelHandle,.layoutRotateGizmo{fill:var(--accent);stroke:var(--accent-ink);stroke-width:1;pointer-events:none}
 #rotateAngleLabel,.dimLabel{position:fixed;display:none;
-  background:rgba(23,26,31,.92);color:var(--accent);font-family:var(--mono);
+  background:color-mix(in srgb, var(--bg) 92%, transparent);color:var(--accent);font-family:var(--mono);
   font-size:var(--fs-data);padding:3px 8px;border-radius:4px;pointer-events:none;
-  white-space:nowrap;z-index:1;border:1px solid rgba(255,255,255,.09)}
+  white-space:nowrap;z-index:1;border:1px solid var(--edge-glass)}
 #rotateAngleLabel{transform:translate(-50%,-140%)}
 .dimLabel{transform:translate(-50%,-50%)}
 
-#layerContextMenu{position:fixed;width:192px;z-index:60;
-  background:rgba(23,26,31,.94);border:1px solid rgba(255,255,255,.09);
-  border-radius:8px;padding:8px 10px 6px;box-shadow:0 8px 24px rgba(0,0,0,.4);
-  -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
+/* base frost comes from the grouped rule above; these are its own overrides */
+#layerContextMenu{position:fixed;width:192px;z-index:60;border-radius:8px;padding:8px 10px 6px;
+  background:color-mix(in srgb, var(--bg) 94%, transparent)}
 #layerContextMenu.overrideActive{width:350px}
 #layerContextMenu .vpLabel{margin:0 0 4px}
 /* Name column is a fixed px (matching what 1fr already resolves to at the
@@ -429,7 +413,7 @@ input[type=color]::-moz-color-swatch{border:none;border-radius:4px}
 .sheet.stale svg{opacity:.42;filter:saturate(.4)}
 #staleBadge{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:none;
   font-family:var(--mono);font-size:var(--fs-data);color:var(--warn);border:1px solid var(--warn);
-  background:rgba(23,26,31,.9);padding:4px 10px;border-radius:20px;pointer-events:none}
+  background:color-mix(in srgb, var(--bg) 90%, transparent);padding:4px 10px;border-radius:20px;pointer-events:none}
 #paperPane.stale #staleBadge{display:block}
 #progressWrap{position:absolute;top:0;left:0;right:0;height:3px;display:none}
 #paperPane.busy #progressWrap{display:block}
@@ -510,7 +494,6 @@ body.dragging #paperTabs{display:none}
 .ctl{display:grid;grid-template-columns:86px 1fr 44px;align-items:center;gap:8px;margin:7px 0}
 .ctl.ctlWideLabel{grid-template-columns:104px 1fr 44px}
 .ctl.ctlWideLabel label{white-space:nowrap}
-.ctl.ctlDisabled{opacity:.35;pointer-events:none}
 .vpLabel{font-family:var(--mono);font-size:var(--fs-caps);color:var(--muted);letter-spacing:var(--ls-caps);
   text-transform:uppercase;margin:8px 0 4px}
 .vpGrid{display:grid;gap:4px}
@@ -529,19 +512,23 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
   border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
 input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;
   background:var(--accent);border:2px solid var(--bg)}
-input[type=range]:disabled{opacity:.3;pointer-events:none}
 input[type=checkbox]{-webkit-appearance:none;-moz-appearance:none;appearance:none;margin:0;flex:none;
   border:1.8px solid var(--accent);border-radius:50%;background:transparent;
   cursor:pointer;box-sizing:border-box}
 input[type=checkbox]:checked{background:radial-gradient(circle, var(--accent) 4.0px, transparent 4.5px)}
-.chk{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:var(--fs-control)}
-.chk input{width:16px;height:16px}
-.chk.ctlDisabled{opacity:.35;pointer-events:none}
-/* Two related checkboxes sharing one row, split evenly (e.g. Soft shadows /
-   Invert shadows) — same .chk look, just flex:1 and margin handed to the
-   row wrapper instead of doubling up vertically. */
+/* checkbox row — ONE class for every checkbox in the app (a <label> wrapping
+   the input + its text). Modifiers:
+     .chk-sub    muted secondary checkbox (e.g. "same noise field per layer")
+     .chkRow     two checkboxes sharing one line, split evenly
+     .rowSplit   a checkbox and an unrelated sibling control pushed to opposite ends */
+.chk{display:flex;align-items:center;gap:8px;margin:7px 0;
+  font-size:var(--fs-control);cursor:pointer}
+.chk input{width:var(--check-size);height:var(--check-size)}
+.chk-sub{margin:0;color:var(--muted)}
 .chkRow{display:flex;gap:8px;margin:7px 0}
 .chkRow .chk{flex:1;margin:0;min-width:0}
+.rowSplit{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.rowSplit .chk{margin:0}
 select,input[type=number]{background:var(--panel2);border:1px solid var(--line);
   border-radius:5px;padding:4px 6px;font-family:var(--mono);font-size:var(--fs-data)}
 input[type=number]{width:58px}
@@ -560,17 +547,11 @@ input[type=number]{width:58px}
   -webkit-appearance:none;margin:0}
 .dashField span{font-size:var(--fs-caps);color:var(--muted);text-transform:uppercase;letter-spacing:var(--ls-caps)}
 
-/* Texture section (texture tab) — 3 min/max jitter ranges */
+/* Texture section (texture tab) — each effect is a .textureGroup: a .chk
+   on/off toggle, then its .textureFieldsWrap of min/max sliders. */
 .textureGroup{margin:10px 0}
-.textureGroupLabel{display:flex;align-items:center;gap:8px;font-size:var(--fs-control);color:var(--text);
-  margin-bottom:6px;cursor:pointer}
-.textureGroupLabel.textureGroupLabelSplit{justify-content:space-between;cursor:default}
-.textureGroupLabelMain{display:flex;align-items:center;gap:8px;cursor:pointer}
-.textureGroupLabel input[type=checkbox]{width:15px;height:15px}
-.textureGroupLabel.textureGroupTitle{cursor:default;font-weight:600}
-.texInlineChk{margin:0;font-size:var(--fs-control);color:var(--muted);cursor:pointer}
+.textureGroup > .chk{margin:0 0 6px}
 .textureFieldsWrap{transition:opacity .15s}
-.textureFieldsWrap.ctlDisabled{opacity:.35;pointer-events:none}
 .textureSectionSep{border:none;border-top:1px solid var(--line);margin:14px 0 10px}
 
 /* layer rows — pen swatch style */
@@ -598,10 +579,10 @@ input[type=number]{width:58px}
 #layoutBlocksLayer.blendMultiplyLayout{isolation:isolate}
 #layoutBlocksLayer.blendMultiplyLayout .layoutLayerStroke{mix-blend-mode:multiply}
 .layer{display:grid;grid-template-columns:16px 50px 1fr 26px 56px 58px;align-items:center;
-  gap:6px;padding:5px 0;border-bottom:1px dashed rgba(255,255,255,.05)}
+  gap:6px;padding:5px 0;border-bottom:1px dashed var(--divider)}
 .layer .nm{font-size:var(--fs-control);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .layer .nm.hid{color:var(--muted);font-size:var(--fs-data);padding-left:8px}
-.layer input[type=checkbox]{width:15px;height:15px}
+.layer input[type=checkbox]{width:var(--check-size);height:var(--check-size)}
 .layer input[type=color]{width:24px;height:20px;border:1px solid var(--line);border-radius:4px;
   background:none;padding:0;cursor:pointer}
 .layer input[type=number]{width:56px;padding:3px 4px;font-size:var(--fs-data)}
@@ -613,13 +594,11 @@ input[type=number]{width:58px}
   text-transform:uppercase;padding:2px 0}
 
 /* ---------- footer ---------- */
-footer{display:flex;align-items:center;justify-content:space-between;padding:0 14px;
-  position:relative;z-index:2;
-  border-top:1px solid var(--line);background:var(--panel);font-family:var(--mono);
+footer{padding:0 14px;border-top:1px solid var(--line);font-family:var(--mono);
   font-size:var(--fs-data);color:var(--muted);white-space:nowrap;overflow:hidden}
 footer b{color:var(--text);font-weight:600}
 #dropHint{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
-  background:rgba(23,26,31,.8);font-family:var(--mono);color:var(--accent);z-index:5;
+  background:color-mix(in srgb, var(--bg) 80%, transparent);font-family:var(--mono);color:var(--accent);z-index:5;
   border:2px dashed var(--accent);pointer-events:none}
 body.dragging #dropHint{display:flex}
 body.dragging #camPanelStack,body.dragging #paperPanelStack,body.dragging #axisGizmo,body.dragging #lightGizmo,body.dragging .cornerBtn{display:none}
