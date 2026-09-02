@@ -1,6 +1,6 @@
 :root{
   --bg:#171a1f; --panel:#1e222a; --panel2:#252b34; --panel3:#292f3b; --line:#323a46;
-  --text:#e9e7df; --muted:#8b93a1; --accent:#58b8d6; --accent-ink:#0c1a20;
+  --slider:#485363;--text:#e9e7df; --muted:#8b93a1; --accent:#58b8d6; --accent-ink:#0c1a20;
   --warn:#e0764f; --paper:#fbf9f3; --bed:#475161; --paper-edge:#5b6472;
   --mono:'IBM Plex Mono',ui-monospace,monospace; --disp:'Space Grotesk',system-ui,sans-serif;
   --guide-color:#4a4436;   /* overwritten in JS (updateGuideColor) to keep contrast with the current page color */
@@ -102,7 +102,7 @@ header{padding:0 16px}
 /* buttons — one text button (.btn) + a family of square/round icon buttons.
    All share: panel2 fill, hairline border, muted-until-hover, flex-centred.
    The icon buttons differ only in size / radius / a couple of bg overrides. */
-.btn{background:var(--panel2);border:1px solid var(--line);border-radius:6px;
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:50cqh;
   padding:7px 14px;cursor:pointer;font-weight:600;font-size:var(--fs-btn);letter-spacing:var(--ls-btn)}
 .aboutBtn,.aboutClose,.cornerBtn,.addViewBtn,.svBtn{flex:none;display:flex;
   align-items:center;justify-content:center;padding:0;line-height:1;cursor:pointer;
@@ -114,8 +114,8 @@ header{padding:0 16px}
 /* per-button size / shape (the rest comes from the two rules above) */
 .aboutBtn{width:26px;height:26px;border-radius:50%;font-size:var(--fs-btn);font-weight:600}
 .aboutClose{width:24px;height:24px;border-radius:50%;background:transparent;font-size:var(--fs-data)}
-.addViewBtn{width:22px;height:22px;border-radius:5px;font-size:var(--fs-brand)}
-.svBtn{width:22px;height:22px;border-radius:5px;font-size:var(--fs-data)}
+.addViewBtn{width:24px;height:24px;border-radius:50%;font-size:var(--fs-brand)}
+.svBtn{width:24px;height:24px;border-radius:50%;font-size:var(--fs-data)}
 #clearBlocksBtn,#duplicateBlockBtn{width:auto;padding:0 10px;
   font-size:var(--fs-control);font-weight:600;letter-spacing:var(--ls-btn)}
 /* one faded/inert state — native :disabled controls + JS-toggled .ctlDisabled rows */
@@ -500,16 +500,16 @@ body.dragging #paperTabs{display:none}
 .vpGrid4{grid-template-columns:repeat(4,1fr)}
 /* compact button — the one deliberate exception to --fs-btn: a 4-up micro-grid
    (NW/NE/SW/SE) that would overflow at button size, so it uses --fs-data. */
-.vpBtn{background:var(--panel2);border:1px solid var(--line);border-radius:5px;color:var(--text);
+.vpBtn{background:var(--panel2);border:1px solid var(--line);border-radius:50cqh;color:var(--text);
   font-size:var(--fs-data);font-weight:600;padding:6px 2px;cursor:pointer;text-align:center}
 .vpBtn:hover{border-color:var(--accent);color:var(--accent)}
 .ctl label{font-size:var(--fs-control);color:var(--text)}
 .ctl .val{font-family:var(--mono);font-size:var(--fs-data);text-align:right;color:var(--text);cursor:text}
 .ctl .val[contenteditable="true"]{outline:none;-webkit-user-select:text;user-select:text}
 input[type=range]{-webkit-appearance:none;appearance:none;height:3px;border-radius:2px;
-  background:var(--line);cursor:pointer;width:100%;min-width:0}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;
-  border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+  background:var(--slider);cursor:pointer;width:100%;min-width:0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;
+  border-radius:50%;background:var(--accent)}
 input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;
   background:var(--accent);border:2px solid var(--bg)}
 input[type=checkbox]{-webkit-appearance:none;-moz-appearance:none;appearance:none;margin:0;flex:none;

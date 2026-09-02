@@ -161,9 +161,10 @@ pane2.addEventListener('pointercancel', endPanPointer);
 // button) on mouse input — the same problem #genExportFloat already guards
 // against, for the same reason.
 ['pointerdown','wheel'].forEach(t => $('reset2dBtn').addEventListener(t, e => e.stopPropagation()));
-$('reset2dBtn').addEventListener('click', () => {
-  resetPvFitWithRulers(); applyPv();
-});
+function reset2dView(){ resetPvFitWithRulers(); applyPv(); }
+$('reset2dBtn').addEventListener('click', reset2dView);
+// same reset via a double middle-click anywhere on the pane (Preview + Layout)
+onMiddleDblClick(pane2, reset2dView);
 
 /* ================= texture pattern gizmo =================
    Draggable center-point marker for the ground-shadow texture pattern,
