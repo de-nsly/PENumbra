@@ -1909,6 +1909,7 @@ function setLayoutOverlayOrder(front){
   $('layoutOverlayOrderBtn').setAttribute('aria-checked', String(front));
   $('layoutOverlayLblBack').classList.toggle('active', !front);
   $('layoutOverlayLblFront').classList.toggle('active', front);
+  positionSegPill($('layoutOverlayOrderBtn').parentElement);
   renderPreviewLayoutOverlay();
 }
 $('layoutOverlayOrderBtn').addEventListener('click', () => setLayoutOverlayOrder(!layoutOverlayFront));

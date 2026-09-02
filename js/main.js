@@ -118,5 +118,32 @@ function dashOnFraction(key){
   }
 })();
 
+/* ================= segmented-toggle sliding pill =================
+   Shared by every .modeToggle (panel Pen/Texture/Page/Cog, Texture sub-tab
+   rows) and .projRow (Perspective/Ortho, layout-overlay Behind/In front).
+   The accent fill is a single ::before pill (see styles.css); this positions
+   it over the active child. Callers that flip which child has .active also
+   call positionSegPill() so the move animates immediately; the ResizeObserver
+   below covers layout changes and rows that were hidden when first measured. */
+function positionSegPill(el){
+  if (!el) return;
+  const active = [...el.children].find(c => c.classList.contains('active') && c.offsetParent);
+  if (!active) return;                                  // no active child, or row hidden
+  el.style.setProperty('--seg-x', active.offsetLeft + 'px');
+  el.style.setProperty('--seg-w', active.offsetWidth + 'px');
+  if (!el.dataset.segReady){                            // first placement: land without animating
+    el.dataset.segReady = '1';
+    requestAnimationFrame(() => el.classList.add('seg-anim'));
+  }
+}
+(function initSegPills(){
+  const bars = document.querySelectorAll('.modeToggle, .projRow');
+  bars.forEach(el => {
+    positionSegPill(el);
+    new ResizeObserver(() => positionSegPill(el)).observe(el);
+  });
+  addEventListener('load', () => bars.forEach(positionSegPill));   // re-measure once fonts settle
+})();
+
 /* ================= worker ================= */
 const worker = new Worker('js/worker/solver.js', { type: 'module' });

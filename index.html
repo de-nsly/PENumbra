@@ -363,7 +363,7 @@
             <input type="range" id="texCirclesThr" min="0.01" max="1" step="0.01" value="0.92" data-regen>
             <span class="val" id="texCirclesThrVal">0.92</span>
           </div>
-          <label class="chk" style="margin:6px 0 22px;font-size:11px">
+          <label class="chk" style="margin:6px 0 22px">
             <input type="checkbox" id="texGizmoShow" checked>
             Show center gizmo
           </label>
@@ -380,7 +380,7 @@
       <h2>Hatch Texture</h2>
       <div class="sec">
         <div class="textureGroup">
-          <label class="textureGroupLabel">
+          <label class="chk">
             <input type="checkbox" id="texTrimOn" data-regen>
             <span>Trim / extend</span>
           </label>
@@ -393,7 +393,7 @@
           </div>
         </div>
         <div class="textureGroup">
-          <label class="textureGroupLabel">
+          <label class="chk">
             <input type="checkbox" id="texOvershootOn" data-regen>
             <span>Overshoot / undershoot</span>
           </label>
@@ -411,7 +411,7 @@
           </div>
         </div>
         <div class="textureGroup">
-          <label class="textureGroupLabel">
+          <label class="chk">
             <input type="checkbox" id="texSpacingOn" data-regen>
             <span>Spacing jitter</span>
           </label>
@@ -429,7 +429,7 @@
           </div>
         </div>
         <div class="textureGroup" data-skipforcircles="1">
-          <label class="textureGroupLabel">
+          <label class="chk">
             <input type="checkbox" id="texAngleOn" data-regen>
             <span>Angle jitter</span>
           </label>
@@ -447,12 +447,12 @@
           </div>
         </div>
         <div class="textureGroup">
-          <div class="textureGroupLabel textureGroupLabelSplit">
-            <label class="textureGroupLabelMain">
+          <div class="rowSplit">
+            <label class="chk">
               <input type="checkbox" id="texWobbleOn" data-regen>
               <span>Wobble</span>
             </label>
-            <label class="chk texInlineChk">
+            <label class="chk chk-sub">
               <input type="checkbox" id="texWobbleShared" data-regen>
               Same noise field per layer
             </label>
@@ -481,7 +481,7 @@
           </div>
         </div>
         <div class="textureGroup" data-skipforcircles="1">
-          <label class="textureGroupLabel">
+          <label class="chk">
             <input type="checkbox" id="texRegWobbleOn" data-regen>
             <span>Regular wobble</span>
           </label>
@@ -499,7 +499,7 @@
           </div>
         </div>
         <div class="textureGroup">
-          <label class="textureGroupLabel">
+          <label class="chk">
             <input type="checkbox" id="texGapsOn" data-regen>
             <span>Gaps</span>
           </label>
@@ -553,7 +553,7 @@
 
       <h2>Dedup</h2>
       <div class="sec">
-        <p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.4">
+        <p class="hint">
           Controls how readily two nearby line segments are treated as
           tracing the same physical edge (and so collapsed to a single
           stroke) versus kept as separate, distinct lines. Both scale the
@@ -574,7 +574,7 @@
 
       <h2>Debug</h2>
       <div class="sec">
-        <p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.4">
+        <p class="hint">
           Exports every edge whose crease angle passes the Crease angle
           threshold (Lines section), completely bypassing hidden-line
           removal, hatching, and every texture effect — for isolating
@@ -701,12 +701,12 @@
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span><span>Pan the camera</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys">Drag</span><span>Orbit the camera</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+drag</span><span>Pan the camera</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys">Wheel</span><span>Zoom in / out</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Mouse wheel</span><span>Zoom in / out</span></div>
       </div>
       <div class="aboutShortcutGroup">
         <h3>2D pane — Preview &amp; Layout tabs</h3>
-        <div class="aboutShortcutRow"><span class="aboutKeys">Drag empty space</span><span>Pan the view</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys">Wheel</span><span>Zoom in / out</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Mouse wheel drag</span><span>Pan the view</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Mouse wheel</span><span>Zoom in / out</span></div>
       </div>
       <div class="aboutShortcutGroup">
         <h3>Layout tab</h3>
@@ -714,8 +714,8 @@
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+<kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span><span>Nudge the selected layer(s) by 5&nbsp;mm</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Esc</kbd></span><span>Close the right-click layer menu</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys">Click a layer</span><span>Select it</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+click</span><span>Add / remove a layer from the selection</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+drag</span><span>Constrain the move to one axis</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+ click</span><span>Add / remove a layer from the selection</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+ drag</span><span>Constrain the move to one axis</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys">Right-click a layer</span><span>Open the layer menu</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys">Drag a layer's handle in the list</span><span>Reorder layers</span></div>
       </div>
