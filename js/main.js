@@ -8,6 +8,9 @@
    ================================================================ */
 const $ = id => document.getElementById(id);
 
+// App version (shown in the About dialog footer). Bump on release.
+const APP_VERSION = '0.8.0';
+
 /* ================= layer registry =================
    Order here is the drawing-priority hierarchy (top = highest), used for:
      - UI row order, top to bottom
@@ -144,6 +147,28 @@ function positionSegPill(el){
   });
   addEventListener('load', () => bars.forEach(positionSegPill));   // re-measure once fonts settle
 })();
+
+/* ================= middle-button double-click =================
+   Fires `handler` when the mouse wheel (middle button) is pressed twice in
+   quick succession over `el`. Browsers have no native dblclick for non-primary
+   buttons, so two pointerdowns are timed. Registered in the capture phase and,
+   on the completing press, stops propagation so the pane's own middle-button
+   pan/orbit handler doesn't also kick in; preventDefault kills the browser's
+   middle-click autoscroll. Used for "reset the view" in the 3D and 2D panes. */
+function onMiddleDblClick(el, handler){
+  let t = 0, x = 0, y = 0;
+  el.addEventListener('pointerdown', e => {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    if (e.timeStamp - t < 400 && Math.hypot(e.clientX - x, e.clientY - y) < 6){
+      t = 0;
+      e.stopImmediatePropagation();
+      handler(e);
+    } else {
+      t = e.timeStamp; x = e.clientX; y = e.clientY;
+    }
+  }, true);
+}
 
 /* ================= worker ================= */
 const worker = new Worker('js/worker/solver.js', { type: 'module' });

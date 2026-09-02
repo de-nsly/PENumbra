@@ -550,6 +550,7 @@ document.addEventListener('keydown', e => {
    since it must fire regardless of what's focused, including while
    the modal itself holds focus). */
 const aboutOverlay = $('aboutOverlay');
+$('appVersion').textContent = 'Version ' + APP_VERSION + ' ·';
 function openAbout(){ aboutOverlay.hidden = false; }
 function closeAbout(){ aboutOverlay.hidden = true; }
 $('aboutBtn').addEventListener('click', openAbout);

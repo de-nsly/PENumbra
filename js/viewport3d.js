@@ -483,12 +483,15 @@ document.querySelectorAll('.vpBtn').forEach(btn => {
 // Recenters the model in the viewport by moving the orbit PIVOT to the
 // model's center — theta/phi/radius (view angle and zoom) are deliberately
 // left untouched, so this only re-centers, it never reframes.
-$('recenter3dBtn').addEventListener('click', () => {
+function recenter3dView(){
   orbit.target.copy(modelCenter);
   orbit.apply();
   markStale();
   clearActiveView();
-});
+}
+$('recenter3dBtn').addEventListener('click', recenter3dView);
+// same reset via a double middle-click anywhere on the 3D canvas
+onMiddleDblClick(renderer.domElement, recenter3dView);
 
 
 function updateLight(){

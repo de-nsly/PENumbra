@@ -263,7 +263,8 @@ $('exportSceneBtn').addEventListener('click', () => {
   // not carried through into the saved file at all — it's rebuilt fresh on
   // import anyway (renderLayoutCanvas hydrates DOM for any block missing it).
   const blocksOut = blocks.map(({ dom, ...rest }) => rest);
-  const scene = { penumbraScene: 1, model: modelField, camera: camState, settings, layers,
+  const scene = { penumbraScene: 1, appVersion: APP_VERSION, savedAt: new Date().toISOString(),
+    model: modelField, camera: camState, settings, layers,
     dashKeys: DASH_KEYS.slice(), savedViews, savedViewCounter, blocks: blocksOut, blockCounter };
   const blob = new Blob([JSON.stringify(scene)], { type: 'application/json' });
   const a = document.createElement('a');
@@ -394,11 +395,8 @@ function applyImportedScene(data){
 }
 
 let importingScene = false, pendingSceneRestore = null;
-$('importSceneBtn').addEventListener('click', () => $('sceneFileInput').click());
-$('sceneFileInput').addEventListener('change', e => {
-  if (e.target.files[0]) importScene(e.target.files[0]);
-  e.target.value = '';
-});
+// .pen files are opened through the main "Open STL / OBJ / PEN" button (handleFiles
+// routes by extension); there's no separate Import Scene button/input any more.
 async function importScene(file){
   $('statusL').textContent = 'importing ' + file.name + '…';
   let data;

@@ -19,12 +19,8 @@
     <button class="aboutBtn" id="aboutBtn" type="button" title="About PENumbra / keyboard shortcuts" aria-label="About PENumbra">?</button>
     <input type="file" id="fileInput" accept=".stl,.obj,.pen" hidden>
     <span class="actGroup">
-      <button class="btn" id="loadBtn">Load STL / OBJ</button>
-    </span>
-    <input type="file" id="sceneFileInput" accept=".pen" hidden>
-    <span class="actGroup">
-      <button class="btn" id="exportSceneBtn" title="Save the model, camera, and every setting to a .pen file">Export Scene</button>
-      <button class="btn" id="importSceneBtn" title="Restore a model, camera, and every setting from a .pen file">Import Scene</button>
+      <button class="btn" id="loadBtn">Open STL / OBJ / PEN</button>
+      <button class="btn" id="exportSceneBtn" title="Save the model, camera, and every setting to a .pen file">Save PEN</button>
     </span>
   </div>
 </header>
@@ -363,10 +359,6 @@
             <input type="range" id="texCirclesThr" min="0.01" max="1" step="0.01" value="0.92" data-regen>
             <span class="val" id="texCirclesThrVal">0.92</span>
           </div>
-          <label class="chk" style="margin:6px 0 22px">
-            <input type="checkbox" id="texGizmoShow" checked>
-            Show center gizmo
-          </label>
         </div>
 
         <h2>Texture mode</h2>
@@ -601,6 +593,10 @@
       <div id="edgeLayers"></div>
       <div id="hatchLayers"></div>
       <label class="chk" style="margin-top:8px">
+            <input type="checkbox" id="texGizmoShow" checked>
+            Show circles center gizmo
+          </label>
+      <label class="chk" style="margin-top:8px; margin-bottom:8px">
         <input type="checkbox" id="blendMultiplyOn">
         Blend overlapping colors (preview only)
       </label>
@@ -672,6 +668,7 @@
       <div class="aboutShortcutGroup">
         <h3>Anywhere</h3>
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>H</kbd></span><span>Show / hide the floating UI panels</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Double middle-click</span><span>Recenter the model/view</span></div>
       </div>
       <div class="aboutShortcutGroup">
         <h3>3D viewport (cursor over the 3D pane)</h3>
@@ -689,11 +686,12 @@
         <h3>Layout tab</h3>
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span><span>Nudge the selected layer(s) by 0.5&nbsp;mm</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+<kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span><span>Nudge the selected layer(s) by 5&nbsp;mm</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Right-click a layer</span><span>Open the layer menu</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Esc</kbd></span><span>Close the right-click layer menu</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys">Click a layer</span><span>Select it</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+ click</span><span>Add / remove a layer from the selection</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+ drag</span><span>Constrain the move to one axis</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys">Right-click a layer</span><span>Open the layer menu</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+ rotate</span><span>Rotation snaps to 5° increments</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys">Drag a layer's handle in the list</span><span>Reorder layers</span></div>
       </div>
       <div class="aboutShortcutGroup">
@@ -703,7 +701,7 @@
       </div>
     </div>
     <div class="aboutFooter">
-      <div>&copy; 2026 de-nsly</div>
+      <div><span id="appVersion"></span> &copy; 2026 de-nsly</div>
       <a href="https://github.com/de-nsly/PENumbra" target="_blank" rel="noopener">https://github.com/de-nsly/PENumbra</a>
     </div>
   </div>
