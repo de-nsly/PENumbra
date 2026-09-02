@@ -577,6 +577,7 @@ function setPanelMode(mode){
     $(m.btn).classList.toggle('active', m.mode === mode);
     $(m.btn).setAttribute('aria-selected', String(m.mode === mode));
   }
+  positionSegPill($('panelModeToggle'));
 }
 for (const m of PANEL_MODES) $(m.btn).addEventListener('click', () => setPanelMode(m.mode));
 
@@ -629,27 +630,11 @@ function selectTexTop(key){
     const el = $('texLayerSettings_' + k);
     if (el) el.style.display = (key === k) ? '' : 'none';
   });
-  updateTexTabRounding();
+  document.querySelectorAll('.textureSubTabs').forEach(positionSegPill);
 }
 document.querySelectorAll('.texTopTabBtn').forEach(btn => {
   btn.addEventListener('click', () => { selectTexTop(btn.dataset.textop); markStale(); });
 });
-// CSS :first-child/:last-child (used elsewhere for this pill style) only
-// look at DOM position, not which siblings are actually visible — so a
-// row filtered down to two buttons would leave the visually-last one
-// with square corners on both sides instead of rounded on the right.
-// Recomputes which button is actually first/last-visible within each row
-// and applies explicit classes instead, every time visibility changes.
-function updateTexTabRounding(){
-  document.querySelectorAll('.textureSubTabs').forEach(bar => {
-    const visible = [...bar.querySelectorAll('.texTopTabBtn')].filter(b => b.style.display !== 'none');
-    bar.querySelectorAll('.texTopTabBtn').forEach(b => b.classList.remove('roundLeft', 'roundRight'));
-    if (visible.length){
-      visible[0].classList.add('roundLeft');
-      visible[visible.length-1].classList.add('roundRight');
-    }
-  });
-}
 // Only show tab buttons for currently-enabled layers (in the Individual
 // row); if every one of them happens to be off, fall back to showing H1
 // alone rather than leaving nothing to click. The General/"G" button is
@@ -669,7 +654,7 @@ function updateTexLayerTabVisibility(){
       if (firstVisible) selectTexTop(firstVisible.dataset.textop);
     }
   }
-  updateTexTabRounding();
+  document.querySelectorAll('.textureSubTabs').forEach(positionSegPill);
 }
 
 // Copies every current General texture-effect value into one layer's own

@@ -363,7 +363,7 @@
             <input type="range" id="texCirclesThr" min="0.01" max="1" step="0.01" value="0.92" data-regen>
             <span class="val" id="texCirclesThrVal">0.92</span>
           </div>
-          <label class="chk" style="margin:6px 0 22px;font-size:11px">
+          <label class="chk" style="margin:6px 0 22px">
             <input type="checkbox" id="texGizmoShow" checked>
             Show center gizmo
           </label>
@@ -553,7 +553,7 @@
 
       <h2>Dedup</h2>
       <div class="sec">
-        <p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.4">
+        <p class="hint">
           Controls how readily two nearby line segments are treated as
           tracing the same physical edge (and so collapsed to a single
           stroke) versus kept as separate, distinct lines. Both scale the
@@ -574,7 +574,7 @@
 
       <h2>Debug</h2>
       <div class="sec">
-        <p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.4">
+        <p class="hint">
           Exports every edge whose crease angle passes the Crease angle
           threshold (Lines section), completely bypassing hidden-line
           removal, hatching, and every texture effect — for isolating

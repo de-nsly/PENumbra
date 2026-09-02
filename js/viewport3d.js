@@ -447,6 +447,7 @@ function setProjMode(mode){
   $('projLblOrtho').classList.toggle('active', ortho);
   camera = mode === 'ortho' ? orthoCam : perspCam;
   $('fovDeg').disabled = mode === 'ortho';
+  positionSegPill($('projMode').parentElement);
 }
 $('projMode').addEventListener('click', () => {
   setProjMode($('projMode').dataset.mode === 'ortho' ? 'persp' : 'ortho');
