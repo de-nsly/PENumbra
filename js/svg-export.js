@@ -2157,6 +2157,120 @@ function splitDashedPathD(d, dashLen, gapLen){
   return outParts.join(' ');
 }
 
+// Clip path `d` strings to an axis-aligned rect in the SAME coordinate
+// space as the path data (solver-px for #paperContent). Plotter software
+// ignores clipPath/overflow, so export has to actually cut the geometry.
+// Cubics (Circles layer) are flattened to polylines first — a plotter
+// already approximates them as short segments, and Liang-Barsky only
+// speaks straight lines.
+const CLIP_BEZIER_SAMPLES = 16;
+function sampleCubicBezier(p0, c1, c2, p3, n){
+  const pts = [];
+  for (let s = 1; s <= n; s++){
+    const u = s / n, v = 1 - u;
+    pts.push([
+      v*v*v*p0[0] + 3*v*v*u*c1[0] + 3*v*u*u*c2[0] + u*u*u*p3[0],
+      v*v*v*p0[1] + 3*v*v*u*c1[1] + 3*v*u*u*c2[1] + u*u*u*p3[1],
+    ]);
+  }
+  return pts;
+}
+// Same token walk as parseSubpathsD, but C commands become sampled
+// polyline vertices instead of being skipped. Closed (Z) subpaths get
+// an explicit closing vertex so the closing edge is clipped too.
+function pathDToPolylines(d){
+  const tokens = (d || '').trim().split(/\s+/);
+  const subpaths = [];
+  let cur = null, start = null;
+  for (let i = 0; i < tokens.length; ){
+    const t = tokens[i];
+    if (t === 'M'){
+      cur = [[parseFloat(tokens[i+1]), parseFloat(tokens[i+2])]];
+      start = cur[0];
+      subpaths.push(cur);
+      i += 3;
+    } else if (t === 'L'){
+      if (cur) cur.push([parseFloat(tokens[i+1]), parseFloat(tokens[i+2])]);
+      i += 3;
+    } else if (t === 'C'){
+      if (cur && cur.length){
+        const p0 = cur[cur.length-1];
+        const c1 = [parseFloat(tokens[i+1]), parseFloat(tokens[i+2])];
+        const c2 = [parseFloat(tokens[i+3]), parseFloat(tokens[i+4])];
+        const p3 = [parseFloat(tokens[i+5]), parseFloat(tokens[i+6])];
+        cur.push(...sampleCubicBezier(p0, c1, c2, p3, CLIP_BEZIER_SAMPLES));
+      }
+      i += 7;
+    } else if (t === 'Z' || t === 'z'){
+      if (cur && start &&
+          (cur[cur.length-1][0] !== start[0] || cur[cur.length-1][1] !== start[1])){
+        cur.push([start[0], start[1]]);
+      }
+      i += 1;
+    } else {
+      i += 1;
+    }
+  }
+  return subpaths;
+}
+// Liang-Barsky. Returns [[ax,ay],[bx,by]] of the surviving span, or null
+// if the segment is entirely outside. Boundary-touching segments are kept.
+function clipSegToRect(x0, y0, x1, y1, r){
+  const dx = x1-x0, dy = y1-y0;
+  let u1 = 0, u2 = 1;
+  const p = [-dx, dx, -dy, dy];
+  const q = [x0-r.x0, r.x1-x0, y0-r.y0, r.y1-y0];
+  for (let i = 0; i < 4; i++){
+    if (Math.abs(p[i]) < 1e-15){
+      if (q[i] < 0) return null;
+    } else {
+      const t = q[i] / p[i];
+      if (p[i] < 0){
+        if (t > u2) return null;
+        if (t > u1) u1 = t;
+      } else {
+        if (t < u1) return null;
+        if (t < u2) u2 = t;
+      }
+    }
+  }
+  return [[x0+u1*dx, y0+u1*dy], [x0+u2*dx, y0+u2*dy]];
+}
+function clipPolylineToRect(pts, r){
+  const out = [];
+  let cur = null;
+  const joinTol = 1e-9;
+  const same = (a, b) => Math.abs(a[0]-b[0]) < joinTol && Math.abs(a[1]-b[1]) < joinTol;
+  for (let i = 1; i < pts.length; i++){
+    const clipped = clipSegToRect(pts[i-1][0], pts[i-1][1], pts[i][0], pts[i][1], r);
+    if (!clipped){
+      if (cur && cur.length >= 2) out.push(cur);
+      cur = null;
+      continue;
+    }
+    const a = clipped[0], b = clipped[1];
+    if (Math.hypot(b[0]-a[0], b[1]-a[1]) < 1e-9) continue;
+    if (cur && same(cur[cur.length-1], a)) cur.push(b);
+    else {
+      if (cur && cur.length >= 2) out.push(cur);
+      cur = [a, b];
+    }
+  }
+  if (cur && cur.length >= 2) out.push(cur);
+  return out;
+}
+function clipPathDToRect(d, r){
+  if (!d || !d.trim()) return '';
+  const outParts = [];
+  for (const pts of pathDToPolylines(d)){
+    if (pts.length < 2) continue;
+    for (const chain of clipPolylineToRect(pts, r)){
+      outParts.push('M ' + chain.map(p => p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join(' L '));
+    }
+  }
+  return outParts.join(' ');
+}
+
 // Purely a preview compositing toggle — no geometry changes, so this
 // flips the class directly on #plot itself (Preview mode — covers both the
 // live drawing AND the Layout overlay, see styles.css) and the shared
@@ -2219,6 +2333,26 @@ $('exportBtn').addEventListener('click', () => {
       });
       g.removeAttribute('stroke-dasharray');
     });
+  }
+  // Preview only: cut path data to the physical page. Layout blocks each
+  // carry their own freeze+placement transform, so a single inverse isn't
+  // enough there — leave them unclipped until that path is built.
+  if (!isLayout){
+    const s = Math.max(1e-12, layout.scale);
+    const pageRect = {
+      x0: (0 - layout.offX) / s,
+      y0: (0 - layout.offY) / s,
+      x1: (layout.paperW - layout.offX) / s,
+      y1: (layout.paperH - layout.offY) / s,
+    };
+    const content = clone.querySelector('#paperContent');
+    if (content){
+      content.querySelectorAll('path').forEach(p => {
+        const clipped = clipPathDToRect(p.getAttribute('d'), pageRect);
+        if (clipped) p.setAttribute('d', clipped);
+        else p.remove();
+      });
+    }
   }
   const meta = document.createComment(' Penumbra plot · ' + modelName + ' · ' +
     new Date().toISOString() + ' · ' + (isLayout
