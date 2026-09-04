@@ -114,7 +114,7 @@ header{padding:0 16px}
 /* per-button size / shape (the rest comes from the two rules above) */
 .aboutBtn{width:26px;height:26px;border-radius:50%;font-size:var(--fs-btn);font-weight:600}
 .aboutClose{width:24px;height:24px;border-radius:50%;background:transparent;font-size:var(--fs-data)}
-.addViewBtn{width:24px;height:24px;border-radius:50%;font-size:var(--fs-brand)}
+.addViewBtn{width:24px;height:24px;border-radius:50cqh;font-size:var(--fs-brand)}
 .svBtn{width:24px;height:24px;border-radius:50%;font-size:var(--fs-data)}
 #clearBlocksBtn,#duplicateBlockBtn{width:auto;padding:0 10px;
   font-size:var(--fs-control);font-weight:600;letter-spacing:var(--ls-btn)}
