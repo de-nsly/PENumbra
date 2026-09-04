@@ -1297,6 +1297,252 @@ function generate(cam, S, shadingBuffer){
     const dbg4 = [];
     const DBG4_CAP = 4000;
 
+    /* Phase 5 (see PHASE5-contour-cleanup-discriminator.md) — the
+       surface-distance probe, MEASUREMENT ONLY. It feeds the hops/surfLen/
+       straight/surfRatio columns on dbg4 below and NOTHING else: no drop
+       decision reads it, so this pass cannot change a single exported line.
+
+       What it measures, and why. The depth test above separates "artifact"
+       from "real fold" on one signal, the world-space depth gap, and that
+       signal provably does not separate the two populations across models
+       (§1-2: most models want 0.022-0.050, faceted 3D text needs ≤ 0.0225 —
+       a ~2% window, which is a coincidence rather than a constant). Both
+       populations are depth-similar BY CONSTRUCTION, since that is the only
+       reason they reach the test at all. What actually differs is whether the
+       two surfaces are the same part of the mesh: an artifact's backdrop is
+       the neighbouring triangle across a diagonal, one or two steps away
+       across the surface, while a real fold's backdrop is a walk around the
+       entire glyph even though it is close in space. So: walk the surface
+       from the edge's own faces to the backdrop face and report how far it
+       actually is, both as a length and as a hop count.
+
+       Both columns are logged deliberately, because neither is unambiguously
+       the right metric yet and §7 says calibrate from the data rather than
+       guess. surfLen/straight is free of model scale and tessellation density
+       for the FOLD population, which is the property the depth threshold
+       lacks — but not for the artifact population: a one-hop artifact's
+       surface path has a floor of roughly a triangle's width (out to a
+       centroid and back) while its straight-line gap can be near zero, so its
+       ratio is inflated and moves with mesh density. hops has no such floor
+       and is the honest "topologically near" measure, at the cost of being
+       tessellation-dependent in exactly the way §3 flags. Read both.
+
+       Endpoints are the REAL points, not the seed/target centroids: the first
+       leg runs from the sample point on the contour edge to its own face's
+       centroid, the last from the backdrop face's centroid to the recovered
+       backdrop point. That drops one full triangle-width of the floor above
+       compared with a plain centroid-to-centroid measure, which would ignore
+       where inside its triangle either point actually sits. */
+    function makeSurfaceProbe(){
+      const nt = M.nt, adjStart = M.faceAdjStart, adjList = M.faceAdjList;
+      // buildMesh always supplies these, so this is purely a guard against a
+      // future mesh path that doesn't: no adjacency means no probe and null
+      // columns, never a thrown generate.
+      if (!adjStart || !adjList) return null;
+      // Face centroids, from the CURRENTLY EFFECTIVE positions — deliberately
+      // not cached on M alongside the adjacency. The Rotate-model panel (§0.5)
+      // rotates a COPY of pos, so a load-time centroid array would silently
+      // describe the un-rotated mesh while the two endpoints below come from
+      // the rotated one, mixing two frames in the same distance. Centroid-to-
+      // centroid hop lengths are themselves rotation-invariant, so the only
+      // thing this per-generate rebuild actually buys is those two endpoint
+      // legs — but it buys them for O(nt) adds, against a function that
+      // already allocates several per-vertex arrays per call.
+      const fc = new Float32Array(nt * 3);
+      for (let t = 0; t < nt; t++){
+        const a=tri[t*3]*3, b=tri[t*3+1]*3, c=tri[t*3+2]*3;
+        fc[t*3]   = (pos[a]  +pos[b]  +pos[c]  )/3;
+        fc[t*3+1] = (pos[a+1]+pos[b+1]+pos[c+1])/3;
+        fc[t*3+2] = (pos[a+2]+pos[b+2]+pos[c+2])/3;
+      }
+      // Mean hop length — the average centroid-to-centroid step, i.e. the
+      // natural unit of everything this search measures. Used only for the
+      // absolute floor on the search radius below. Counted once per adjacent
+      // pair (g > f) rather than once per directed entry.
+      let hopSum = 0, hopN = 0;
+      for (let f = 0; f < nt; f++) for (let i = adjStart[f]; i < adjStart[f+1]; i++){
+        const g = adjList[i];
+        if (g <= f) continue;
+        hopSum += Math.hypot(fc[g*3]-fc[f*3], fc[g*3+1]-fc[f*3+1], fc[g*3+2]-fc[f*3+2]);
+        hopN++;
+      }
+      const meanHop = hopN ? hopSum/hopN : 0;
+      // Stamped scratch (§5) — allocated once per generate and reused by
+      // every decision, compared against a monotonic epoch rather than
+      // cleared, so a search costs nothing it doesn't actually visit. Every
+      // entry is meaningless unless its stamp equals the current epoch.
+      const stamp = new Int32Array(nt);        // dist/hop written this epoch
+      const settled = new Int32Array(nt);      // popped this epoch (final)
+      const dist = new Float64Array(nt);
+      const hop = new Int32Array(nt);
+      const heap = [];                         // face ids, keyed by dist
+      let epoch = 0;
+      const push = (f) => {
+        heap.push(f);
+        let i = heap.length - 1;
+        while (i > 0){
+          const p = (i-1) >> 1;
+          if (dist[heap[p]] <= dist[heap[i]]) break;
+          const t = heap[p]; heap[p] = heap[i]; heap[i] = t; i = p;
+        }
+      };
+      const pop = () => {
+        const top = heap[0], last = heap.pop();
+        if (heap.length){
+          heap[0] = last;
+          for (let i = 0;;){
+            const l = i*2+1, r = l+1;
+            let m = i;
+            if (l < heap.length && dist[heap[l]] < dist[heap[m]]) m = l;
+            if (r < heap.length && dist[heap[r]] < dist[heap[m]]) m = r;
+            if (m === i) break;
+            const t = heap[m]; heap[m] = heap[i]; heap[i] = t; i = m;
+          }
+        }
+        return top;
+      };
+      // Two backstops, because this runs on every same-shell decision rather
+      // than only on candidate drops. A search stopping early is not a failure:
+      // "further across the surface than SD_MAX_FRAC of the model radius" is
+      // itself the reading being looked for, and lands as capped, with
+      // cappedBy saying which backstop fired — the two mean opposite things
+      // and must not be conflated when reading the diagnostic.
+      //
+      // The radius is ABSOLUTE (a fraction of the model's own bounding
+      // radius), deliberately not a multiple of the straight-line gap. Two
+      // rounds of measurement killed the relative form:
+      //   · At 64x, every KEEP got a radius of 64 x 0.022 R = 1.4 R — larger
+      //     than the model — and flooded its whole shell to the visit cap.
+      //     §6's "self-limiting because d is small by construction" holds only
+      //     for candidate DROPS; a keep is a keep precisely because its gap
+      //     CLEARED the depth threshold. Keeps outnumber drops ~9:1, which was
+      //     the whole 100ms -> 1200ms regression.
+      //   · At 8x it merely moved: keeps with the largest gaps (straight up to
+      //     ~0.4 R) still got 3.2 R and still flooded, measured as 31% of keeps
+      //     capping by visits.
+      // A relative radius has no purpose left anyway. It existed to serve the
+      // surfLen/straight ratio, and the ratio is dead — measured, it INVERTS
+      // (drops 2.16 median against keeps 1.82), because straight is small for
+      // drops by construction and dividing by it cancels the signal. The raw
+      // surface length is what separates: drops [p10,p90] = [0.018, 0.064] R
+      // against keeps [0.085, 0.423] R, disjoint boxes, 9x between medians.
+      // So the decision boundary sits near 0.07 R and nothing beyond ~0.2 R is
+      // worth the time to measure. Faces settled inside surface radius r go as
+      // nt·r²/4R², so 0.2 R costs ~nt/100 faces — uniform per decision,
+      // independent of which population the candidate belongs to.
+      const SD_MAX_FRAC = 0.2;
+      // ...with an absolute floor underneath it, for the opposite failure: on
+      // a mesh coarse enough that 0.2 R is less than a couple of triangles,
+      // the search could not reach the neighbouring face at all, and would
+      // report "far across the surface" for the most artifact-like candidates
+      // there are. 4 mean hops covers the sample->centroid leg, two or three
+      // real hops, and the centroid->backdrop leg.
+      const SD_LIMIT = Math.max(SD_MAX_FRAC * M.radius, 4 * meanHop);
+      const SD_VISIT_CAP = 4096;
+      const MISS = (by) => ({ hops: -1, len: Infinity, capped: !!by, cappedBy: by || null });
+      // straight is deliberately NOT a parameter: the radius no longer depends
+      // on it, and the caller still has it for the surfRatio column.
+      return function surfaceDist(seedA, seedB, target, px, py, pz, qx, qy, qz){
+        if (target < 0 || target >= nt) return MISS(null);
+        const limit = SD_LIMIT;
+        epoch++;
+        heap.length = 0;
+        // Seed BOTH of the edge's own faces at hop 0. The sample point sits on
+        // the edge they share, so neither is "the" source face, and they are
+        // one hop apart anyway; pickBackdropFaceWithDepth skipped both, so
+        // neither can be the target.
+        for (const f of [seedA, seedB]){
+          if (f < 0 || f >= nt) continue;
+          const d0 = Math.hypot(fc[f*3]-px, fc[f*3+1]-py, fc[f*3+2]-pz);
+          if (stamp[f] === epoch && dist[f] <= d0) continue;
+          stamp[f] = epoch; dist[f] = d0; hop[f] = 0; push(f);
+        }
+        let visits = 0, hitLimit = false;
+        while (heap.length){
+          const f = pop();
+          if (settled[f] === epoch) continue;    // stale duplicate entry
+          settled[f] = epoch;
+          const df = dist[f];
+          if (f === target){
+            // The final leg is a constant for a fixed target, so popping the
+            // target still means its shortest path — no need to keep going.
+            const leg = Math.hypot(fc[f*3]-qx, fc[f*3+1]-qy, fc[f*3+2]-qz);
+            return { hops: hop[f], len: df + leg, capped: false, cappedBy: null };
+          }
+          if (++visits > SD_VISIT_CAP) return MISS('visits');
+          for (let li = adjStart[f]; li < adjStart[f+1]; li++){
+            const g = adjList[li];
+            if (settled[g] === epoch) continue;
+            const nd = df + Math.hypot(fc[g*3]-fc[f*3], fc[g*3+1]-fc[f*3+1], fc[g*3+2]-fc[f*3+2]);
+            if (nd > limit){ hitLimit = true; continue; }
+            if (stamp[g] !== epoch || nd < dist[g]){
+              stamp[g] = epoch; dist[g] = nd; hop[g] = hop[f] + 1; push(g);
+            }
+          }
+        }
+        // Exhausted. hitLimit distinguishes "the length cap stopped us" from a
+        // genuine disconnect — the latter should be impossible here, since
+        // §4's same-shell gate ran first, so seeing capped:false with
+        // hops:-1 means the adjacency itself is broken (a non-manifold seam
+        // splitting one shell), which is worth being able to read.
+        return MISS(hitLimit ? 'len' : null);
+      };
+    }
+    /* The hop veto's own probe — the one that actually changes lines on the
+       page, as opposed to makeSurfaceProbe above which only measures.
+
+       Deliberately a separate, far cheaper function rather than a mode on the
+       Dijkstra. The question here is not "how far is the backdrop across the
+       surface" but the bounded, binary "is it within N steps", and that turns
+       a shortest-path search into a plain N-ring flood: no priority queue, no
+       distances, no centroids, and an early return the moment the target
+       appears. A triangle mesh's N-ring is about 3N² faces — a dozen or so at
+       N=3 — so this costs essentially nothing even though (unlike the
+       measurement probe) it has to run on every candidate drop rather than
+       only on the ones a diagnostic cap admits.
+
+       Returns the hop count when the target is within maxHops, else -1. */
+    function makeHopProbe(){
+      const nt = M.nt, adjStart = M.faceAdjStart, adjList = M.faceAdjList;
+      if (!adjStart || !adjList) return null;
+      const stamp = new Int32Array(nt);        // stamped visited, never cleared
+      let epoch = 0;
+      let frontier = [], next = [];
+      return function withinHops(seedA, seedB, target, maxHops){
+        if (target < 0 || target >= nt) return -1;
+        epoch++;
+        frontier.length = 0;
+        // Seed both of the edge's own faces at hop 0 — same reasoning as the
+        // measurement probe: the sample point lies on the edge they share, so
+        // neither is "the" source, and the backdrop query already skipped both.
+        for (const f of [seedA, seedB])
+          if (f >= 0 && f < nt && stamp[f] !== epoch){ stamp[f] = epoch; frontier.push(f); }
+        for (let h = 1; h <= maxHops; h++){
+          next.length = 0;
+          for (const f of frontier) for (let i = adjStart[f]; i < adjStart[f+1]; i++){
+            const g = adjList[i];
+            if (stamp[g] === epoch) continue;
+            stamp[g] = epoch;
+            if (g === target) return h;
+            next.push(g);
+          }
+          if (!next.length) break;             // ran out of surface first
+          const t = frontier; frontier = next; next = t;
+        }
+        return -1;                             // further than maxHops away
+      };
+    }
+    // The measurement probe is gated behind its own Debug checkbox and OFF by
+    // default: it runs on keeps as well as drops, and keeps outnumber drops
+    // ~9:1, so leaving it always-on cost 5-10x the whole generate for numbers
+    // nothing reads unless someone is looking at them.
+    const measureOn = !!S.debugSurfaceMeasure;
+    const hopVetoOn = !!S.debugHopVeto;
+    const hopLimit = (Number.isFinite(S.debugHopLimit) && S.debugHopLimit >= 1) ? (S.debugHopLimit|0) : 3;
+    const surfaceProbe = (contourDrops && !step4Off && measureOn) ? makeSurfaceProbe() : null;
+    const hopProbe = (contourDrops && !step4Off && hopVetoOn) ? makeHopProbe() : null;
+    let vetoed = 0;
+
     /* Phase 3b Step 4 (see PHASE3b-contour-run-identity.md) — Contour's own
        crossing-split + backdrop-depth test, purely SUBTRACTIVE: never touches
        occlude(), never decides visible/hidden, only ever produces drop
@@ -1318,11 +1564,17 @@ function generate(cam, S, shadingBuffer){
       // resolution).
       const OUTWARD_EPS = 0.01;
       let ox=0, oy=0;
+      // refFace is hoisted out of the block below because Phase 5's probe
+      // reads it too, to recover the sample point's own world position. The
+      // sample point lies ON the shared edge, so either of the edge's two
+      // faces would give the same world point — this one is simply already
+      // resolved here.
+      let refFace = -1;
       {
         const ex = csX1[seg]-csX0[seg], ey = csY1[seg]-csY0[seg];
         const elen = Math.hypot(ex,ey) || 1;
         let nx = -ey/elen, ny = ex/elen;
-        const refFace = (csFaceB[seg]<0 || front[csFaceA[seg]]) ? csFaceA[seg] : csFaceB[seg];
+        refFace = (csFaceB[seg]<0 || front[csFaceA[seg]]) ? csFaceA[seg] : csFaceB[seg];
         const va=tri[refFace*3], vb=tri[refFace*3+1], vc=tri[refFace*3+2];
         const tv = (va!==ea[e] && va!==eb[e]) ? va : (vb!==ea[e] && vb!==eb[e]) ? vb : vc;
         const emx=(csX0[seg]+csX1[seg])/2, emy=(csY0[seg]+csY1[seg])/2;
@@ -1367,7 +1619,37 @@ function generate(cam, S, shadingBuffer){
           realGapWorld = denom > 1e-12 ? dIz/denom : Infinity;
         }
         const thresh = M.radius * CONTOUR_DEPTH_SIMILAR_FRAC_WORLD;
-        const dropIt = realGapWorld < thresh;
+        let dropIt = realGapWorld < thresh;
+        // The composed gate: drop <=> depth-similar AND topologically near.
+        // Runs only on candidates the depth test already wants to drop, so a
+        // keep never pays for it, and it can only ever RESTORE line — it
+        // vetoes drops, it never creates one.
+        let vetoHops = null;
+        if (dropIt && hopProbe){
+          vetoHops = hopProbe(csFaceA[seg], csFaceB[seg], back.f, hopLimit);
+          if (vetoHops < 0){ dropIt = false; vetoed++; }
+        }
+        // Phase 5 measurement — see makeSurfaceProbe above. Runs only for
+        // decisions that will actually be logged, which bounds the whole
+        // pass at DBG4_CAP searches per generate no matter how dense the
+        // model, and reads nothing back into dropIt.
+        //
+        // straight is computed from the two recovered world points rather
+        // than reusing realGapWorld: that value is a view-AXIS depth gap
+        // (iz is 1/(-viewZ)), while these two points share a screen
+        // position and therefore a RAY, so off-axis it understates their
+        // true separation by 1/cos of the ray's angle — which would bias
+        // the very ratio being calibrated.
+        let sd = null, straight = 0;
+        if (surfaceProbe && dbg4.length < DBG4_CAP && refFace >= 0){
+          const pW = worldOnFace(refFace, mx, my, tri, pos, sx, sy, iz, ortho);
+          const qW = worldOnFace(back.f, mx+ox, my+oy, tri, pos, sx, sy, iz, ortho);
+          if (pW && qW){
+            straight = Math.hypot(qW[0]-pW[0], qW[1]-pW[1], qW[2]-pW[2]);
+            sd = surfaceProbe(csFaceA[seg], csFaceB[seg], back.f,
+                              pW[0], pW[1], pW[2], qW[0], qW[1], qW[2]);
+          }
+        }
         if (dbg4.length < DBG4_CAP) dbg4.push({
           seg, edge: e, shell,
           t0: r4(ca.t), t1: r4(cb.t),
@@ -1379,6 +1661,44 @@ function generate(cam, S, shadingBuffer){
           // to read off what threshold THIS model would actually have needed.
           ratio: r4(realGapWorld/thresh),
           drop: dropIt,
+          // Only meaningful while the hop veto is on. null = the veto never
+          // looked (it was off, or the depth test wasn't going to drop this
+          // anyway); >= 1 = within the limit, so the drop stood; -1 = further
+          // than the limit, so the veto restored this stretch of line.
+          vetoHops,
+          // Phase 5 columns — observe-only, no decision reads them. hops is
+          // the number of face-adjacency steps from the edge's own faces to
+          // the backdrop face (0 would mean the backdrop IS one of them,
+          // which cannot happen; -1 means the search stopped without
+          // reaching it, see capped). straight is the true 3D separation of
+          // the two sample points, surfLen the distance across the surface
+          // between them, and surfRatio = surfLen/straight.
+          //
+          // MEASURED, so read these in the order that survived: surfLen/R
+          // separates (drop [p10,p90] = [0.018, 0.064] R against keep
+          // [0.085, 0.423] R — disjoint, 9x between medians). surfRatio, the
+          // quantity §3 predicts sits near 1 for an artifact and orders of
+          // magnitude higher for a real fold, does NOT: it inverts, drops at
+          // 2.16 median against keeps at 1.82, because straight is small for
+          // drops by construction and dividing by it cancels the signal. hops
+          // does not separate either (drop median 24 against keep 62, boxes
+          // overlapping) — a fan or strip triangulation puts two spatially
+          // adjacent faces an arbitrary number of hops apart, which is worse
+          // than the density-dependence §3 anticipated because it varies
+          // WITHIN one model. Both are kept as columns to keep those two
+          // negative results readable rather than re-derivable.
+          // capped:true means the search stopped at a
+          // backstop, which is itself the "far across the surface" reading
+          // rather than missing data — but read cappedBy with it: 'len' means
+          // the ratio simply exceeded SD_LEN_FACTOR (genuinely far), while
+          // 'visits' means a pathological fan-out stopped it and the record
+          // says nothing about distance at all.
+          hops: sd ? sd.hops : -1,
+          straight: sd ? r4(straight) : null,
+          surfLen: sd ? r4(sd.len) : null,
+          surfRatio: sd ? (straight > 1e-12 ? r4(sd.len/straight) : Infinity) : null,
+          capped: sd ? sd.capped : null,
+          cappedBy: sd ? sd.cappedBy : null,
         });
         if (!dropIt) continue;
         if (!drops) drops = [];
@@ -1397,6 +1717,19 @@ function generate(cam, S, shadingBuffer){
     //   const d = lastGen.counts.dbgStep4Detail;
     //   console.table(d.filter(r=>r.drop).sort((a,b)=>b.ratio-a.ratio).slice(0,40))  // closest calls that DID drop
     //   console.table(d.filter(r=>!r.drop).sort((a,b)=>a.ratio-b.ratio).slice(0,40)) // closest calls that survived
+    // It also carries Phase 5's surface-distance columns (hops / straight /
+    // surfLen / surfRatio / capped, see makeSurfaceProbe above). Those change
+    // no behaviour; they exist to answer whether surface distance separates
+    // the two populations where depth alone does not. The reading to take,
+    // per model — if these two lines don't separate, the premise is wrong and
+    // the gate should not be built:
+    //   const g = p => ({n:p.length, hops:p.map(r=>r.hops), sr:p.map(r=>r.surfRatio)});
+    //   g(d.filter(r=>r.drop))    // what the depth test called artifact
+    //   g(d.filter(r=>!r.drop))   // what it called a real fold
+    // Load the faceted 3D text (needs contourCleanup ≤ 0.0225 today) and a
+    // model that wants 0.05, and compare. Expect adjacent-triangle hop counts
+    // against walk-around-the-glyph ones; that also calibrates the limit
+    // directly instead of guessing one.
     if (contourDrops){
       const dbg = [];
       for (let seg=0; seg<nCS; seg++) if (contourDrops[seg]) dbg.push({ seg, edge: csEdge[seg], drops: contourDrops[seg].slice() });
@@ -1405,6 +1738,13 @@ function generate(cam, S, shadingBuffer){
       counts.dbgStep4Off = step4Off;
       counts.dbgStep4Frac = CONTOUR_DEPTH_SIMILAR_FRAC_WORLD;
       counts.dbgStep4Truncated = dbg4.length >= DBG4_CAP;
+      counts.dbgStep4HopVeto = hopVetoOn;
+      counts.dbgStep4HopLimit = hopVetoOn ? hopLimit : null;
+      // How many stretches of line the veto put back — the headline number
+      // when A/B-ing the checkbox, and unlike the dbg4 rows it is a true
+      // total, never truncated by DBG4_CAP.
+      counts.dbgStep4Vetoed = vetoed;
+      counts.dbgStep4Measured = measureOn;
     }
     return contourDrops;
   }

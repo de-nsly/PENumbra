@@ -246,6 +246,40 @@ export function buildMesh(input){
     }
   }
 
+  // Face → neighbouring-faces map, CSR (Phase 5 — see
+  // PHASE5-contour-cleanup-discriminator.md §5). The edge list above is
+  // edge → faces; walking ACROSS the surface needs the transpose, and there
+  // was no such mapping before. Pure topology, invariant under both camera
+  // and the Rotate-model panel, so it's derived once here at load rather
+  // than per generate() — which §5 flags as the one way to make the
+  // surface-distance probe that reads it expensive.
+  //
+  // Only edges with two faces make their pair neighbours: boundary edges
+  // (one face) and non-manifold edges (3+, stored above with et1 = -1)
+  // contribute no adjacency at all, so a walk hitting one sees "no path"
+  // there rather than a free hop across it.
+  //
+  // Counting pass, prefix sum, then a fill pass with a per-face write
+  // cursor — faceAdjStart[t]..faceAdjStart[t+1] is t's neighbour slice in
+  // faceAdjList.
+  const faceAdjStart = new Int32Array(nt + 1);
+  for (let e = 0; e < et0.length; e++){
+    if (et0[e] < 0 || et1[e] < 0) continue;
+    faceAdjStart[et0[e] + 1]++;
+    faceAdjStart[et1[e] + 1]++;
+  }
+  for (let t = 0; t < nt; t++) faceAdjStart[t+1] += faceAdjStart[t];
+  const faceAdjList = new Int32Array(faceAdjStart[nt]);
+  {
+    const cur = faceAdjStart.slice(0, nt);
+    for (let e = 0; e < et0.length; e++){
+      const t0 = et0[e], t1 = et1[e];
+      if (t0 < 0 || t1 < 0) continue;
+      faceAdjList[cur[t0]++] = t1;
+      faceAdjList[cur[t1]++] = t0;
+    }
+  }
+
   // Per-corner smooth normals — see computeCornerNormals's own comment for
   // why this is a separate, re-runnable function rather than inline here.
   const cn = computeCornerNormals(nv, nt, tri, pos, fn, ea, eb, et0, et1, eang, DEFAULT_HARD_EDGE_DEG);
@@ -260,6 +294,7 @@ export function buildMesh(input){
     ea: new Uint32Array(ea), eb: new Uint32Array(eb),
     et0: new Int32Array(et0), et1: new Int32Array(et1),
     eang: new Float32Array(eang),
+    faceAdjStart, faceAdjList,
     stats: { trisIn: nIn, tris: nt, verts: nv, boundary, nonManifold, flips, reoriented, shells: nComp },
     bbox: [x0, y0, z0, x1, y1, z1],
     center: [(x0+x1)/2, (y0+y1)/2, (z0+z1)/2],

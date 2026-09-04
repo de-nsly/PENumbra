@@ -597,6 +597,36 @@
         </p>
         <label class="chk" style="margin:0 0 10px"><input type="checkbox" id="debugNoStep4" data-regen>
           Disable Contour cleanup (backdrop drop test)</label>
+        <p style="font-size:11px;color:var(--muted);margin:14px 0 10px;line-height:1.4">
+          Composes a second test onto Contour cleanup instead of replacing it:
+          a stretch of line is dropped only if its backdrop is BOTH
+          depth-similar AND within this many triangle steps across the
+          surface. The idea is that a triangulation artifact's backdrop is a
+          neighbouring triangle, while a shape passing close in front of
+          itself is a long walk around the surface even though it is near in
+          space &mdash; so anything beyond the limit is a real fold and is
+          kept. Raises the number of Contour lines; the count restored lands in
+          <code>lastGen.counts.dbgStep4Vetoed</code>.
+        </p>
+        <label class="chk" style="margin:0 0 10px"><input type="checkbox" id="debugHopVeto" data-regen>
+          Keep contour drops beyond N surface hops</label>
+        <div class="ctl">
+          <label for="debugHopLimit" title="How many triangle steps across the surface still counts as 'the same local surface'. Only has an effect while the checkbox above is ticked.">Max surface hops</label>
+          <input type="range" id="debugHopLimit" min="1" max="20" step="1" value="3" data-regen>
+          <span class="val" id="debugHopLimitVal">3</span>
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin:14px 0 10px;line-height:1.4">
+          Fills the surface-distance columns on
+          <code>lastGen.counts.dbgStep4Detail</code>
+          (<code>hops</code>, <code>straight</code>, <code>surfLen</code>,
+          <code>surfRatio</code>, <code>capped</code>/<code>cappedBy</code>) by
+          running a bounded shortest-path search across the mesh for every
+          same-shell decision. Pure diagnostic &mdash; it changes no line on the
+          page &mdash; and it is the expensive one: it runs on keeps as well as
+          drops, so leave it off unless you are reading those numbers.
+        </p>
+        <label class="chk" style="margin:0 0 10px"><input type="checkbox" id="debugSurfaceMeasure" data-regen>
+          Measure contour surface distance (slow)</label>
       </div>
     </div>
     <div id="penTab">

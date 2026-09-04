@@ -55,6 +55,9 @@ function refreshValLabel(el){
   // with no unit at all (the generic fallback below would otherwise suffix it
   // with a degree sign, since it sits among the angle controls).
   if (el.id === 'contourCleanup'){ v.textContent = (+el.value).toFixed(4); return; }
+  // A bare count of triangle steps — no unit, and integral, so the generic
+  // fallback's degree sign would be actively wrong.
+  if (el.id === 'debugHopLimit'){ v.textContent = el.value; return; }
   if (el.id === 'layoutOverlayOpacity'){ v.textContent = el.value + '%'; return; }
   const bid = baseTexId(el.id);
   const isTexAngle = bid === 'texAngleMin' || bid === 'texAngleMax';
@@ -87,6 +90,7 @@ function valUnitFor(id){
   if (id === 'camShiftX' || id === 'camShiftY') return '';
   if (id === 'dedupOffMult' || id === 'dedupGapMult') return '×';
   if (id === 'contourCleanup') return '';
+  if (id === 'debugHopLimit') return '';
   if (id === 'layoutOverlayOpacity') return '%';
   const bid = baseTexId(id);
   if (bid.startsWith('tex')) return (bid === 'texWobbleVariation' || bid === 'texCirclesThr') ? '' : (bid === 'texAngleMin' || bid === 'texAngleMax') ? '°' : 'mm';
@@ -242,6 +246,14 @@ function gatherSettings(){
     // scene saved before this control existed still solves identically.
     contourCleanup: +$('contourCleanup').value,
     debugNoStep4: $('debugNoStep4').checked,
+    // Debug panel — the surface-distance discriminator composed onto that
+    // same test (veto a depth-similar drop whose backdrop is more than
+    // debugHopLimit triangle steps away), and separately the diagnostic that
+    // only measures surface distance without acting on it. Both default off,
+    // so an untouched scene solves exactly as before.
+    debugHopVeto: $('debugHopVeto').checked,
+    debugHopLimit: +$('debugHopLimit').value,
+    debugSurfaceMeasure: $('debugSurfaceMeasure').checked,
     smoothShading: $('smoothShading').checked,
     creaseDeg: +$('creaseDeg').value,
     light: lightVec(),
