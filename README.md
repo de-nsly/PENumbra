@@ -284,7 +284,12 @@ several views — or several models — on one sheet.
 - **Move / scale / rotate** blocks directly on the page; hold Shift while dragging to constrain to one
   axis, or while rotating to snap to 5°.
 - Blocks **snap** to the margins, page centre and guide grid.
-- **Duplicate**, **reorder** (drag the handle in the Layers list) and **delete** blocks.
+- **Select** several blocks at once, Windows Explorer style: Ctrl/⌘+click adds or removes one, Shift+click
+  in the Layers list selects everything between the last-clicked block and this one, Ctrl/⌘+A selects all,
+  and dragging a box on empty page space rubber-band-selects (hold Shift or Ctrl/⌘ to add to the selection).
+- **Duplicate**, **reorder** (drag the handle in the Layers list) and **delete** blocks. A row's
+  visibility / lock / delete button acts on the whole selection when that row is part of it, and on
+  that row alone otherwise; **Duplicate** copies every selected block at once.
 - Each block has its own **layer visibility** and optional per-layer **style overrides** (right-click a
   block).
 - **Rotate layers with page** rotates every block when you flip portrait/landscape, as if you'd
