@@ -410,27 +410,37 @@ function cloneBlock(block){
     dom: null,
   };
 }
+// "Layer 04" for one, "3 layers" for several — the phrasing every status
+// line about a batch of blocks uses, in one place so they all match.
+function blockCountLabel(list){
+  return list.length === 1 ? list[0].name : list.length + ' layers';
+}
+// The shared tail of every action that brings NEW blocks onto the page —
+// duplicate and paste. Appends them in the given order, so they land as one
+// contiguous run on top of the existing stack with their relative stacking
+// intact, builds each one's persistent DOM, and makes them the new
+// selection ("what you just made is what you're now holding"): both actions
+// can leave a block sitting exactly on top of another, and being selected
+// is what lets it be dragged straight off.
+function addBlocks(newBlocks, verb){
+  if (!newBlocks.length) return [];
+  for (const b of newBlocks){ blocks.push(b); createBlockDom(b); }
+  renderBlocksList();
+  refreshStatusR();
+  selectionAnchor = newBlocks[newBlocks.length - 1];
+  setSelection(newBlocks);
+  $('statusL').textContent = verb + ' ' + blockCountLabel(newBlocks);
+  return newBlocks;
+}
 // Duplicates one block or a whole multi-selection in a single action.
-// Sources are taken in blocks[] order rather than selection order, and
-// appended in that same order, so the copies keep their sources' relative
-// stacking and land as one contiguous run on top of the existing stack.
-// The copies become the new selection (same "what you just made is what
-// you're now holding" behavior a single duplicate always had) — they sit
-// exactly on top of their originals, so being selected is what lets them
-// be dragged straight off.
+// Sources are taken in blocks[] order rather than selection order so the
+// copies keep their sources' relative stacking (see addBlocks for the rest).
 function duplicateBlocks(list){
   const wanted = new Set(list);
   const sources = blocks.filter(b => wanted.has(b));
   if (!sources.length) return [];
-  const dups = sources.map(cloneBlock);
-  for (const dup of dups){ blocks.push(dup); createBlockDom(dup); }
-  renderBlocksList();
-  refreshStatusR();
-  selectionAnchor = dups[dups.length - 1];
-  setSelection(dups);
-  const label = dups.length === 1 ? dups[0].name : dups.length + ' layers';
-  $('statusL').textContent = 'duplicated ' + label;
-  showAddToLayoutMsg(label + ' added to layout');
+  const dups = addBlocks(sources.map(cloneBlock), 'duplicated');
+  showAddToLayoutMsg(blockCountLabel(dups) + ' added to layout');
   return dups;
 }
 // The one delete path — the row's own X button, the Delete/Backspace key,
@@ -1801,17 +1811,21 @@ $('paperPane').addEventListener('contextmenu', e => {
 document.addEventListener('pointerdown', e => {
   if (contextMenuBlock && !$('layerContextMenu').contains(e.target)) closeLayerContextMenu();
 });
+// Every shortcut below (and both clipboard handlers further down) has to
+// keep out of the way of actual typing: arrows move a text caret, Backspace
+// deletes a character, Ctrl+A/C/V are the native select-all/copy/paste, and
+// this app has several live inputs — the block name field, the Override
+// menu's inline color/width/dash controls — where all of that must keep
+// working normally.
+function isTypingTarget(){
+  const a = document.activeElement;
+  return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable));
+}
 const NUDGE_KEYS = { ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0] };
 document.addEventListener('keydown', e => {
   if (contextMenuBlock && e.key === 'Escape') closeLayerContextMenu();
   if (NUDGE_KEYS[e.key] && activeTab === 'layout' && interactiveSelection().length){
-    // Arrow keys have native meaning in text inputs (cursor movement) and
-    // number inputs (increment/decrement) — e.g. the block name field or
-    // any of the Override menu's inline color/width/dash controls — so
-    // this only fires when focus isn't inside one of those.
-    const a = document.activeElement;
-    const isTyping = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
-    if (!isTyping){
+    if (!isTypingTarget()){
       e.preventDefault();
       const amount = e.shiftKey ? 5 : 0.5;
       const [dx, dy] = NUDGE_KEYS[e.key];
@@ -1826,9 +1840,6 @@ document.addEventListener('keydown', e => {
     }
   }
   if ((e.key === 'Delete' || e.key === 'Backspace') && activeTab === 'layout' && selectedBlocks.size){
-    // Same typing guard as the nudge keys above — Backspace/Delete have
-    // native meaning in text inputs (the block name field, Override menu
-    // controls), so this only fires when focus isn't inside one of those.
     // Routes through the same deleteBlocks() a row's own X button uses —
     // see there for why there's no confirmation dialog.
     // Deletes only the INTERACTIVE members, unlike the list's own delete
@@ -1836,29 +1847,163 @@ document.addEventListener('keydown', e => {
     // able to destroy a layer that was deliberately locked (or hidden, and
     // so not even on screen to be missed) — protecting it from the canvas
     // is the entire point of locking it.
-    const a = document.activeElement;
-    const isTyping = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
-    if (!isTyping){
+    if (!isTypingTarget()){
       e.preventDefault();
       deleteBlocks(interactiveSelection());
     }
   }
   // Ctrl/Cmd+A — select every block, hidden and locked included (the list
-  // selection has no eligibility rule; only the canvas does). Same typing
-  // guard as above so it stays the browser's own "select all text" inside
-  // the block name field or the Override menu's inline controls. Leaves the
+  // selection has no eligibility rule; only the canvas does). Leaves the
   // anchor alone: it's validated at use anyway, and whatever was last
   // clicked stays the natural origin for a following Shift+click.
   if (multiSelectKey(e) && (e.key === 'a' || e.key === 'A') && activeTab === 'layout' && blocks.length){
-    const a = document.activeElement;
-    const isTyping = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
-    if (!isTyping){
+    if (!isTypingTarget()){
       e.preventDefault();
       setSelection(blocks.slice());
     }
   }
 });
 ['pointerdown','wheel'].forEach(t => $('layerContextMenu').addEventListener(t, e => e.stopPropagation()));
+
+/* ================= clipboard (copy / paste layers) =================
+   Ctrl/Cmd+C copies the interactive part of the selection to the SYSTEM
+   clipboard as JSON; Ctrl/Cmd+V rebuilds those layers from it. The payload
+   is self-contained (it carries the frozen path data itself, not a
+   reference), so a paste restores exactly what was copied even if the
+   source layer has since been moved, restyled or deleted — and a layer can
+   be carried between two PENumbra tabs, or into a different scene.
+
+   WHY THE `copy`/`paste` EVENTS AND NOT navigator.clipboard: the async
+   Clipboard API's readText() doesn't exist for web content in Firefox at
+   all and prompts for a permission in Chrome. The paste event hands over
+   the same text with no permission, no secure-context requirement (so this
+   still works when the page is served from a LAN IP rather than localhost),
+   and no async. Using the copy event for the write side keeps both
+   directions on one mechanism.
+
+   Locked and hidden layers are never copied — this is a canvas feature, and
+   those are exactly the layers the canvas doesn't touch (see
+   interactiveSelection). Nothing here is persisted: the clipboard is the
+   system's, and the .pen scene format is untouched. */
+const CLIPBOARD_FORMAT = 1;   // bumped only if the record shape below stops being readable as-is
+const isFiniteNum = v => typeof v === 'number' && Number.isFinite(v);
+// A clipboard record is the block minus its live `dom` reference — exactly
+// the shape a .pen scene already stores per block (see the blocksOut map in
+// scene-io.js's export path), so there's no second serialization format to
+// keep in step with the first. `id` rides along and is ignored on the way
+// back in, same as .pen import already does.
+function blocksToClipboardText(list){
+  return JSON.stringify({
+    penumbraClipboard: CLIPBOARD_FORMAT,
+    blocks: list.map(({ dom, ...rest }) => rest),
+  });
+}
+// Rebuilds one block from a clipboard record, or returns null if the record
+// can't produce a usable one. Structure is VALIDATED (anything that would
+// leave an undrawable or unclickable block on the page is rejected outright)
+// while the rest is merely coerced — the realistic case to defend against is
+// "the clipboard holds unrelated text", not a hand-crafted payload, and .pen
+// import trusts its own input entirely.
+function clipboardRecordToBlock(rec){
+  if (!rec || typeof rec !== 'object') return null;
+  // Geometry: at least one real path, under a layer key THIS build knows.
+  const src = rec.layerPaths;
+  if (!src || typeof src !== 'object') return null;
+  const layerPaths = {};
+  for (const L of LAYERS){
+    const d = src[L.key];
+    if (typeof d === 'string' && d.trim()) layerPaths[L.key] = d;
+  }
+  if (!Object.keys(layerPaths).length) return null;
+  // Placement — every number the transform math divides or rotates by.
+  const bb = rec.bboxLocal;
+  if (!bb || typeof bb !== 'object') return null;
+  if (![bb.x0, bb.y0, bb.x1, bb.y1].every(isFiniteNum)) return null;
+  if (![rec.x, rec.y, rec.rotationDeg, rec.scale, rec.freezeOffX, rec.freezeOffY, rec.freezeScale].every(isFiniteNum)) return null;
+  if (rec.freezeScale <= 0) return null;   // a divisor in every stroke-width/dash computation (see updateBlockStyle)
+  const layerVisible = {};
+  for (const key in layerPaths) layerVisible[key] = !(rec.layerVisible && rec.layerVisible[key] === false);
+  const srcOv = (rec.overrideStyle && typeof rec.overrideStyle === 'object') ? rec.overrideStyle : {};
+  const overrideStyle = {};
+  for (const key in layerPaths){
+    const ov = srcOv[key];
+    if (!ov || typeof ov !== 'object') continue;
+    const els = layerEls[key];
+    overrideStyle[key] = {
+      color: typeof ov.color === 'string' ? ov.color : els.col.value,
+      width: isFiniteNum(ov.width) ? Math.min(6, Math.max(0.1, ov.width)) : +els.wid.value,
+      // A dash slot from a session that had added more of them (DASH_KEYS is
+      // growable — see main.js) may not exist here. scaledDash already reads
+      // an unknown key as solid, but the Override menu's <select> would sit
+      // on a value with no matching option, so normalize it up front.
+      dash: (ov.dash === 'solid' || DASH_KEYS.includes(ov.dash)) ? ov.dash : 'solid',
+    };
+  }
+  return {
+    id: ++blockIdCounter,
+    // Kept verbatim, NOT suffixed the way duplicateBlocks does: a paste is a
+    // restore, and duplicate already covers "make me another one". Pasting
+    // into the document it was copied from therefore gives two rows with the
+    // same name — names aren't a uniqueness key here (see blockIdCounter),
+    // and double-click-to-rename covers it.
+    name: (typeof rec.name === 'string' && rec.name.trim()) ? rec.name : 'Layer',
+    visible: rec.visible !== false,
+    locked: !!rec.locked,
+    x: rec.x, y: rec.y,
+    rotationDeg: rec.rotationDeg,
+    scale: Math.max(MIN_BLOCK_SCALE, rec.scale),
+    freezeOffX: rec.freezeOffX, freezeOffY: rec.freezeOffY, freezeScale: rec.freezeScale,
+    layerPaths, layerVisible,
+    override: !!rec.override, overrideStyle,
+    bboxLocal: { x0: bb.x0, y0: bb.y0, x1: bb.x1, y1: bb.y1 },
+    dom: null,
+  };
+}
+// Empty array = "this isn't ours", for every reason: not text, not JSON, not
+// our format, or nothing in it survived validation. Callers treat all of
+// those identically — do nothing at all, and leave the event alone so a
+// perfectly ordinary text paste still behaves like one.
+function blocksFromClipboardText(text){
+  if (typeof text !== 'string' || !text) return [];
+  let data;
+  try { data = JSON.parse(text); } catch (err) { return []; }
+  if (!data || data.penumbraClipboard !== CLIPBOARD_FORMAT || !Array.isArray(data.blocks)) return [];
+  const out = [];
+  for (const rec of data.blocks){
+    const b = clipboardRecordToBlock(rec);
+    if (b) out.push(b);
+  }
+  return out;
+}
+// Shared by both directions: Layout tab only, never while typing (native
+// copy/paste has to keep working in the name field and the Override menu's
+// inputs), and never mid-drag.
+function clipboardShortcutsActive(){
+  return activeTab === 'layout' && !isTypingTarget() && !interaction;
+}
+document.addEventListener('copy', e => {
+  if (!clipboardShortcutsActive() || !e.clipboardData) return;
+  // A real text selection wins — selecting a label and hitting Ctrl+C should
+  // still copy that text rather than silently copying layers instead.
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed) return;
+  const active = interactiveSelection();
+  if (!active.length) return;   // nothing copyable — let the browser's own copy proceed untouched
+  e.clipboardData.setData('text/plain', blocksToClipboardText(active));
+  e.preventDefault();   // without this the browser's own (empty) copy overwrites what was just set
+  $('statusL').textContent = 'copied ' + blockCountLabel(active);
+});
+document.addEventListener('paste', e => {
+  if (!clipboardShortcutsActive() || !e.clipboardData) return;
+  const pasted = blocksFromClipboardText(e.clipboardData.getData('text/plain'));
+  if (!pasted.length) return;
+  e.preventDefault();
+  // Placed verbatim — same position, rotation, scale and overrides as when
+  // copied, with no offset nudge. Pasting into the source document lands the
+  // copy exactly on top of the original; addBlocks selects it, which is what
+  // makes it immediately draggable (or nudgeable) off.
+  addBlocks(pasted, 'pasted');
+});
 
 /* ================= block list UI ================= */
 /* ================= block list drag-reorder =================

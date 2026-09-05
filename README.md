@@ -295,6 +295,11 @@ several views — or several models — on one sheet.
   that row alone otherwise, and puts every block in the same state as the one you clicked;
   **Duplicate** copies every selected block at once. <kbd>Delete</kbd>/<kbd>Backspace</kbd> on the canvas
   only removes blocks that aren't locked or hidden — use the list's delete button for those.
+- **Copy / paste** blocks with Ctrl/⌘+C and Ctrl/⌘+V. The clipboard carries the whole block — geometry,
+  position, rotation, scale, per-layer visibility and style overrides — so a paste restores it exactly,
+  even if the original has since been moved, restyled or deleted, and you can carry a block between two
+  PENumbra tabs or into a different scene. Locked and hidden blocks aren't copied, and pasting anything
+  that isn't a PENumbra block does nothing.
 - Each block has its own **layer visibility** and optional per-layer **style overrides** (right-click a
   block).
 - **Rotate layers with page** rotates every block when you flip portrait/landscape, as if you'd

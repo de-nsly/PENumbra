@@ -9,7 +9,7 @@
 const $ = id => document.getElementById(id);
 
 // App version (shown in the About dialog footer). Bump on release.
-const APP_VERSION = '0.8.1';
+const APP_VERSION = '0.8.2';
 
 /* ================= layer registry =================
    Order here is the drawing-priority hierarchy (top = highest), used for:
