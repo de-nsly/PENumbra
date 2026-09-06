@@ -47,8 +47,18 @@ let blockIdCounter = 0;
 // entirely separate, untouched single-block path specifically so existing,
 // already-tested single-block behavior can't regress from the new group
 // math sharing a codepath with it).
+// This is the LIST-level selection and holds any block at all, hidden and
+// locked ones included; the canvas acts on the interactive subset of it
+// instead — see the two-tier note above interactiveSelection().
 let selectedBlocks = new Set();
-let pendingCollapseTo = null;         // see the pointerdown handler: clicking an already-selected member of a
+// The block a Shift+click range extends FROM (Windows Explorer's "anchor").
+// Deliberately NOT bookkept when blocks are deleted or the
+// selection is cleared/replaced (marquee, scene import, Delete All) — it's
+// validated at its single read site instead (extendSelectionTo), where a
+// stale anchor simply degrades the gesture to a plain click. That keeps
+// every existing selection mutator below untouched.
+let selectionAnchor = null;
+let pendingCollapseTo = null;       // see the pointerdown handler: clicking an already-selected member of a
                                        // multi-selection defers collapsing to just that one block until pointerup,
                                        // and only if no drag actually happened — otherwise grabbing one member of
                                        // a group to drag the whole group would be impossible.
@@ -388,8 +398,8 @@ function showAddToLayoutMsg(text){
 // existing names (duplicating the same block twice gives two blocks both
 // named "X Copy") — names aren't a uniqueness key (see blockIdCounter/id
 // above), and the existing double-click-to-rename already covers it.
-function duplicateBlock(block){
-  const dup = {
+function cloneBlock(block){
+  return {
     ...block,
     id: ++blockIdCounter,
     name: block.name + ' Copy',
@@ -399,28 +409,73 @@ function duplicateBlock(block){
     bboxLocal: { ...block.bboxLocal },
     dom: null,
   };
-  blocks.push(dup);
-  createBlockDom(dup);
+}
+// "Layer 04" for one, "3 layers" for several — the phrasing every status
+// line about a batch of blocks uses, in one place so they all match.
+function blockCountLabel(list){
+  return list.length === 1 ? list[0].name : list.length + ' layers';
+}
+// The shared tail of every action that brings NEW blocks onto the page —
+// duplicate and paste. Appends them in the given order, so they land as one
+// contiguous run on top of the existing stack with their relative stacking
+// intact, builds each one's persistent DOM, and makes them the new
+// selection ("what you just made is what you're now holding"): both actions
+// can leave a block sitting exactly on top of another, and being selected
+// is what lets it be dragged straight off.
+function addBlocks(newBlocks, verb){
+  if (!newBlocks.length) return [];
+  for (const b of newBlocks){ blocks.push(b); createBlockDom(b); }
   renderBlocksList();
   refreshStatusR();
-  selectBlock(dup);
-  $('statusL').textContent = 'duplicated ' + dup.name;
-  showAddToLayoutMsg(dup.name + ' added to layout');
-  return dup;
+  selectionAnchor = newBlocks[newBlocks.length - 1];
+  setSelection(newBlocks);
+  $('statusL').textContent = verb + ' ' + blockCountLabel(newBlocks);
+  return newBlocks;
+}
+// Duplicates one block or a whole multi-selection in a single action.
+// Sources are taken in blocks[] order rather than selection order so the
+// copies keep their sources' relative stacking (see addBlocks for the rest).
+function duplicateBlocks(list){
+  const wanted = new Set(list);
+  const sources = blocks.filter(b => wanted.has(b));
+  if (!sources.length) return [];
+  const dups = addBlocks(sources.map(cloneBlock), 'duplicated');
+  showAddToLayoutMsg(blockCountLabel(dups) + ' added to layout');
+  return dups;
+}
+// The one delete path — the row's own X button, the Delete/Backspace key,
+// and anything added later all route through here, so the bookkeeping (DOM
+// teardown, context menu, surviving selection, stats, list refresh) can't
+// drift between them. No confirmation, deliberately: this only ever touches
+// blocks explicitly aimed at, unlike Delete All, which does confirm.
+function deleteBlocks(list){
+  const doomed = new Set(list);
+  if (!doomed.size) return;
+  for (const b of doomed){
+    const i = blocks.indexOf(b);
+    if (i >= 0) blocks.splice(i, 1);
+    if (contextMenuBlock === b) closeLayerContextMenu();
+    removeBlockDom(b);
+  }
+  // Whatever's still around stays selected — deleting a row that ISN'T part
+  // of the current selection must leave that selection alone (see
+  // rowActionScope). Membership in blocks[] is the test here, not
+  // isInteractiveBlock: a deleted block is still visible/unlocked, it just
+  // no longer exists.
+  setSelection(blocks.filter(b => selectedBlocks.has(b)));
+  refreshStatusR();
+  renderBlocksList();
 }
 // Shown only once there's something to duplicate at all, disabled unless
-// exactly one block is selected right now — duplicating a whole multi-
-// selection at once is deferred to a later pass (per spec discussion), so
-// for now this stays a single-block action, same as before, just gated on
-// selectedBlocks.size===1 instead of a single selectedBlock reference.
+// at least one block is selected — a multi-selection duplicates as a whole
+// (see duplicateBlocks).
 function syncDuplicateBlockBtn(){
   const btn = $('duplicateBlockBtn');
   btn.style.display = blocks.length ? '' : 'none';
-  btn.disabled = selectedBlocks.size !== 1;
+  btn.disabled = selectedBlocks.size === 0;
 }
 $('duplicateBlockBtn').addEventListener('click', () => {
-  const block = primarySelectedBlock();
-  if (block) duplicateBlock(block);
+  if (selectedBlocks.size) duplicateBlocks([...selectedBlocks]);
 });
 
 /* ================= persistent per-block DOM ================= */
@@ -711,16 +766,51 @@ function rotateGizmoWorldPos(block){
 }
 
 /* ================= selection ================= */
-function primarySelectedBlock(){ return selectedBlocks.size === 1 ? [...selectedBlocks][0] : null; }
-function selectionAnyLocked(){ for (const b of selectedBlocks) if (b.locked) return true; return false; }
-// Union of every selected block's own world-space envelope — the group's
-// own axis-aligned bounding box, freshly recomputed. Used ONLY to seed a
-// NEW selectionFrame when the selected SET itself changes — for drawing
-// the overlay and driving group interactions once a selection exists,
+// The one definition of "can this block be touched ON THE CANVAS" — hidden
+// blocks aren't there to grab, and locking exists precisely to make a block
+// unclickable/undraggable while leaving it drawn. Note what this is NOT: a
+// rule about being SELECTED. See the two-tier note directly below.
+function isInteractiveBlock(b){ return !!b && b.visible && !b.locked; }
+// Selection is TWO TIERS, and the difference is the whole reason the rest
+// of this section reads the way it does:
+//   * selectedBlocks — the LIST-level selection. ANY block can be in it,
+//     hidden and locked ones included, so that a whole batch of them can be
+//     un-hidden/unlocked/deleted in one go from the Layers panel.
+//   * interactiveSelection() — the subset the CANVAS acts on: selected AND
+//     visible AND unlocked. This is what draws the overlay, seeds the
+//     selection frame, hit-tests, and drives every move/rotate/scale/nudge.
+// A hidden or locked block therefore shows as selected in the list while
+// being completely inert on the page: no outline, no handles, never moved
+// by a group drag or the arrow keys. Returned in blocks[] order rather than
+// Set-insertion order, so anything that cares about stacking is stable.
+function interactiveSelection(){
+  return blocks.filter(b => selectedBlocks.has(b) && isInteractiveBlock(b));
+}
+// The interactive subset can change without the SELECTION changing — the
+// eye and lock buttons do exactly that. Reseeding the frame and redrawing
+// the overlay is then all that's needed; the list highlight is untouched
+// because those blocks stay selected.
+function refreshInteractiveSelection(){
+  resetSelectionFrame();
+  updateSelectionOverlay();
+}
+// Platform-correct multi-select modifier: Cmd on macOS, Ctrl everywhere
+// else. Deliberately NOT "ctrlKey || metaKey" — on macOS Ctrl+click is the
+// system secondary-click gesture and also fires `contextmenu`, so accepting
+// Ctrl there would toggle the selection AND open a context menu from one
+// click (the per-block layer menu on the canvas, the browser's own on a
+// list row).
+const IS_MAC = /Mac|iPhone|iPad|iPod/.test(
+  (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent);
+function multiSelectKey(e){ return IS_MAC ? e.metaKey : e.ctrlKey; }
+// Union of every INTERACTIVE selected block's own world-space envelope —
+// the group's own axis-aligned bounding box, freshly recomputed. Used ONLY
+// to seed a NEW selectionFrame when that set changes — for drawing the
+// overlay and driving group interactions once a selection exists,
 // selectionFrame (below) is what's actually used, not this.
 function selectionEnvelope(){
   let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
-  for (const b of selectedBlocks){
+  for (const b of interactiveSelection()){
     const e = worldEnvelope(b);
     x0=Math.min(x0,e.x0); y0=Math.min(y0,e.y0); x1=Math.max(x1,e.x1); y1=Math.max(y1,e.y1);
   }
@@ -741,7 +831,7 @@ function selectionEnvelope(){
 // edge" for the rotate gizmo) is preserved through every rigid transform.
 let selectionFrame = null;
 function resetSelectionFrame(){
-  if (selectedBlocks.size <= 1){ selectionFrame = null; return; }
+  if (interactiveSelection().length <= 1){ selectionFrame = null; return; }
   const env = selectionEnvelope();
   selectionFrame = { corners: [[env.x0,env.y0],[env.x1,env.y0],[env.x1,env.y1],[env.x0,env.y1]] };
 }
@@ -777,20 +867,53 @@ function setSelection(blocksArr){
   syncDuplicateBlockBtn();
 }
 function clearSelection(){ if (selectedBlocks.size) setSelection([]); }
+// Ctrl/Cmd+click: add or remove one block, leaving the rest of the
+// selection alone. Explorer moves the anchor to whatever was just
+// Ctrl+clicked (so a following Shift+click extends from there), including
+// when that click REMOVED the block from the selection.
 function toggleSelection(block){
   const next = new Set(selectedBlocks);
   if (next.has(block)) next.delete(block); else next.add(block);
+  selectionAnchor = block;
   setSelection([...next]);
 }
-// Removes ONE block from the selection if present, leaving the rest of the
-// selection untouched — for when a specific block is hidden or deleted
-// (via its own row button, independent of what else is currently
-// selected), not for anything that should clear the whole selection.
-function deselectBlock(block){
-  if (!selectedBlocks.has(block)) return;
-  const next = new Set(selectedBlocks);
-  next.delete(block);
+// Plain click: this block and nothing else, and it becomes the new anchor.
+function selectOnly(block){
+  selectionAnchor = block;
+  setSelection([block]);
+}
+// Shift+click: every block from the anchor to `block` inclusive, replacing
+// the current selection — or, with Ctrl/Cmd also held, unioned with it.
+// Computed in blocks[] index space even though the list renders reversed
+// (see renderBlocksList): reversing an array preserves contiguity, so
+// min..max here is the same SET as the visually contiguous run. That is
+// specifically unlike the drag-reorder code further down, which does need
+// its own visualOrder copy because there the resulting POSITION matters,
+// not just which blocks are included.
+function extendSelectionTo(block, additive){
+  const fromIdx = selectionAnchor ? blocks.indexOf(selectionAnchor) : -1;
+  const toIdx = blocks.indexOf(block);
+  // No usable anchor (never set, or it was since deleted) — fall back to
+  // treating this as a plain click rather than guessing.
+  if (fromIdx < 0 || toIdx < 0){ selectOnly(block); return; }
+  const lo = Math.min(fromIdx, toIdx), hi = Math.max(fromIdx, toIdx);
+  const next = new Set(additive ? selectedBlocks : []);
+  // Hidden and locked blocks in the span are included like any other — the
+  // list-level selection has no eligibility rule (see interactiveSelection).
+  for (let i = lo; i <= hi; i++) next.add(blocks[i]);
+  // Anchor deliberately left where it is — successive Shift+clicks all
+  // extend from the same origin, growing and shrinking one range rather
+  // than walking it along.
   setSelection([...next]);
+}
+// Which blocks a per-row button (eye / lock / delete) acts on: the whole
+// selection when the clicked row is part of it, otherwise just that one
+// row, with the selection left alone — the same rule Explorer uses for
+// acting on a file inside vs. outside the current selection. Returned in
+// blocks[] order, not Set-insertion order, so callers that care about
+// stacking get a stable, meaningful sequence.
+function rowActionScope(block){
+  return selectedBlocks.has(block) ? blocks.filter(b => selectedBlocks.has(b)) : [block];
 }
 // Back-compat single-block convenience wrapper — block===null clears.
 function selectBlock(block){ setSelection(block ? [block] : []); }
@@ -798,19 +921,22 @@ function updateSelectionOverlay(){
   const ov = $('layoutOverlaySvg');
   ov.innerHTML = '';
   updateRuler();   // this wipe just took the ruler out with it — put it back before any of the early returns below
-  if (selectedBlocks.size === 0) return;
-  if (selectedBlocks.size === 1){
+  // Everything below is driven by the INTERACTIVE subset, never the raw
+  // selection — a hidden or locked block is selected in the list but draws
+  // no chrome at all here (see interactiveSelection).
+  const active = interactiveSelection();
+  if (active.length === 0) return;
+  if (active.length === 1){
     // Exactly the original single-block rendering, unchanged — handles sit
     // at the block's OWN (possibly rotated) corners, not an axis-aligned
     // box, so a single rotated block's selection outline still hugs it
     // exactly rather than showing a needlessly larger axis-aligned box.
-    const block = primarySelectedBlock();
+    const block = active[0];
     const corners = blockCorners(block).map(([wx, wy]) => canvasMmToScreen(wx, wy));
     const rectPath = document.createElementNS(SVG_NS, 'path');
     rectPath.setAttribute('class', 'layoutSelRect');
     rectPath.setAttribute('d', 'M' + corners.map(p => p[0] + ',' + p[1]).join('L') + 'Z');
     ov.appendChild(rectPath);
-    if (block.locked) return;   // outline only — no handles/gizmo for something that can't be transformed
     for (const [cx, cy] of corners){
       const sq = document.createElementNS(SVG_NS, 'rect');
       sq.setAttribute('class', 'layoutSelHandle');
@@ -838,7 +964,7 @@ function updateSelectionOverlay(){
   // selectionFrame box (see its own comment: axis-aligned only until the
   // first group rotate, after which it stays in that rotated orientation)
   // carrying the actual handles/gizmo.
-  for (const b of selectedBlocks){
+  for (const b of active){
     const corners = blockCorners(b).map(([wx, wy]) => canvasMmToScreen(wx, wy));
     const p = document.createElementNS(SVG_NS, 'path');
     p.setAttribute('class', 'layoutSelRectMember');
@@ -851,7 +977,6 @@ function updateSelectionOverlay(){
   rectPath.setAttribute('class', 'layoutSelRect');
   rectPath.setAttribute('d', 'M' + corners.map(p => p[0] + ',' + p[1]).join('L') + 'Z');
   ov.appendChild(rectPath);
-  if (selectionAnyLocked()) return;   // outline(s) only — same rule as a single locked block
   // Handle squares rotate to match the frame's own current edge angle (the
   // corners[0]->corners[1] "top edge," whatever orientation it's actually
   // in right now), same visual language as a single block's own rotated
@@ -878,10 +1003,32 @@ function updateSelectionOverlay(){
   gizmo.setAttribute('r', ROTATE_GIZMO_RADIUS_PX);
   ov.appendChild(gizmo);
 }
+// The eye/lock/delete buttons' labels live here rather than in
+// renderBlocksList's row markup because they depend on the CURRENT
+// selection — each button acts on the whole selection when its own row is
+// part of one (see rowActionScope), and a click that hides or deletes five
+// layers at once should say so before it happens, not after. Owned in one
+// place so the two states can't word the same action differently.
+function applyRowBtnLabels(row, block, selCount){
+  const target = (selCount > 1 && selectedBlocks.has(block)) ? 'all ' + selCount + ' selected layers' : block.name;
+  const label = (sel, text) => {
+    const btn = row.querySelector(sel);
+    if (!btn) return;
+    btn.title = text;
+    btn.setAttribute('aria-label', text);
+  };
+  label('.svEye', 'Toggle visibility — ' + target);
+  label('.svLock', (block.locked ? 'Unlock ' : 'Lock ') + target + ' — prevents move/rotate/scale on the canvas');
+  label('.svDelete', 'Delete ' + target);
+}
 function refreshSelectionHighlight(){
+  const selCount = selectedBlocks.size;
   for (const row of $('blocksList').children){
     const block = blocks.find(b => b.id === +row.dataset.blockId);
     row.classList.toggle('svRowSelected', !!block && selectedBlocks.has(block));
+    // Skips the drag-reorder insertion line, which lives in this same list
+    // but carries no blockId of its own.
+    if (block) applyRowBtnLabels(row, block, selCount);
   }
 }
 
@@ -891,7 +1038,8 @@ function refreshSelectionHighlight(){
    marquee rect (any amount counts) is selected, live, as the rect grows or
    shrinks, using plain axis-aligned envelope overlap — the same box
    worldEnvelope() already gives every other selection/snap computation in
-   this file, not exact rotated-shape intersection. Shift-drag is additive:
+   this file, not exact rotated-shape intersection. Shift- (or Ctrl/Cmd-)
+   drag is additive:
    the live selection becomes preSelection (whatever was selected when the
    drag started) UNION whatever's currently overlapping, so blocks selected
    before the marquee began stay selected even once the marquee moves away
@@ -907,7 +1055,7 @@ function updateMarqueeSelection(interaction, additive){
   const rect = marqueeRectWorld(interaction);
   const next = new Set(additive ? interaction.preSelection : []);
   for (const b of blocks){
-    if (!b.visible || b.locked) continue;
+    if (!isInteractiveBlock(b)) continue;
     if (envelopesOverlap(rect, worldEnvelope(b))) next.add(b);
   }
   setSelection([...next]);
@@ -1172,16 +1320,17 @@ function hideDimensionLabels(){
 }
 
 /* ================= hit testing ================= */
-// Locked blocks are click-through — not selectable, not right-clickable,
-// never picked up here at all, as if they were transparent to interaction
-// (their drawn geometry stays fully visible, just not interactive). Both
-// the canvas click-select path AND the right-click context-menu path route
-// through this same function, so excluding locked blocks here is the one
-// change that covers both.
+// Locked blocks are click-through ON THE CANVAS — not clickable, not
+// right-clickable, never picked up here at all, as if they were transparent
+// to interaction (their drawn geometry stays fully visible, just not
+// interactive). They remain perfectly selectable from the Layers list; it's
+// only the page that ignores them. Both the canvas click-select path AND
+// the right-click context-menu path route through this same function, so
+// excluding locked blocks here is the one change that covers both.
 function hitTestBlockBody(wx, wy){
   for (let i = blocks.length - 1; i >= 0; i--){
     const b = blocks[i];
-    if (!b.visible || b.locked) continue;
+    if (!isInteractiveBlock(b)) continue;
     const [lx, ly] = worldToLocal(b, wx, wy);
     if (lx >= b.bboxLocal.x0 && lx <= b.bboxLocal.x1 && ly >= b.bboxLocal.y0 && ly <= b.bboxLocal.y1){
       return b;
@@ -1190,20 +1339,22 @@ function hitTestBlockBody(wx, wy){
   return null;
 }
 function hitTest(wx, wy){
-  if (selectedBlocks.size === 1){
-    const block = primarySelectedBlock();
-    if (block.visible && !block.locked){
-      const [gx, gy] = rotateGizmoWorldPos(block);
-      const gizmoHitMm = ROTATE_GIZMO_HIT_PX * mmPerScreenPx();
-      if (Math.hypot(wx - gx, wy - gy) <= gizmoHitMm) return { type: 'rotate', block };
-      const corners = blockCorners(block);
-      const handleHitMm = HANDLE_HIT_PX * mmPerScreenPx();
-      for (let i = 0; i < 4; i++){
-        const dist = Math.hypot(wx - corners[i][0], wy - corners[i][1]);
-        if (dist <= handleHitMm) return { type: 'scale', block, cornerIndex: i };
-      }
+  // Chrome is hit-tested against the INTERACTIVE subset, matching exactly
+  // what updateSelectionOverlay drew — a hidden or locked block is selected
+  // in the list but has no handles or gizmo here to grab.
+  const active = interactiveSelection();
+  if (active.length === 1){
+    const block = active[0];
+    const [gx, gy] = rotateGizmoWorldPos(block);
+    const gizmoHitMm = ROTATE_GIZMO_HIT_PX * mmPerScreenPx();
+    if (Math.hypot(wx - gx, wy - gy) <= gizmoHitMm) return { type: 'rotate', block };
+    const corners = blockCorners(block);
+    const handleHitMm = HANDLE_HIT_PX * mmPerScreenPx();
+    for (let i = 0; i < 4; i++){
+      const dist = Math.hypot(wx - corners[i][0], wy - corners[i][1]);
+      if (dist <= handleHitMm) return { type: 'scale', block, cornerIndex: i };
     }
-  } else if (selectedBlocks.size > 1 && !selectionAnyLocked() && [...selectedBlocks].every(b => b.visible)){
+  } else if (active.length > 1){
     const [gx, gy] = groupRotateGizmoWorldPos(selectionFrame);
     const gizmoHitMm = ROTATE_GIZMO_HIT_PX * mmPerScreenPx();
     if (Math.hypot(wx - gx, wy - gy) <= gizmoHitMm) return { type: 'rotateGroup' };
@@ -1296,7 +1447,13 @@ $('paperPane').addEventListener('pointerdown', e => {
 
   if (hit.type === 'move'){
     const block = hit.block;
-    if (e.shiftKey){
+    // Ctrl/Cmd toggles, same as in the list. Shift ALSO toggles here rather
+    // than extending a range: the canvas has no linear order for a range to
+    // run along (that's a list-only notion — see extendSelectionTo), and
+    // Shift already carries several drag-time meanings on this canvas
+    // (axis-lock while moving, 5-degree rotate steps, additive marquee), so
+    // it keeps its existing click meaning here unchanged.
+    if (e.shiftKey || multiSelectKey(e)){
       toggleSelection(block);
     } else if (selectedBlocks.has(block)){
       // Already part of the current selection — don't collapse to just this
@@ -1308,11 +1465,15 @@ $('paperPane').addEventListener('pointerdown', e => {
     } else {
       setSelection([block]);
     }
-    if (selectedBlocks.size && !selectionAnyLocked()){
+    // Only the interactive members come along for the drag — a hidden or
+    // locked block that's also selected in the list stays exactly where it
+    // is, and doesn't contribute to the group's envelope or snapping.
+    const active = interactiveSelection();
+    if (active.length){
       const startEnv = selectionEnvelope();
-      const members = [...selectedBlocks].map(b => ({ block: b, startX: b.x, startY: b.y }));
+      const members = active.map(b => ({ block: b, startX: b.x, startY: b.y }));
       interaction = { mode: 'move', members, startEnv, startWorld: [wx, wy], moved: false,
-        startFrameCorners: selectedBlocks.size > 1 ? selectionFrame.corners.map(c => c.slice()) : null };
+        startFrameCorners: active.length > 1 ? selectionFrame.corners.map(c => c.slice()) : null };
     }
   } else if (hit.type === 'scale'){
     const corners = blockCorners(hit.block);
@@ -1364,21 +1525,22 @@ $('paperPane').addEventListener('pointerdown', e => {
     const anchorWorld = envCorners[anchorIdx];
     const draggedWorld = envCorners[hit.cornerIndex];
     const startDist = Math.max(1e-6, Math.hypot(draggedWorld[0]-anchorWorld[0], draggedWorld[1]-anchorWorld[1]));
-    const members = [...selectedBlocks].map(b => ({ block: b, startX: b.x, startY: b.y, startScale: b.scale }));
-    // Every corner of every selected block, as an offset from the SAME
+    const active = interactiveSelection();
+    const members = active.map(b => ({ block: b, startX: b.x, startY: b.y, startScale: b.scale }));
+    // Every corner of every interactive member, as an offset from the SAME
     // shared group anchor — this is what makes computeScaleSnap solve for
     // one shared k that keeps the whole group rigid (see its own comment).
     const corners = [];
-    for (const b of selectedBlocks) for (const c of blockCorners(b)) corners.push([c[0]-anchorWorld[0], c[1]-anchorWorld[1]]);
+    for (const b of active) for (const c of blockCorners(b)) corners.push([c[0]-anchorWorld[0], c[1]-anchorWorld[1]]);
     const minStartScale = Math.min(...members.map(m => m.startScale));
     interaction = { mode: 'scaleGroup', anchorWorld, startDist, members,
-      corners, minStartScale, excludeSet: new Set(selectedBlocks),
+      corners, minStartScale, excludeSet: new Set(active),
       startFrameCorners: envCorners.map(c => c.slice()) };
   } else if (hit.type === 'rotateGroup'){
     const c = selectionFrame.corners;
     const pivot = [(c[0][0]+c[2][0])/2, (c[0][1]+c[2][1])/2];   // diagonal midpoint — the frame's own center, rotated or not
     const startAngle = Math.atan2(wy - pivot[1], wx - pivot[0]) * 180/Math.PI;
-    const members = [...selectedBlocks].map(b => ({ block: b, startX: b.x, startY: b.y, startRotationDeg: b.rotationDeg }));
+    const members = interactiveSelection().map(b => ({ block: b, startX: b.x, startY: b.y, startRotationDeg: b.rotationDeg }));
     interaction = { mode: 'rotateGroup', pivot, startAngle, members,
       startFrameCorners: c.map(pt => pt.slice()) };
     $('paperPane').style.cursor = 'grabbing';
@@ -1500,7 +1662,7 @@ $('paperPane').addEventListener('pointermove', e => {
       const dragPx = Math.hypot(wx - interaction.startWorld[0], wy - interaction.startWorld[1]) / mmPerScreenPx();
       if (dragPx > 3) interaction.moved = true;
     }
-    if (interaction.moved) updateMarqueeSelection(interaction, e.shiftKey);
+    if (interaction.moved) updateMarqueeSelection(interaction, e.shiftKey || multiSelectKey(e));
   }
   updateSelectionOverlay();
   if (interaction.mode === 'marquee' && interaction.moved) drawMarqueeRect(interaction);
@@ -1523,8 +1685,10 @@ function endInteraction(e){
       // A plain click with no drag — same "shift+click on empty space is a
       // no-op, otherwise clear" rule the old immediate-clear code used at
       // pointerdown, just resolved here now that the decision is deferred
-      // until it's actually known whether a drag happened.
-      if (!(e && e.shiftKey)) clearSelection();
+      // until it's actually known whether a drag happened. Ctrl/Cmd counts
+      // as the same "don't touch the selection" modifier as Shift, matching
+      // the additive-marquee check above.
+      if (!(e && (e.shiftKey || multiSelectKey(e)))) clearSelection();
     }
     updateSelectionOverlay();   // wipe the marquee rect itself — nothing else clears it once dragging stops
   }
@@ -1647,21 +1811,27 @@ $('paperPane').addEventListener('contextmenu', e => {
 document.addEventListener('pointerdown', e => {
   if (contextMenuBlock && !$('layerContextMenu').contains(e.target)) closeLayerContextMenu();
 });
+// Every shortcut below (and both clipboard handlers further down) has to
+// keep out of the way of actual typing: arrows move a text caret, Backspace
+// deletes a character, Ctrl+A/C/V are the native select-all/copy/paste, and
+// this app has several live inputs — the block name field, the Override
+// menu's inline color/width/dash controls — where all of that must keep
+// working normally.
+function isTypingTarget(){
+  const a = document.activeElement;
+  return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable));
+}
 const NUDGE_KEYS = { ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0] };
 document.addEventListener('keydown', e => {
   if (contextMenuBlock && e.key === 'Escape') closeLayerContextMenu();
-  if (NUDGE_KEYS[e.key] && activeTab === 'layout' && selectedBlocks.size && !selectionAnyLocked()){
-    // Arrow keys have native meaning in text inputs (cursor movement) and
-    // number inputs (increment/decrement) — e.g. the block name field or
-    // any of the Override menu's inline color/width/dash controls — so
-    // this only fires when focus isn't inside one of those.
-    const a = document.activeElement;
-    const isTyping = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
-    if (!isTyping){
+  if (NUDGE_KEYS[e.key] && activeTab === 'layout' && interactiveSelection().length){
+    if (!isTypingTarget()){
       e.preventDefault();
       const amount = e.shiftKey ? 5 : 0.5;
       const [dx, dy] = NUDGE_KEYS[e.key];
-      for (const b of selectedBlocks){
+      // Interactive members only — a selected but hidden/locked block is
+      // inert on the canvas, arrow keys included.
+      for (const b of interactiveSelection()){
         b.x += dx * amount;
         b.y += dy * amount;
         updateBlockTransform(b);
@@ -1670,29 +1840,170 @@ document.addEventListener('keydown', e => {
     }
   }
   if ((e.key === 'Delete' || e.key === 'Backspace') && activeTab === 'layout' && selectedBlocks.size){
-    // Same typing guard as the nudge keys above — Backspace/Delete have
-    // native meaning in text inputs (the block name field, Override menu
-    // controls), so this only fires when focus isn't inside one of those.
-    // No confirmation dialog, unlike Delete All — this only ever touches
-    // the blocks already selected, not the whole layer stack, same as
-    // clicking a single row's own delete button.
-    const a = document.activeElement;
-    const isTyping = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
-    if (!isTyping){
+    // Routes through the same deleteBlocks() a row's own X button uses —
+    // see there for why there's no confirmation dialog.
+    // Deletes only the INTERACTIVE members, unlike the list's own delete
+    // buttons, which delete everything selected: a keystroke shouldn't be
+    // able to destroy a layer that was deliberately locked (or hidden, and
+    // so not even on screen to be missed) — protecting it from the canvas
+    // is the entire point of locking it.
+    if (!isTypingTarget()){
       e.preventDefault();
-      for (const b of selectedBlocks){
-        const i = blocks.indexOf(b);
-        if (i >= 0) blocks.splice(i, 1);
-        if (contextMenuBlock === b) closeLayerContextMenu();
-        removeBlockDom(b);
-      }
-      selectBlock(null);
-      refreshStatusR();
-      renderBlocksList();
+      deleteBlocks(interactiveSelection());
+    }
+  }
+  // Ctrl/Cmd+A — select every block, hidden and locked included (the list
+  // selection has no eligibility rule; only the canvas does). Leaves the
+  // anchor alone: it's validated at use anyway, and whatever was last
+  // clicked stays the natural origin for a following Shift+click.
+  if (multiSelectKey(e) && (e.key === 'a' || e.key === 'A') && activeTab === 'layout' && blocks.length){
+    if (!isTypingTarget()){
+      e.preventDefault();
+      setSelection(blocks.slice());
     }
   }
 });
 ['pointerdown','wheel'].forEach(t => $('layerContextMenu').addEventListener(t, e => e.stopPropagation()));
+
+/* ================= clipboard (copy / paste layers) =================
+   Ctrl/Cmd+C copies the interactive part of the selection to the SYSTEM
+   clipboard as JSON; Ctrl/Cmd+V rebuilds those layers from it. The payload
+   is self-contained (it carries the frozen path data itself, not a
+   reference), so a paste restores exactly what was copied even if the
+   source layer has since been moved, restyled or deleted — and a layer can
+   be carried between two PENumbra tabs, or into a different scene.
+
+   WHY THE `copy`/`paste` EVENTS AND NOT navigator.clipboard: the async
+   Clipboard API's readText() doesn't exist for web content in Firefox at
+   all and prompts for a permission in Chrome. The paste event hands over
+   the same text with no permission, no secure-context requirement (so this
+   still works when the page is served from a LAN IP rather than localhost),
+   and no async. Using the copy event for the write side keeps both
+   directions on one mechanism.
+
+   Locked and hidden layers are never copied — this is a canvas feature, and
+   those are exactly the layers the canvas doesn't touch (see
+   interactiveSelection). Nothing here is persisted: the clipboard is the
+   system's, and the .pen scene format is untouched. */
+const CLIPBOARD_FORMAT = 1;   // bumped only if the record shape below stops being readable as-is
+const isFiniteNum = v => typeof v === 'number' && Number.isFinite(v);
+// A clipboard record is the block minus its live `dom` reference — exactly
+// the shape a .pen scene already stores per block (see the blocksOut map in
+// scene-io.js's export path), so there's no second serialization format to
+// keep in step with the first. `id` rides along and is ignored on the way
+// back in, same as .pen import already does.
+function blocksToClipboardText(list){
+  return JSON.stringify({
+    penumbraClipboard: CLIPBOARD_FORMAT,
+    blocks: list.map(({ dom, ...rest }) => rest),
+  });
+}
+// Rebuilds one block from a clipboard record, or returns null if the record
+// can't produce a usable one. Structure is VALIDATED (anything that would
+// leave an undrawable or unclickable block on the page is rejected outright)
+// while the rest is merely coerced — the realistic case to defend against is
+// "the clipboard holds unrelated text", not a hand-crafted payload, and .pen
+// import trusts its own input entirely.
+function clipboardRecordToBlock(rec){
+  if (!rec || typeof rec !== 'object') return null;
+  // Geometry: at least one real path, under a layer key THIS build knows.
+  const src = rec.layerPaths;
+  if (!src || typeof src !== 'object') return null;
+  const layerPaths = {};
+  for (const L of LAYERS){
+    const d = src[L.key];
+    if (typeof d === 'string' && d.trim()) layerPaths[L.key] = d;
+  }
+  if (!Object.keys(layerPaths).length) return null;
+  // Placement — every number the transform math divides or rotates by.
+  const bb = rec.bboxLocal;
+  if (!bb || typeof bb !== 'object') return null;
+  if (![bb.x0, bb.y0, bb.x1, bb.y1].every(isFiniteNum)) return null;
+  if (![rec.x, rec.y, rec.rotationDeg, rec.scale, rec.freezeOffX, rec.freezeOffY, rec.freezeScale].every(isFiniteNum)) return null;
+  if (rec.freezeScale <= 0) return null;   // a divisor in every stroke-width/dash computation (see updateBlockStyle)
+  const layerVisible = {};
+  for (const key in layerPaths) layerVisible[key] = !(rec.layerVisible && rec.layerVisible[key] === false);
+  const srcOv = (rec.overrideStyle && typeof rec.overrideStyle === 'object') ? rec.overrideStyle : {};
+  const overrideStyle = {};
+  for (const key in layerPaths){
+    const ov = srcOv[key];
+    if (!ov || typeof ov !== 'object') continue;
+    const els = layerEls[key];
+    overrideStyle[key] = {
+      color: typeof ov.color === 'string' ? ov.color : els.col.value,
+      width: isFiniteNum(ov.width) ? Math.min(6, Math.max(0.1, ov.width)) : +els.wid.value,
+      // A dash slot from a session that had added more of them (DASH_KEYS is
+      // growable — see main.js) may not exist here. scaledDash already reads
+      // an unknown key as solid, but the Override menu's <select> would sit
+      // on a value with no matching option, so normalize it up front.
+      dash: (ov.dash === 'solid' || DASH_KEYS.includes(ov.dash)) ? ov.dash : 'solid',
+    };
+  }
+  return {
+    id: ++blockIdCounter,
+    // Kept verbatim, NOT suffixed the way duplicateBlocks does: a paste is a
+    // restore, and duplicate already covers "make me another one". Pasting
+    // into the document it was copied from therefore gives two rows with the
+    // same name — names aren't a uniqueness key here (see blockIdCounter),
+    // and double-click-to-rename covers it.
+    name: (typeof rec.name === 'string' && rec.name.trim()) ? rec.name : 'Layer',
+    visible: rec.visible !== false,
+    locked: !!rec.locked,
+    x: rec.x, y: rec.y,
+    rotationDeg: rec.rotationDeg,
+    scale: Math.max(MIN_BLOCK_SCALE, rec.scale),
+    freezeOffX: rec.freezeOffX, freezeOffY: rec.freezeOffY, freezeScale: rec.freezeScale,
+    layerPaths, layerVisible,
+    override: !!rec.override, overrideStyle,
+    bboxLocal: { x0: bb.x0, y0: bb.y0, x1: bb.x1, y1: bb.y1 },
+    dom: null,
+  };
+}
+// Empty array = "this isn't ours", for every reason: not text, not JSON, not
+// our format, or nothing in it survived validation. Callers treat all of
+// those identically — do nothing at all, and leave the event alone so a
+// perfectly ordinary text paste still behaves like one.
+function blocksFromClipboardText(text){
+  if (typeof text !== 'string' || !text) return [];
+  let data;
+  try { data = JSON.parse(text); } catch (err) { return []; }
+  if (!data || data.penumbraClipboard !== CLIPBOARD_FORMAT || !Array.isArray(data.blocks)) return [];
+  const out = [];
+  for (const rec of data.blocks){
+    const b = clipboardRecordToBlock(rec);
+    if (b) out.push(b);
+  }
+  return out;
+}
+// Shared by both directions: Layout tab only, never while typing (native
+// copy/paste has to keep working in the name field and the Override menu's
+// inputs), and never mid-drag.
+function clipboardShortcutsActive(){
+  return activeTab === 'layout' && !isTypingTarget() && !interaction;
+}
+document.addEventListener('copy', e => {
+  if (!clipboardShortcutsActive() || !e.clipboardData) return;
+  // A real text selection wins — selecting a label and hitting Ctrl+C should
+  // still copy that text rather than silently copying layers instead.
+  const sel = window.getSelection();
+  if (sel && !sel.isCollapsed) return;
+  const active = interactiveSelection();
+  if (!active.length) return;   // nothing copyable — let the browser's own copy proceed untouched
+  e.clipboardData.setData('text/plain', blocksToClipboardText(active));
+  e.preventDefault();   // without this the browser's own (empty) copy overwrites what was just set
+  $('statusL').textContent = 'copied ' + blockCountLabel(active);
+});
+document.addEventListener('paste', e => {
+  if (!clipboardShortcutsActive() || !e.clipboardData) return;
+  const pasted = blocksFromClipboardText(e.clipboardData.getData('text/plain'));
+  if (!pasted.length) return;
+  e.preventDefault();
+  // Placed verbatim — same position, rotation, scale and overrides as when
+  // copied, with no offset nudge. Pasting into the source document lands the
+  // copy exactly on top of the original; addBlocks selects it, which is what
+  // makes it immediately draggable (or nudgeable) off.
+  addBlocks(pasted, 'pasted');
+});
 
 /* ================= block list UI ================= */
 /* ================= block list drag-reorder =================
@@ -1813,15 +2124,18 @@ function renderBlocksList(){
         '</svg>' +
       '</span>' +
       '<span class="svName">' + block.name + '</span>' +
-      '<button type="button" class="svBtn svEye" title="Toggle visibility" aria-label="Toggle ' + block.name + ' visibility">' +
+      // title/aria-label for these three are set by applyRowBtnLabels (via
+      // the refreshSelectionHighlight call at the end of this function), not
+      // here — they depend on the current selection, which can change
+      // without the list being rebuilt.
+      '<button type="button" class="svBtn svEye">' +
         (block.visible ? '&#9673;' : '&#9675;') + '</button>' +
-      '<button type="button" class="svBtn svLock' + (block.locked ? ' svLockActive' : '') + '" title="' + (block.locked ? 'Unlock' : 'Lock') +
-        ' — prevents move/rotate/scale on the canvas" aria-label="' + (block.locked ? 'Unlock' : 'Lock') + ' ' + block.name + '">' +
+      '<button type="button" class="svBtn svLock' + (block.locked ? ' svLockActive' : '') + '">' +
         (block.locked
           ? '<svg viewBox="0 0 134 134" width="13" height="13" fill="currentColor"><g transform="matrix(1.091075,0,0,1.179063,-6.236398,-17.854001)"><path d="M96.925,58.247C103.393,59.463 108.267,64.76 108.267,71.102L108.267,99.68C108.267,106.92 101.915,112.797 94.092,112.797L39.543,112.797C31.72,112.797 25.368,106.92 25.368,99.68L25.368,71.102C25.368,64.76 30.242,59.463 36.71,58.247L36.71,47.771C36.71,38.278 45.038,30.572 55.296,30.572L78.339,30.572C88.597,30.572 96.925,38.278 96.925,47.771L96.925,58.247ZM50.839,57.984L82.796,57.984L82.796,47.771C82.796,45.494 80.799,43.646 78.339,43.646L55.296,43.646C52.836,43.646 50.839,45.494 50.839,47.771L50.839,57.984Z"/></g></svg>'
           : '<svg viewBox="0 0 134 134" width="13" height="13" fill="currentColor"><g transform="matrix(1.091075,0,0,1.179063,-6.236398,-11.738486)"><path d="M96.925,58.247C103.393,59.463 108.267,64.76 108.267,71.102L108.267,99.68C108.267,106.92 101.915,112.797 94.092,112.797L39.543,112.797C31.72,112.797 25.368,106.92 25.368,99.68L25.368,71.102C25.368,63.862 31.72,57.984 39.543,57.984L82.796,57.984L82.796,37.397C82.796,35.121 80.799,33.273 78.339,33.273L55.296,33.273C52.836,33.273 50.839,35.121 50.839,37.397L50.839,49.019L36.71,49.019L36.71,37.397C36.71,27.905 45.038,20.198 55.296,20.198L78.339,20.198C88.597,20.198 96.925,27.905 96.925,37.397L96.925,58.247Z"/></g></svg>'
         ) + '</button>' +
-      '<button type="button" class="svBtn svDelete" title="Delete layer" aria-label="Delete ' + block.name + '">&#10005;</button>';
+      '<button type="button" class="svBtn svDelete">&#10005;</button>';
     row.querySelector('.svDragHandle').addEventListener('pointerdown', e => startBlockDrag(e, block, row));
     // Shift+click is also the browser's native "extend text selection"
     // gesture — without this, shift-selecting rows in quick succession
@@ -1831,46 +2145,60 @@ function renderBlocksList(){
     // click handler below already excludes, so button presses and the
     // drag handle keep their own normal behavior.
     row.addEventListener('mousedown', e => {
-      if (e.shiftKey && !e.target.closest('button') && !e.target.closest('.svDragHandle')) e.preventDefault();
+      if ((e.shiftKey || multiSelectKey(e)) && !e.target.closest('button') && !e.target.closest('.svDragHandle')) e.preventDefault();
     });
     row.addEventListener('click', e => {
       if (e.target.closest('button') || e.target.closest('.svDragHandle')) return;   // Eye/Lock/Delete/drag clicks bubble here too — don't also select
-      if (block.locked) return;   // never selectable, same rule as the canvas — see hitTestBlockBody
-      // Same shift-click-toggles / plain-click-replaces rule as the canvas
-      // (see the pointerdown handler there) — deliberately NOT the deferred
-      // collapse-on-drag refinement, since a list row click can't "drag the
-      // whole group" the way grabbing a canvas block can.
-      if (e.shiftKey) toggleSelection(block); else setSelection([block]);
+      // Every row is selectable here, hidden and locked ones included —
+      // that's how a batch of them can be un-hidden/unlocked/deleted in one
+      // action. They just stay inert on the canvas (see interactiveSelection).
+      // Windows Explorer's rules, in its own precedence order: Shift extends
+      // a range from the anchor (unioned with the existing selection when
+      // Ctrl/Cmd is also held), Ctrl/Cmd alone toggles one row, a plain
+      // click replaces. Deliberately NOT the canvas's deferred collapse-on-
+      // drag refinement, since a list row click can't "drag the whole group"
+      // the way grabbing a canvas block can.
+      if (e.shiftKey) extendSelectionTo(block, multiSelectKey(e));
+      else if (multiSelectKey(e)) toggleSelection(block);
+      else selectOnly(block);
     });
     makeNameEditable(row.querySelector('.svName'), () => block.name, newName => {
       block.name = newName;
       renderBlocksList();
     });
+    // All three row buttons act on the whole selection when this row is part
+    // of it, and on this row alone otherwise (see rowActionScope) — the
+    // button's own title/aria-label says which, refreshed on every selection
+    // change by applyRowBtnLabels.
     row.querySelector('.svEye').addEventListener('click', () => {
-      block.visible = !block.visible;
-      if (!block.visible) deselectBlock(block);
-      updateBlockTransform(block);
+      // The clicked row's OWN new state becomes the whole scope's state, no
+      // matter what each block was before — one click leaves a mixed
+      // selection uniform, rather than flipping each block independently and
+      // just re-scrambling it.
+      const visible = !block.visible;
+      for (const b of rowActionScope(block)){
+        b.visible = visible;
+        updateBlockTransform(b);
+      }
+      // The selection itself is untouched — only which of its members are
+      // now canvas-interactive changed, so the frame/overlay get reseeded.
+      refreshInteractiveSelection();
       refreshStatusR();
       renderBlocksList();
     });
     row.querySelector('.svLock').addEventListener('click', () => {
-      block.locked = !block.locked;
-      // Locked blocks are never selectable at all — deselect immediately
-      // rather than leave a now-locked block lingering in the selection.
-      if (block.locked) deselectBlock(block); else if (selectedBlocks.has(block)) updateSelectionOverlay();
+      const locked = !block.locked;
+      for (const b of rowActionScope(block)) b.locked = locked;
+      refreshInteractiveSelection();   // same as the eye button — see there
       renderBlocksList();
     });
-    row.querySelector('.svDelete').addEventListener('click', () => {
-      const i = blocks.indexOf(block);
-      if (i >= 0) blocks.splice(i, 1);
-      deselectBlock(block);
-      if (contextMenuBlock === block) closeLayerContextMenu();
-      removeBlockDom(block);
-      refreshStatusR();
-      renderBlocksList();
-    });
+    row.querySelector('.svDelete').addEventListener('click', () => deleteBlocks(rowActionScope(block)));
     list.appendChild(row);
   }
+  // Owns the row buttons' selection-dependent title/aria-label (see
+  // applyRowBtnLabels) — the freshly built rows above carry none of their
+  // own, so this pass is what gives them one.
+  refreshSelectionHighlight();
 }
 renderBlocksList();   // sets the panel's initial hidden/shown state — no other call site runs unconditionally at load
 
