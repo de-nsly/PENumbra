@@ -282,7 +282,8 @@ several views — or several models — on one sheet.
 - **Add to layout** (from the Live preview float) drops the current generation onto the layout page as
   a *block*.
 - **Move / scale / rotate** blocks directly on the page; hold Shift while dragging to constrain to one
-  axis, or while rotating to snap to 5°.
+  axis, or while rotating to snap to 5°. Hold **Alt** while dragging to leave the originals in place and
+  drag copies instead, Illustrator-style.
 - Blocks **snap** to the margins, page centre and guide grid.
 - **Select** several blocks at once, Windows Explorer style: Ctrl/⌘+click adds or removes one, Shift+click
   in the Layers list selects everything between the last-clicked block and this one, Ctrl/⌘+A selects all,
