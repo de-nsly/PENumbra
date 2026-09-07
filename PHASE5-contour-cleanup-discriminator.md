@@ -1,165 +1,125 @@
-# Phase 5 — a surface-distance discriminator for Contour cleanup (Step 4)
+# Phase 5 — Contour cleanup's surface-distance test
 
-Spec. Not yet implemented.
+Implemented. This document is a record of what shipped and what was tried, not a spec.
 
-**Scope: Step 4's depth-similarity test only.** This is *not* aimed at the
-axis-aligned orthographic view problem — see `PHASE4-contour-aligned-views.md`,
-where Step 4 was measured and excluded (disabling it entirely moves that case from
-63 to 65 paths). Do not conflate the two.
+The original spec proposed replacing Contour cleanup's per-model threshold with an
+automatic geometric discriminator. That did not work. What shipped instead is a
+second per-model control alongside the first. The reasoning is kept here because
+three plausible metrics were measured and rejected, and re-deriving those dead ends
+would cost more than reading this.
+
+**Scope: Step 4's own drop test only.** Not related to the axis-aligned orthographic
+view problem — see `PHASE4-contour-aligned-views.md`, where Step 4 was measured and
+excluded. Do not conflate the two.
 
 ---
 
-## 1. The problem
+## 1. What ships
 
 Step 4 (`buildContourDrops`, §6.5 in `js/worker/solver.js`) decides, per cut interval
-on a Contour segment, whether an outward backdrop belonging to the **same shell** is:
+on a Contour segment, whether an outward backdrop belonging to the **same shell** is a
+triangulation artifact (drop it) or a genuine fold where the shape passes close in
+front of itself (keep it).
 
-- the same local surface reappearing — a triangulation/coincidence **artifact**, drop it; or
-- a genuine **fold**, where the shape passes close in front of itself — keep it.
-
-It resolves this on one signal: the world-space depth gap between the sample point and
-the backdrop, compared against `M.radius * CONTOUR_DEPTH_SIMILAR_FRAC_WORLD`.
-
-That single signal does not separate the two populations across models. Measured:
-
-| model | usable range for `contourCleanup` |
-|---|---|
-| most test models (torus knot, pipe, …) | 0.022 – 0.050 |
-| faceted 3D text | **≤ 0.0225** |
-
-A ~2% overlap window is a coincidence, not a constant — a fifth model breaks it. The
-value currently ships as a user-facing control ("Contour cleanup", Lines section,
-`contourCleanup`, default 0.022) precisely because no single value was defensible.
-
-## 2. Why depth alone cannot separate them
-
-Both populations are, by construction, *depth-similar* — that is the only reason they
-reach this test. An artifact and a real fold can present the same depth gap; what
-differs is whether the two surfaces are the **same part of the mesh**.
-
-- **Artifact**: the backdrop face is topologically adjacent — the neighbouring triangle
-  across a diagonal, one or two steps away across the surface.
-- **Real fold**: the backdrop is far away across the surface — a letterform's bowl
-  backed by its own stem is a walk around the entire glyph — even though it is close
-  in space.
-
-## 3. The proposed discriminator
-
-Measure **distance along the surface** between the edge's own face and the backdrop
-face, and compare it to the **straight-line distance** between the two points.
+Two tests, composed — a stretch is dropped only if **both** agree:
 
 ```
-ratio = surfaceDistance / straightLineDistance
+drop  ⟺  depth-similar  AND  within N hops across the surface
 ```
 
-- `ratio ≈ 1` → the two points are neighbours on the surface → same local surface → artifact.
-- `ratio >> 1` → close in space but far across the surface → genuine fold → keep.
+| control | where | range | default | feeds |
+|---|---|---|---|---|
+| **Contour cleanup** | Lines, under the Contour layer rows | 0 – 0.06 | 0.022 | `CONTOUR_DEPTH_SIMILAR_FRAC_WORLD` — world depth gap as a fraction of `M.radius` |
+| **Max surface hops** | Lines, directly below it | 1 – 20 | 3 | `hopLimit` — face-adjacency steps from the edge's own faces to the backdrop face |
 
-Two possible metrics:
+The hop test is `makeHopProbe` in the same function: a bounded N-ring flood over a
+face→face adjacency map, early-returning the moment the backdrop face appears. It is
+a **veto only** — it can turn a drop into a keep, never the reverse — and it runs only
+on candidates the depth test already wants to drop, so a keep never pays for it. A
+triangle mesh's N-ring is about 3N² faces, a dozen or so at the default, which is why
+this is affordable where a per-candidate search inside `occlude()` would not be.
 
-- **Hop count** in the dual (face-adjacency) graph. Simplest, but tessellation-dependent:
-  a denser mesh needs a larger hop limit for the same real distance, so the limit becomes
-  a tuned constant of its own.
-- **Accumulated surface length** (centroid-to-centroid, or a bounded Dijkstra with edge
-  lengths). **Preferred.** The ratio form is free of both model scale and tessellation
-  density, which is the entire property the current threshold lacks.
+Its input is `M.faceAdjStart` / `M.faceAdjList` (`js/worker/mesh.js`): CSR
+face-adjacency, derived in one O(ne) pass from `et0`/`et1` at load, taking only edges
+with two faces so boundary and non-manifold edges correctly read as "no path". Pure
+topology, invariant under both camera and the Rotate-model panel, so it is built once
+per model and never per generate.
 
-**Compose, don't replace.** Keep the depth test and use this as a veto:
+**Both controls are per-model and that is deliberate.** Across the test set the useful
+values were roughly 0.020–0.030 for cleanup and 1–7 for hops, in different
+combinations per scene. Every scene reached an acceptable result; no single pair
+served all of them.
 
-```
-drop  ⟺  depth-similar  AND  topologically near
-```
+## 2. What was tried and rejected
 
-This lets the depth threshold sit at the loose end of the observed range (~0.05), with
-the surface test killing the false positives that currently force it down to 0.0225.
+The spec's premise was that an artifact's backdrop is topologically *near* (the
+neighbouring triangle across a diagonal) while a real fold's backdrop is topologically
+*far* (a walk around the whole glyph) even when close in space — and that some
+normalization of that distance would be model-independent. Three candidates were
+measured against `counts.dbgStep4Detail`, on a ~20k-triangle model and on faceted 3D
+text, with every same-shell decision recorded, drops and keeps alike.
 
-## 4. Where it goes
+**`surfLen / straight` — the spec's own preferred metric. Rejected: it inverts.**
+Drops sat at 2.16 median against keeps at 1.82 on one model, 29.8 against 2.29 on the
+other. `straight` is small for drops *by construction* — depth-similarity is the only
+reason they reach the test — so dividing by it cancels the very signal being measured.
 
-- `js/worker/solver.js`, `buildContourDrops` (§6.5), inside the `for (let k…)` cut loop.
-  The two inputs are already in hand at that point: `csFaceA[seg]` / `csFaceB[seg]` are
-  the edge's own faces, and `pickBackdropFaceWithDepth` returns `{ f, iz }` where `f`
-  is the backdrop **face id**.
-- The existing same-shell gate (`COMP[back.f] !== shell → keep`) stays and runs first;
-  the discriminator only ever applies within one shell, so cross-shell cases never
-  reach it and surface distance is always finite.
+**Hop count. Rejected: no separation.** Drop median 24 hops against keep median 62,
+with the interquartile boxes overlapping across [46, 79], on the text model. The cause
+is worse than the density-dependence the spec anticipated: a fan or strip
+triangulation puts two *spatially adjacent* triangles an arbitrary number of hops
+apart, so the metric varies within a single model, and faceted letterforms are full of
+both.
 
-## 5. Data structure required
+**`surfLen / M.radius`. Rejected: separates cleanly, but the boundary does not
+transfer.** On the 20k model the drop and keep [p10, p90] boxes were disjoint —
+[0.018, 0.064] against [0.085, 0.423], 9× between medians — which is the only clean
+result in the whole exercise. On the text model both populations sat beyond 0.2 R.
+`0.2 R` is a different number of triangles on each model, so the threshold that worked
+on one was meaningless on the other.
 
-`M` (see `js/worker/mesh.js`) currently has **edge → faces** (`et0`/`et1`) but **no
-face → neighbouring faces** mapping. One is needed.
+The pattern across all three: hops normalizes by triangle *count*, which varies within
+a model; `surfLen/R` normalizes by model *size*, which varies between models; the
+ratio normalizes by a quantity that is small by construction. Nothing available was
+invariant in both directions at once.
 
-- Derive in a single O(ne) pass: every edge with `et0 >= 0 && et1 >= 0` makes those two
-  faces neighbours. Store CSR — `faceAdjStart` (nt+1) plus `faceAdjList` (≤ 2·ne).
-- Build it **once at load, in `mesh.js`, cached on `M`** — it is camera-invariant
-  topology. Rebuilding per `generate()` would be the one way to make this expensive.
-- Use a **stamped visited array** (one `Int32Array(nt)` plus a monotonic counter,
-  compared rather than cleared) to avoid per-search allocation.
+Note that the hop test **ships anyway**, despite failing as an automatic
+discriminator. Failing to separate the depth test's own labels is not the same as
+being useless: those labels were never ground truth, and with the limit exposed as a
+control the two tests together reach results neither reaches alone.
 
-## 6. Performance
+## 3. Diagnostics
 
-This is affordable, and for a structural reason worth preserving in the implementation.
-
-- Measured drop counts per generate on the affected models: **24 and 32**. The
-  discriminator only needs to run on candidate drops — decisions where the depth test
-  already said "artifact". At that volume even an uncapped search is free.
-- The search is **self-limiting**: the radius is `ratioLimit × d`, where `d` is the
-  straight-line gap, and every decision reaching this stage has already passed the
-  depth-similarity filter — so `d` is small by construction. The more artifact-like the
-  candidate, the smaller the search.
-- Early-exit as soon as the backdrop face is reached, and keep a hard visit cap as a
-  backstop so a pathological mesh cannot surprise you.
-
-Contrast with `occlude()`, where a per-candidate search would *not* be affordable — that
-is a different problem (Phase 4) with different constraints.
-
-## 7. Do this as measurement first
-
-The same code is ~90% of the real gate, so running it observe-only is not a detour.
-
-Add the computed `ratio` (and hop count) as columns on the existing per-decision
-diagnostic, `counts.dbgStep4Detail`, which already records every same-shell decision —
-drops and keeps alike — with `gapWorld`, `thresh`, and the `ratio` each one missed or
-cleared the depth threshold by. Change no behaviour on the first pass.
-
-Then load the 3D text and one model that wants 0.05, and check whether drops and keeps
-separate in the new column. Expect orders of magnitude of separation (adjacent-triangle
-vs walk-around-the-glyph), against the ~2% window the depth threshold gives. If they do
-not separate, the premise is wrong and the gate should not be built.
-
-That reading also **calibrates the limit** directly, instead of guessing one.
-
-## 8. Risks and open questions
-
-- **Thin fins / plates viewed near edge-on.** Front and back surfaces are depth-similar
-  *and* only a few steps apart across the rim, so they would be classified artifact.
-  Believed not to reach the test — such an edge samples open background and exits at
-  `back.f < 0` — but this is the case to verify explicitly.
-- **Boundary and non-manifold edges** break face adjacency. The BFS must treat a missing
-  neighbour as "no path", not as distance zero.
-- **Interaction with the existing user control.** If the discriminator works, the
-  `contourCleanup` slider's useful range should widen considerably. Decide deliberately
-  whether it stays exposed (it is legitimate as an aesthetic control) or reverts to a
-  constant.
-
-## 9. Verification
-
-- Test models: **3D text** (needs ≤ 0.0225 today), **torus knot**, **pipe**, and the
-  tiled-house model.
-- The goal is a single default that satisfies all four with real margin — that is the
-  criterion the current constant fails.
-- Golden matrix: `.pen` + expected-SVG pairs, several layer combinations, at least one
-  near-tangent camera. Note this change **will** alter output, so goldens must be re-cut
-  and diffed deliberately, not expected to match.
-
-## 10. Existing controls and diagnostics
-
-Already in the code, usable as-is:
-
-- `contourCleanup` — Lines section slider, 0–0.06, default 0.022, feeds
-  `CONTOUR_DEPTH_SIMILAR_FRAC_WORLD`.
-- `debugNoStep4` — Debug panel kill-switch. Skips Step 4 entirely (distinct from setting
-  the slider to 0, which still runs every decision).
 - `counts.dbgStep4` — per-segment drop intervals.
-- `counts.dbgStep4Detail` — per-decision records, drops and keeps, with `gapWorld`,
-  `thresh`, `ratio`, `drop`, and screen `x`/`y`. Capped at 4000
-  (`counts.dbgStep4Truncated` flags it).
+- `counts.dbgStep4Detail` — one record per same-shell decision, drops and keeps alike,
+  capped at 4000 (`counts.dbgStep4Truncated` flags it). Columns: `gapWorld`, `thresh`,
+  `ratio` (`gapWorld/thresh`, so < 1 dropped on depth, ≥ 1 survived it), `drop`, and
+  `vetoHops`. Read the last two together — a stretch survives if *either* test says
+  keep:
+  ```js
+  const d = lastGen.counts.dbgStep4Detail;
+  console.table(d.filter(r => r.vetoHops === -1))   // restored by the hop veto
+  console.table(d.filter(r => r.vetoHops >= 1))     // near enough that the drop stood
+  console.table(d.filter(r => r.drop).sort((a,b) => b.ratio - a.ratio).slice(0,40))
+  ```
+- `counts.dbgStep4Vetoed` — how many stretches the veto restored this generate. Unlike
+  the `dbgStep4Detail` rows this is a true total, never truncated.
+- `counts.dbgStep4Frac`, `counts.dbgStep4HopLimit` — the two settings in force.
+
+The `debugNoStep4` kill-switch was removed along with this work; to isolate whether
+Step 4 is what removed a given line, set Contour cleanup to 0 and Max surface hops to
+1, which is very nearly the same thing.
+
+## 4. If this is revisited
+
+The measurement scaffolding (a Dijkstra over the face adjacency with centroid hop
+costs, real endpoints recovered via `worldOnFace`, and `hops`/`surfLen`/`surfRatio`
+columns) was removed once it had answered its question; it is in the git history if
+the numbers above need re-deriving. Two things worth knowing before rebuilding it:
+
+- Run it on **candidate drops only**. Keeps outnumber drops ~9:1 and have larger gaps,
+  so a search radius proportional to the gap costs the most on the population that
+  needs it least. That mistake cost roughly 10× the generate time twice, in two
+  different disguises.
+- A per-decision search is affordable here (a few hundred candidates) and is *not*
+  affordable inside `occlude()`. Don't carry the approach across.

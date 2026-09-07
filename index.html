@@ -586,64 +586,34 @@
         <button type="button" class="btn" id="debugSoIvOverlayBtn" style="width:100%;margin-bottom:8px">Export Silhouette vs Individual (pre-dedup)</button>
         <label class="chk" style="margin:10px 0 0"><input type="checkbox" id="debugShowPathEndpoints">
           Mark path endpoints (Silhouette / Individual / Contour)</label>
-        <p style="font-size:11px;color:var(--muted);margin:14px 0 10px;line-height:1.4">
-          Disables Contour cleanup (Lines section) entirely, rather than just
-          lowering it &mdash; the discriminator for whether that test is what
-          removed a given line at all: if a contour is still missing with this
-          on, the cause is upstream (occlusion / chain walk), not the cleanup
-          test. Its per-decision numbers, drops and keeps alike with the ratio
-          each one missed or cleared the threshold by, land in
-          <code>lastGen.counts.dbgStep4Detail</code>.
-        </p>
-        <label class="chk" style="margin:0 0 10px"><input type="checkbox" id="debugNoStep4" data-regen>
-          Disable Contour cleanup (backdrop drop test)</label>
-        <p style="font-size:11px;color:var(--muted);margin:14px 0 10px;line-height:1.4">
-          Composes a second test onto Contour cleanup instead of replacing it:
-          a stretch of line is dropped only if its backdrop is BOTH
-          depth-similar AND within this many triangle steps across the
-          surface. The idea is that a triangulation artifact's backdrop is a
-          neighbouring triangle, while a shape passing close in front of
-          itself is a long walk around the surface even though it is near in
-          space &mdash; so anything beyond the limit is a real fold and is
-          kept. Raises the number of Contour lines; the count restored lands in
-          <code>lastGen.counts.dbgStep4Vetoed</code>.
-        </p>
-        <label class="chk" style="margin:0 0 10px"><input type="checkbox" id="debugHopVeto" data-regen>
-          Keep contour drops beyond N surface hops</label>
-        <div class="ctl">
-          <label for="debugHopLimit" title="How many triangle steps across the surface still counts as 'the same local surface'. Only has an effect while the checkbox above is ticked.">Max surface hops</label>
-          <input type="range" id="debugHopLimit" min="1" max="20" step="1" value="3" data-regen>
-          <span class="val" id="debugHopLimitVal">3</span>
-        </div>
-        <p style="font-size:11px;color:var(--muted);margin:14px 0 10px;line-height:1.4">
-          Fills the surface-distance columns on
-          <code>lastGen.counts.dbgStep4Detail</code>
-          (<code>hops</code>, <code>straight</code>, <code>surfLen</code>,
-          <code>surfRatio</code>, <code>capped</code>/<code>cappedBy</code>) by
-          running a bounded shortest-path search across the mesh for every
-          same-shell decision. Pure diagnostic &mdash; it changes no line on the
-          page &mdash; and it is the expensive one: it runs on keeps as well as
-          drops, so leave it off unless you are reading those numbers.
-        </p>
-        <label class="chk" style="margin:0 0 10px"><input type="checkbox" id="debugSurfaceMeasure" data-regen>
-          Measure contour surface distance (slow)</label>
       </div>
     </div>
     <div id="penTab">
     <h2>Lines</h2>
     <div class="sec">
+      <div class="rowsHead"><span></span><span>pen</span><span>layer</span><span></span><span>w [mm]</span><span>dash</span></div>
+      <!-- The edge layer rows are built from LAYERS (main.js) into these three
+           hosts rather than one, so each group's own settings can sit directly
+           under the rows they affect. LAYERS' own order still decides what
+           lands where — see each entry's host field. -->
+      <div id="edgeLayersSil"></div>
+      <div id="edgeLayersContour"></div>
+      <div class="ctl">
+        <label for="contourCleanup" title="How much depth difference still counts as the same surface when Contour decides whether a stretch of line is a real fold or a triangulation artifact. Measured as a fraction of the model's size, so it doesn't change as you zoom or orbit. Lower = keeps more line, including some doubled-up artifact along dense curves; higher = removes more artifact, but eventually starts eating real folds where a shape passes close in front of itself. Default 0.0220.">Cleanup</label>
+        <input type="range" id="contourCleanup" min="0" max="0.06" step="0.0005" value="0.022" data-regen>
+        <span class="val" id="contourCleanupVal">0.0220</span>
+      </div>
+      <div class="ctl">
+        <label for="contourMaxHops" title="The second half of Contour cleanup: how far across the surface a backdrop can be and still count as the same local surface. A triangulation artifact's backdrop is a neighbouring triangle; a shape passing close in front of itself is a long walk around the surface even though it looks near. A stretch of line is only removed if it is BOTH depth-similar (above) and within this many triangle steps. Lower = keeps more line; higher = removes more. Default 3.">Max hops</label>
+        <input type="range" id="contourMaxHops" min="1" max="20" step="1" value="3" data-regen>
+        <span class="val" id="contourMaxHopsVal">3</span>
+      </div>
+      <div id="edgeLayersCrease"></div>
       <div class="ctl">
         <label for="creaseDeg">Crease angle</label>
         <input type="range" id="creaseDeg" min="0" max="120" step="0.1" value="1" data-regen>
         <span class="val" id="creaseDegVal">1.0°</span>
       </div>
-      <div class="ctl">
-        <label for="contourCleanup" title="How much depth difference still counts as the same surface when Contour decides whether a stretch of line is a real fold or a triangulation artifact. Measured as a fraction of the model's size, so it doesn't change as you zoom or orbit. Lower = keeps more line, including some doubled-up artifact along dense curves; higher = removes more artifact, but eventually starts eating real folds where a shape passes close in front of itself. Default 0.0220.">Contour cleanup</label>
-        <input type="range" id="contourCleanup" min="0" max="0.06" step="0.0005" value="0.022" data-regen>
-        <span class="val" id="contourCleanupVal">0.0220</span>
-      </div>
-      <div class="rowsHead"><span></span><span>pen</span><span>layer</span><span></span><span>w [mm]</span><span>dash</span></div>
-      <div id="edgeLayers"></div>
       <div id="hatchLayers"></div>
       <label class="chk" style="margin-top:8px">
             <input type="checkbox" id="texGizmoShow" checked>

@@ -57,7 +57,7 @@ function refreshValLabel(el){
   if (el.id === 'contourCleanup'){ v.textContent = (+el.value).toFixed(4); return; }
   // A bare count of triangle steps — no unit, and integral, so the generic
   // fallback's degree sign would be actively wrong.
-  if (el.id === 'debugHopLimit'){ v.textContent = el.value; return; }
+  if (el.id === 'contourMaxHops'){ v.textContent = el.value; return; }
   if (el.id === 'layoutOverlayOpacity'){ v.textContent = el.value + '%'; return; }
   const bid = baseTexId(el.id);
   const isTexAngle = bid === 'texAngleMin' || bid === 'texAngleMax';
@@ -90,7 +90,7 @@ function valUnitFor(id){
   if (id === 'camShiftX' || id === 'camShiftY') return '';
   if (id === 'dedupOffMult' || id === 'dedupGapMult') return '×';
   if (id === 'contourCleanup') return '';
-  if (id === 'debugHopLimit') return '';
+  if (id === 'contourMaxHops') return '';
   if (id === 'layoutOverlayOpacity') return '%';
   const bid = baseTexId(id);
   if (bid.startsWith('tex')) return (bid === 'texWobbleVariation' || bid === 'texCirclesThr') ? '' : (bid === 'texAngleMin' || bid === 'texAngleMax') ? '°' : 'mm';
@@ -245,15 +245,12 @@ function gatherSettings(){
     // literal default for whenever contourCleanup isn't a finite number, so a
     // scene saved before this control existed still solves identically.
     contourCleanup: +$('contourCleanup').value,
-    debugNoStep4: $('debugNoStep4').checked,
-    // Debug panel — the surface-distance discriminator composed onto that
-    // same test (veto a depth-similar drop whose backdrop is more than
-    // debugHopLimit triangle steps away), and separately the diagnostic that
-    // only measures surface distance without acting on it. Both default off,
-    // so an untouched scene solves exactly as before.
-    debugHopVeto: $('debugHopVeto').checked,
-    debugHopLimit: +$('debugHopLimit').value,
-    debugSurfaceMeasure: $('debugSurfaceMeasure').checked,
+    // The surface-distance half of the same decision, composed onto the depth
+    // test rather than replacing it: a depth-similar stretch is only dropped
+    // if its backdrop is also within this many triangle steps across the
+    // surface. Both halves are per-model aesthetic controls — see the block
+    // comment on CONTOUR_DEPTH_SIMILAR_FRAC_WORLD in the worker.
+    contourMaxHops: +$('contourMaxHops').value,
     smoothShading: $('smoothShading').checked,
     creaseDeg: +$('creaseDeg').value,
     light: lightVec(),

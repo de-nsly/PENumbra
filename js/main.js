@@ -23,15 +23,22 @@ const APP_VERSION = '0.8.3';
    toggling any one can change which ink survives in every layer BELOW it in
    the hierarchy, so a pure display-only toggle (the old solve:false shortcut
    for the hidden sub-layers) would leave lower layers stale until the next
-   unrelated regenerate. */
+   unrelated regenerate.
+   host → which container in index.html the row is appended to. The edge
+   layers are split across three of them (rather than one #edgeLayers) purely
+   so each group's own solve settings can sit in the panel directly under the
+   rows they affect: Contour cleanup + Max surface hops between the Contour
+   rows and the Crease rows, Crease angle after the Crease rows. Order within
+   this list still decides row order inside each host, and the hosts appear in
+   index.html in the same order as here. */
 const LAYERS = [
-  { key:'so', name:'Silhouette',           on:false, solve:true,  color:'#000000', width:1.2, dash:'solid', host:'edgeLayers'  },
-  { key:'iv', name:'Silhouette individual', on:false, solve:true, color:'#14171c', width:0.8, dash:'solid', host:'edgeLayers'  },
-  { key:'ih', name:'· hidden',             on:false, solve:true,  color:'#9aa0a8', width:0.2, dash:'D1',    host:'edgeLayers'  },
-  { key:'sv', name:'Contour',              on:true,  solve:true,  color:'#14171c', width:0.8, dash:'solid', host:'edgeLayers'  },
-  { key:'sh', name:'· hidden',             on:false, solve:true,  color:'#9aa0a8', width:0.2, dash:'D1',    host:'edgeLayers'  },
-  { key:'cv', name:'Crease',               on:true,  solve:true,  color:'#14171c', width:0.35, dash:'solid', host:'edgeLayers'  },
-  { key:'ch', name:'· hidden',             on:false, solve:true,  color:'#9aa0a8', width:0.2, dash:'D1',    host:'edgeLayers'  },
+  { key:'so', name:'Silhouette',           on:false, solve:true,  color:'#000000', width:1.2, dash:'solid', host:'edgeLayersSil'  },
+  { key:'iv', name:'Silhouette individual', on:false, solve:true, color:'#14171c', width:0.8, dash:'solid', host:'edgeLayersSil'  },
+  { key:'ih', name:'· hidden',             on:false, solve:true,  color:'#9aa0a8', width:0.2, dash:'D1',    host:'edgeLayersSil'  },
+  { key:'sv', name:'Contour',              on:true,  solve:true,  color:'#14171c', width:0.8, dash:'solid', host:'edgeLayersContour' },
+  { key:'sh', name:'· hidden',             on:false, solve:true,  color:'#9aa0a8', width:0.2, dash:'D1',    host:'edgeLayersContour' },
+  { key:'cv', name:'Crease',               on:true,  solve:true,  color:'#14171c', width:0.35, dash:'solid', host:'edgeLayersCrease' },
+  { key:'ch', name:'· hidden',             on:false, solve:true,  color:'#9aa0a8', width:0.2, dash:'D1',    host:'edgeLayersCrease' },
   { key:'h1', name:'Hatch',               on:true,  solve:true,  color:'#2c5aa8', width:0.2, dash:'solid', host:'hatchLayers' },
   { key:'h2', name:'Crosshatch',          on:true,  solve:true,  color:'#2c5aa8', width:0.2, dash:'solid', host:'hatchLayers' },
   { key:'h3', name:'Deep shadow',         on:false, solve:true,  color:'#2c5aa8', width:0.2, dash:'solid', host:'hatchLayers' },
