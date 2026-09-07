@@ -1027,10 +1027,17 @@ function applyRowBtnLabels(row, block, selCount){
   label('.svLock', (block.locked ? 'Unlock ' : 'Lock ') + target + ' — prevents move/rotate/scale on the canvas');
   label('.svDelete', 'Delete ' + target);
 }
+// The block a list row stands for, or undefined for anything in the list
+// that isn't a row (the drag-reorder insertion line carries no blockId).
+// id, not name or position: names are user-editable and duplicable, and rows
+// get rebuilt from scratch constantly — see blockIdCounter.
+function blockForRow(row){
+  return blocks.find(b => b.id === +row.dataset.blockId);
+}
 function refreshSelectionHighlight(){
   const selCount = selectedBlocks.size;
   for (const row of $('blocksList').children){
-    const block = blocks.find(b => b.id === +row.dataset.blockId);
+    const block = blockForRow(row);
     row.classList.toggle('svRowSelected', !!block && selectedBlocks.has(block));
     // Skips the drag-reorder insertion line, which lives in this same list
     // but carries no blockId of its own.
@@ -2113,28 +2120,44 @@ document.addEventListener('paste', e => {
    rotate/scale on the canvas itself already work in this file) rather
    than native HTML5 drag-and-drop, which isn't used anywhere else here
    and tends to fight custom insertion-line feedback like this.
-   The dragged row stays in place, dimmed, while an insertion line shows
-   where it would land among the OTHER rows; the actual reorder only
-   happens on drop. Reordering is done entirely in "visual" (displayed)
-   order — a reversed copy of blocks[] — then reversed back once at the
-   end, rather than computing array-index arithmetic under the reversal,
-   which is easy to get off-by-one on. */
+   The dragged rows stay in place, dimmed, while an insertion line shows
+   where they would land among the rows NOT being dragged; the actual
+   reorder only happens on drop. Reordering is done entirely in "visual"
+   (displayed) order — a reversed copy of blocks[] — then reversed back once
+   at the end, rather than computing array-index arithmetic under the
+   reversal, which is easy to get off-by-one on.
+   Grabbing the handle of a row that's part of the selection drags the WHOLE
+   selection, and one outside it drags just that row — the same rowActionScope
+   rule the eye/lock/delete buttons follow. Dragged blocks land as one
+   contiguous run in their existing relative order, so a group reorder can
+   move a stack around without also shuffling it internally. */
 let blockDragState = null;
 function startBlockDrag(e, block, row){
   e.preventDefault();
   e.stopPropagation();
+  const moving = new Set(rowActionScope(block));
   const rows = [...$('blocksList').children].filter(el => el.classList.contains('savedView'));
+  // Split once, here: rows never change during a drag (nothing re-renders
+  // the list until the drop), so both halves stay valid for the whole
+  // gesture — the moving rows to dim, and the rest as the only legal
+  // insertion points.
+  const movingRows = rows.filter(r => moving.has(blockForRow(r)));
+  const others = rows.filter(r => !moving.has(blockForRow(r)));
   const insertLine = document.createElement('div');
   insertLine.className = 'svInsertLine';
-  row.classList.add('svDragging');
-  blockDragState = { block, row, rows, insertLine, target: null };
+  for (const r of movingRows) r.classList.add('svDragging');
+  // target stays null until the pointer actually moves, and null legitimately
+  // means "drop past the last row" — so `moved` is what separates that from a
+  // plain click on the grip, which must not reorder anything at all. Without
+  // it a click alone reads as a drop at the bottom.
+  blockDragState = { moving, movingRows, others, insertLine, target: null, moved: false };
   e.target.setPointerCapture(e.pointerId);
 }
 document.addEventListener('pointermove', e => {
   if (!blockDragState) return;
-  const { row, rows, insertLine } = blockDragState;
+  const { others, insertLine } = blockDragState;
   const list = $('blocksList');
-  const others = rows.filter(r => r !== row);
+  blockDragState.moved = true;
   let target = null;
   for (const r of others){
     const rect = r.getBoundingClientRect();
@@ -2166,20 +2189,23 @@ document.addEventListener('pointermove', e => {
 });
 document.addEventListener('pointerup', () => {
   if (!blockDragState) return;
-  const { block, row, rows, insertLine, target } = blockDragState;
+  const { moving, movingRows, others, insertLine, target, moved } = blockDragState;
   insertLine.remove();
-  row.classList.remove('svDragging');
+  for (const r of movingRows) r.classList.remove('svDragging');
   blockDragState = null;
+  if (!moved) return;   // grip clicked but never dragged — see startBlockDrag
 
-  const others = rows.filter(r => r !== row);
+  // insertAt indexes into `others` — the rows that AREN'T moving — and
+  // `rest` below is that exact same sequence as blocks, so the index carries
+  // over directly with no adjustment for how many blocks were lifted out.
   const insertAt = target ? others.indexOf(target) : others.length;
 
   const visualOrder = blocks.slice().reverse();
-  const fromIdx = visualOrder.indexOf(block);
-  if (fromIdx === -1) return;   // block was deleted mid-drag — nothing to do
-  visualOrder.splice(fromIdx, 1);
-  visualOrder.splice(insertAt, 0, block);
-  blocks = visualOrder.slice().reverse();
+  const lifted = visualOrder.filter(b => moving.has(b));
+  if (!lifted.length) return;   // every dragged block was deleted mid-drag — nothing to do
+  const rest = visualOrder.filter(b => !moving.has(b));
+  rest.splice(insertAt, 0, ...lifted);   // `lifted` keeps its own visual order, so the group stays internally stacked as it was
+  blocks = rest.slice().reverse();
 
   // Sync actual SVG paint order to match — re-appending an already-present
   // child moves it to the end, so appending every block in the new array
