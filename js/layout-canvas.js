@@ -1811,21 +1811,57 @@ $('paperPane').addEventListener('contextmenu', e => {
 document.addEventListener('pointerdown', e => {
   if (contextMenuBlock && !$('layerContextMenu').contains(e.target)) closeLayerContextMenu();
 });
-// Every shortcut below (and both clipboard handlers further down) has to
-// keep out of the way of actual typing: arrows move a text caret, Backspace
-// deletes a character, Ctrl+A/C/V are the native select-all/copy/paste, and
-// this app has several live inputs — the block name field, the Override
-// menu's inline color/width/dash controls — where all of that must keep
-// working normally.
-function isTypingTarget(){
+/* Every shortcut below (and both clipboard handlers further down) has to
+   keep out of the way of whatever the focused element does with that same
+   key — but "focused element" is TWO different questions, and answering
+   both with one predicate is what made Ctrl+C/V/A dead after so much as
+   clicking a slider:
+     * isTextEntryTarget — somewhere text can be typed or selected (the
+       block name field, the Override menu's number boxes). Native Ctrl+A/
+       C/V and Backspace belong to it.
+     * isFormControlTarget — the above PLUS sliders, checkboxes, colour
+       swatches and <select>, where an ARROW KEY adjusts the control. Wider
+       on purpose: a focused slider must keep its arrow keys, but it holds
+       no text, so Ctrl+C there is still ours to handle.
+   `input` with no type attribute defaults to text, hence the || 'text'. */
+const TEXT_ENTRY_INPUT_TYPES = new Set(['text','search','url','tel','email','password','number']);
+function isTextEntryTarget(){
   const a = document.activeElement;
-  return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable));
+  if (!a) return false;
+  if (a.isContentEditable || a.tagName === 'TEXTAREA') return true;
+  return a.tagName === 'INPUT' && TEXT_ENTRY_INPUT_TYPES.has((a.type || 'text').toLowerCase());
 }
+function isFormControlTarget(){
+  const a = document.activeElement;
+  if (!a) return false;
+  return !!a.isContentEditable || a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT';
+}
+/* Restores the blur the browser would have done on its own. Clicking a
+   slider or checkbox in a settings panel leaves it focused; this file's own
+   pointerdown handlers then call preventDefault (to stop text selection and
+   native drags), and preventDefault on pointerdown ALSO suppresses the
+   focus change the browser would otherwise make. So the control stays
+   focused indefinitely — through clicking the canvas, dragging a block,
+   selecting rows — and every shortcut above keeps deferring to a control
+   the user stopped touching several clicks ago: arrows adjust the slider
+   instead of nudging blocks, Ctrl+A selects the whole page's text.
+   Capture phase, so it runs before any of those preventDefaults. Nothing is
+   focused in its place: activeElement falls back to <body>, exactly the
+   state a plain click on non-focusable chrome would have produced anyway. */
+document.addEventListener('pointerdown', e => {
+  if (!isFormControlTarget()) return;   // nothing focused that could swallow a shortcut
+  // Clicking a control (or the still-open rename field) must let it keep or
+  // take focus — this only fires for clicks on everything else.
+  if (e.target.closest && e.target.closest('input, select, textarea, [contenteditable="true"]')) return;
+  document.activeElement.blur();
+}, { capture: true });
 const NUDGE_KEYS = { ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0] };
 document.addEventListener('keydown', e => {
   if (contextMenuBlock && e.key === 'Escape') closeLayerContextMenu();
   if (NUDGE_KEYS[e.key] && activeTab === 'layout' && interactiveSelection().length){
-    if (!isTypingTarget()){
+    // The WIDE guard — an arrow key belongs to any focused form control,
+    // a slider or <select> included, not just a text field.
+    if (!isFormControlTarget()){
       e.preventDefault();
       const amount = e.shiftKey ? 5 : 0.5;
       const [dx, dy] = NUDGE_KEYS[e.key];
@@ -1847,7 +1883,7 @@ document.addEventListener('keydown', e => {
     // able to destroy a layer that was deliberately locked (or hidden, and
     // so not even on screen to be missed) — protecting it from the canvas
     // is the entire point of locking it.
-    if (!isTypingTarget()){
+    if (!isTextEntryTarget()){
       e.preventDefault();
       deleteBlocks(interactiveSelection());
     }
@@ -1857,7 +1893,7 @@ document.addEventListener('keydown', e => {
   // anchor alone: it's validated at use anyway, and whatever was last
   // clicked stays the natural origin for a following Shift+click.
   if (multiSelectKey(e) && (e.key === 'a' || e.key === 'A') && activeTab === 'layout' && blocks.length){
-    if (!isTypingTarget()){
+    if (!isTextEntryTarget()){
       e.preventDefault();
       setSelection(blocks.slice());
     }
@@ -1977,9 +2013,10 @@ function blocksFromClipboardText(text){
 }
 // Shared by both directions: Layout tab only, never while typing (native
 // copy/paste has to keep working in the name field and the Override menu's
-// inputs), and never mid-drag.
+// number boxes — but a focused slider or checkbox holds no text, so it does
+// NOT block these), and never mid-drag.
 function clipboardShortcutsActive(){
-  return activeTab === 'layout' && !isTypingTarget() && !interaction;
+  return activeTab === 'layout' && !isTextEntryTarget() && !interaction;
 }
 document.addEventListener('copy', e => {
   if (!clipboardShortcutsActive() || !e.clipboardData) return;
