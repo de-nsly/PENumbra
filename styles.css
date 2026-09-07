@@ -3,6 +3,7 @@
   --slider:#485363;--text:#e9e7df; --muted:#8b93a1; --accent:#58b8d6; --accent-ink:#0c1a20;
   --warn:#e0764f; --paper:#fbf9f3; --bed:#475161; --paper-edge:#5b6472;
   --mono:'IBM Plex Mono',ui-monospace,monospace; --disp:'Space Grotesk',system-ui,sans-serif;
+  --blocks-float-w:270px;  /* Layout's Layers panel — also what the 2D reset button steps aside by (see #reset2dBtn) */
   --guide-color:#4a4436;   /* overwritten in JS (updateGuideColor) to keep contrast with the current page color */
   --sel-color:#58b8d6;     /* overwritten in JS (updateSelColor) to the ink color once the page color gets too close to --accent */
 
@@ -186,6 +187,25 @@ section,aside{position:relative;min-width:0;min-height:0}
   background:color-mix(in srgb, var(--bg) 62%, transparent);
   -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
 .cornerBtn svg{display:block}
+/* The Layers panel runs down to the pane's bottom edge, right where this
+   button would otherwise sit — so while that panel is on screen the button
+   steps out to just past its right edge, bottom-aligned with it.
+   body.blocksPanelOpen is set by syncBlocksFloatVisibility (layout-canvas.js)
+   and so tracks the panel exactly: on the Preview tab, or in Layout before
+   there are any layers, the button stays in its normal corner.
+   Written as a transform off that normal corner rather than as its own
+   left/bottom, so the two states can be ANIMATED between at the same 250ms
+   ease the panel stack slides with. X: 12px stack inset + panel width + a
+   10px gap, less the button's own 10px home inset — the gap and the inset
+   cancel, leaving inset + width. Y: -4px lifts it from bottom:8px to the
+   panel's own bottom:12px, so their bottom edges line up.
+   H slides the stack off screen without clearing that body class, hence the
+   sibling rule: the button rides back to its corner alongside the panel
+   instead of teleporting. Two ids there beats one above, so it wins wherever
+   it sits in the file. */
+#reset2dBtn{transition:transform .25s ease}
+body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-float-w)),-4px)}
+#paperPanelStack.panelsHidden ~ #reset2dBtn{transform:none}
 
 /* Floating panels — frosted glass over a viewport (pure backdrop-filter, no
    dependency; degrades to a plain translucent panel where unsupported).
@@ -194,7 +214,37 @@ section,aside{position:relative;min-width:0;min-height:0}
    shortcut (panel-controls.js) slides both offscreen via .panelsHidden. */
 #camPanelStack,#paperPanelStack{position:absolute;top:12px;left:12px;z-index:2;
   display:flex;flex-direction:column;gap:10px;width:224px;transition:transform .25s ease}
-#camPanelStack.panelsHidden,#paperPanelStack.panelsHidden{transform:translateX(-100%)}
+/* -100% is a stack's OWN width, but both stacks sit 12px in from their pane's
+   left edge, so that alone parked each one's right edge exactly on the inset
+   and left a 12px sliver showing. The extra -12px takes them fully off. This
+   is one shared rule rather than two because #paperPanelStack widens itself
+   to the Layers panel below — without that its -100% would be the 224px the
+   floats above use, and the wider Layers panel would still hang on screen. */
+#camPanelStack.panelsHidden,#paperPanelStack.panelsHidden{transform:translateX(calc(-100% - 12px))}
+/* The 2D stack is pinned to the pane's bottom edge as well as its top, so the
+   Layers panel at the end of it has a real height to grow into — the same
+   12px gap top, left and bottom (offsets on an absolutely positioned element
+   are measured from the padding box, so #paperPane's own 10px padding doesn't
+   skew any of the three). The stack's box now covers the pane's full height,
+   which would swallow canvas drags down the left edge, hence pointer-events:
+   none here and auto on the panels themselves — a click still lands on a
+   panel and still matches closest('#paperPanelStack') (LAYOUT_UI_CHROME_
+   SELECTOR in layout-canvas.js), it just no longer lands on the empty space
+   between and below them.
+   Nothing in the stack may flex except the Layers panel: the floats above it
+   hold buttons and sliders that must keep their natural size, so the Layers
+   panel is the one that both takes all the leftover height (flex-grow, so
+   it's full height from the very first layer rather than creeping down as
+   layers are added) and gives it back when the stack runs out (flex-shrink,
+   with its list scrolling once that happens). */
+/* Widened past the 224px its upper floats use, to match the Layers panel that
+   overhangs them — so the stack's box actually bounds its content, which is
+   what lets the shared .panelsHidden translate above work for both stacks.
+   Purely a bounding change: every float in here sets its own width. */
+#paperPanelStack{width:var(--blocks-float-w);bottom:12px;pointer-events:none}
+#paperPanelStack > *{pointer-events:auto;flex:none}
+#paperPanelStack > #blocksFloat{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+#blocksFloat .svHeaderRow{flex:none}
 /* frosted glass — shared by every floating panel and the layer context menu;
    backdrop-filter degrades to a plain translucent panel where unsupported. */
 #camFloat,#rotateFloat,#viewsFloat,#genExportFloat,#addToLayoutFloat,#blocksFloat,#layerContextMenu{
@@ -203,7 +253,7 @@ section,aside{position:relative;min-width:0;min-height:0}
   -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
 #camFloat,#rotateFloat,#viewsFloat,#genExportFloat,#addToLayoutFloat{width:224px;
   background:color-mix(in srgb, var(--panel3), transparent 20%)}
-#blocksFloat{width:270px;background:color-mix(in srgb, var(--bg) 58%, transparent)}
+#blocksFloat{width:var(--blocks-float-w);background:color-mix(in srgb, var(--bg) 58%, transparent)}
 /* camFloat/rotateFloat labels are all 1-3 characters (FOV, X, Y, Z) — a much
    narrower label column than a settings-style row needs (room for something
    like "Orientation") hands the freed width straight to the slider track,
@@ -247,7 +297,10 @@ section,aside{position:relative;min-width:0;min-height:0}
 .svHeaderRow .vpLabel{margin:0}
 .svHeaderBtns{display:flex;align-items:center;gap:6px}
 #viewsList,#blocksList{max-height:500px;overflow-y:auto;margin-top:10px}
-#blocksList{position:relative}
+/* Unlike Saved Views' fixed cap, the Layout list grows with its content until
+   it reaches the bottom of the pane, then scrolls — the height it's allowed
+   comes from the stack above (see #paperPanelStack), so no cap here. */
+#blocksList{position:relative;max-height:none;flex:1 1 auto;min-height:0}
 /* Empty state (Saved Views only — the Layout Layers panel hides itself
    entirely when empty instead, see syncBlocksFloatVisibility in
    layout-canvas.js): center the header row (name + button) within whatever

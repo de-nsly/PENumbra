@@ -74,6 +74,12 @@ const ROTATE_GIZMO_RADIUS_PX = 4.8;   // visual radius of the gizmo circle
 const ROTATE_GIZMO_HIT_PX = 10;       // hit radius for the gizmo — larger than visual, for easier grabbing
 const DIM_LABEL_OFFSET_PX = 16;       // distance from the right/bottom edge midpoint to its dimension label
 const SNAP_THRESHOLD_PX = 8;
+// How far the pointer must travel before a gesture counts as a real drag
+// rather than a click — in screen px, so it feels the same at every zoom.
+// Shared by the marquee (below which a click still just selects/deselects)
+// and by Alt+drag-to-duplicate (below which an Alt+click leaves no stray
+// copy behind).
+const DRAG_THRESHOLD_PX = 3;
 const MIN_BLOCK_SCALE = 0.05;
 
 // Layout-tab equivalent of computePaperLayout() — there's no solver
@@ -1385,7 +1391,7 @@ function cornerCursorForRotation(cornerIndex, rotationDeg){
   return useNwse ? 'nwse-resize' : 'nesw-resize';
 }
 let lastCursor = null;
-function updateHoverCursor(wx, wy){
+function updateHoverCursor(wx, wy, altKey){
   const hit = hitTest(wx, wy);
   const cursor = !hit ? 'default'
     : hit.type === 'scale' ? cornerCursorForRotation(hit.cornerIndex, hit.block.rotationDeg)
@@ -1395,6 +1401,11 @@ function updateHoverCursor(wx, wy){
     : hit.type === 'scaleGroup' ? cornerCursorForRotation(hit.cornerIndex, selectionFrameAngleDeg(selectionFrame))
     : hit.type === 'rotate' || hit.type === 'rotateGroup' ? 'grab'
     : hit.block.locked ? 'default'
+    // Only refreshed on pointer movement, so it appears as soon as the
+    // pointer stirs with Alt down rather than the instant Alt is pressed —
+    // enough of an affordance without a pair of keydown/keyup listeners
+    // whose only job would be repainting a cursor.
+    : altKey ? 'copy'
     : 'move';
   // Reassigning style.cursor on every pointermove even when the value hasn't
   // changed is a known trigger for cursor-rendering glitches in some
@@ -1473,6 +1484,9 @@ $('paperPane').addEventListener('pointerdown', e => {
       const startEnv = selectionEnvelope();
       const members = active.map(b => ({ block: b, startX: b.x, startY: b.y }));
       interaction = { mode: 'move', members, startEnv, startWorld: [wx, wy], moved: false,
+        // Alt held at pointerdown arms duplicate-instead-of-move; it can
+        // also be pressed later, mid-drag (see startAltDuplicate).
+        altDuplicate: e.altKey, altDone: false,
         startFrameCorners: active.length > 1 ? selectionFrame.corners.map(c => c.slice()) : null };
     }
   } else if (hit.type === 'scale'){
@@ -1547,6 +1561,37 @@ $('paperPane').addEventListener('pointerdown', e => {
     lastCursor = 'grabbing';
   }
 }, { capture: true });
+/* Alt+drag duplicates instead of moving (Illustrator's gesture): the
+   ORIGINALS stay exactly where they were and the copies become what's being
+   dragged. Called from the move handler below, at most once per gesture.
+   Two things make it correct wherever in the drag it fires:
+     * the originals are put back at their start positions first — the move
+       handler applies its delta on every frame, including the sub-threshold
+       ones before this fires, so by now they've already drifted a few px;
+     * the copies are cloned AFTER that restore, so they start at the
+       sources' original positions, and the delta the handler applies right
+       after (still measured from the gesture's own startWorld) carries them
+       the full distance to the cursor in one frame.
+   Press Alt before you start and the copies track the pointer from the very
+   first pixel; press it halfway through and the originals snap back while
+   the copies keep the drag — both correct, neither special-cased. */
+function startAltDuplicate(interaction){
+  interaction.altDone = true;
+  for (const m of interaction.members){
+    m.block.x = m.startX; m.block.y = m.startY;
+    updateBlockTransform(m.block);
+  }
+  const copies = addBlocks(interaction.members.map(m => cloneBlock(m.block)), 'duplicated');
+  interaction.members = copies.map(b => ({ block: b, startX: b.x, startY: b.y }));
+  // startEnv still holds: the copies sit exactly where the sources did.
+  // The group frame does NOT — addBlocks reselected around the copies, so
+  // selectionFrame is a different object (and freshly axis-aligned), and
+  // the drag's snapshot of it has to be retaken or the box would jump.
+  interaction.startFrameCorners = (copies.length > 1 && selectionFrame)
+    ? selectionFrame.corners.map(c => c.slice()) : null;
+  $('paperPane').style.cursor = 'copy';
+  lastCursor = 'copy';
+}
 $('paperPane').addEventListener('pointermove', e => {
   if (activeTab !== 'layout') return;
   const [wx, wy] = screenToCanvasMm(e.clientX, e.clientY);
@@ -1555,12 +1600,19 @@ $('paperPane').addEventListener('pointermove', e => {
       if (lastCursor !== null){ $('paperPane').style.cursor = ''; lastCursor = null; }
       return;
     }
-    updateHoverCursor(wx, wy);
+    updateHoverCursor(wx, wy, e.altKey);
     return;
   }
   if (interaction.mode === 'move'){
     let dx = wx - interaction.startWorld[0], dy = wy - interaction.startWorld[1];
     if (Math.hypot(dx, dy) > 1e-6) interaction.moved = true;
+    // Gated on a real screen-px drag, not on `moved` above (which trips on
+    // any sub-pixel jitter) — an Alt+click that never actually drags must
+    // leave no stray copy sitting on top of the original.
+    if ((interaction.altDuplicate || e.altKey) && !interaction.altDone &&
+        Math.hypot(dx, dy) / mmPerScreenPx() > DRAG_THRESHOLD_PX){
+      startAltDuplicate(interaction);
+    }
     if (e.shiftKey){
       // Constrain to whichever axis has the larger total drag delta from
       // the start — re-evaluated every frame (not locked to whichever was
@@ -1660,7 +1712,7 @@ $('paperPane').addEventListener('pointermove', e => {
       // plain click rather than a drag, same idea as every other
       // interaction mode's own .moved flag.
       const dragPx = Math.hypot(wx - interaction.startWorld[0], wy - interaction.startWorld[1]) / mmPerScreenPx();
-      if (dragPx > 3) interaction.moved = true;
+      if (dragPx > DRAG_THRESHOLD_PX) interaction.moved = true;
     }
     if (interaction.moved) updateMarqueeSelection(interaction, e.shiftKey || multiSelectKey(e));
   }
@@ -1871,6 +1923,16 @@ document.addEventListener('keydown', e => {
         b.x += dx * amount;
         b.y += dy * amount;
         updateBlockTransform(b);
+      }
+      // The group box is persistent state, NOT recomputed from the blocks on
+      // every draw (see selectionFrame's own comment) — so it has to be
+      // translated by the same delta here, exactly as a move drag, a group
+      // rotate/scale and an orientation flip already do. Without this the
+      // box and its handles sit still while the blocks walk out from under
+      // them. A single selected block was never affected: its overlay is
+      // drawn straight from its own live corners, with no frame involved.
+      if (selectionFrame){
+        selectionFrame.corners = selectionFrame.corners.map(([x, y]) => [x + dx * amount, y + dy * amount]);
       }
       updateSelectionOverlay();
     }
@@ -2134,7 +2196,12 @@ document.addEventListener('pointerup', () => {
 // panel (list, Duplicate/Delete All buttons, everything) is hidden outright
 // once the last block is removed, rather than left on screen empty.
 function syncBlocksFloatVisibility(){
-  $('blocksFloat').style.display = (activeTab === 'layout' && blocks.length > 0) ? '' : 'none';
+  const show = activeTab === 'layout' && blocks.length > 0;
+  $('blocksFloat').style.display = show ? '' : 'none';
+  // Drives the 2D reset button out from under the panel — see #reset2dBtn in
+  // styles.css. A class rather than a style so the two positions stay
+  // described in one place, in CSS.
+  document.body.classList.toggle('blocksPanelOpen', show);
 }
 function renderBlocksList(){
   const list = $('blocksList');
