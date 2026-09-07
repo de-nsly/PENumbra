@@ -50,7 +50,13 @@ for (const L of LAYERS){
   // the user for control of the field while they're still entering a value
   wid.addEventListener('change', () => { wid.value = fmtWidth(+wid.value); });
   dash.addEventListener('change', () => { restyle(); refreshStatusR(); });
-  chk.addEventListener('change', () => { L.solve ? markStale() : applyLayerStyle(L.key); });
+  chk.addEventListener('change', () => {
+    L.solve ? markStale() : applyLayerStyle(L.key);
+    // Fades the Lines-section sliders that belong to a layer group once that
+    // group draws nothing (panel-controls.js, which loads after this file —
+    // fine, since this only runs on a click, long after both are loaded).
+    if (typeof syncLineLayerUI === 'function') syncLineLayerUI();
+  });
   applyLayerStyle(L.key);
 }
 

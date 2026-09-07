@@ -598,18 +598,18 @@
            lands where — see each entry's host field. -->
       <div id="edgeLayersSil"></div>
       <div id="edgeLayersContour"></div>
-      <div class="ctl">
+      <div class="ctl" id="contourCleanupCtl">
         <label for="contourCleanup" title="How much depth difference still counts as the same surface when Contour decides whether a stretch of line is a real fold or a triangulation artifact. Measured as a fraction of the model's size, so it doesn't change as you zoom or orbit. Lower = keeps more line, including some doubled-up artifact along dense curves; higher = removes more artifact, but eventually starts eating real folds where a shape passes close in front of itself. Default 0.0220.">Cleanup</label>
         <input type="range" id="contourCleanup" min="0" max="0.06" step="0.0005" value="0.022" data-regen>
         <span class="val" id="contourCleanupVal">0.0220</span>
       </div>
-      <div class="ctl">
+      <div class="ctl" id="contourMaxHopsCtl">
         <label for="contourMaxHops" title="The second half of Contour cleanup: how far across the surface a backdrop can be and still count as the same local surface. A triangulation artifact's backdrop is a neighbouring triangle; a shape passing close in front of itself is a long walk around the surface even though it looks near. A stretch of line is only removed if it is BOTH depth-similar (above) and within this many triangle steps. Lower = keeps more line; higher = removes more. Default 3.">Max hops</label>
         <input type="range" id="contourMaxHops" min="1" max="20" step="1" value="3" data-regen>
         <span class="val" id="contourMaxHopsVal">3</span>
       </div>
       <div id="edgeLayersCrease"></div>
-      <div class="ctl">
+      <div class="ctl" id="creaseDegCtl">
         <label for="creaseDeg">Crease angle</label>
         <input type="range" id="creaseDeg" min="0" max="120" step="0.1" value="1" data-regen>
         <span class="val" id="creaseDegVal">1.0°</span>

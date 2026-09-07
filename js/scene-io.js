@@ -374,6 +374,10 @@ function applyImportedScene(data){
     els.dash.value = st.dash;
     applyLayerStyle(key);
   }
+  // Layer checkboxes were just set by assignment, which fires no change event,
+  // so the sliders that fade with their own layer group need the same explicit
+  // nudge the toggles above get.
+  if (typeof syncLineLayerUI === 'function') syncLineLayerUI();
   const cs = data.camera || {};
   setProjMode(cs.ortho ? 'ortho' : 'persp');
   if (Number.isFinite(cs.theta))  orbit.theta  = cs.theta;

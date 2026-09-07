@@ -373,6 +373,29 @@ $('softShadows').addEventListener('change', syncShadowUI);
 $('castShadows').addEventListener('change', syncShadowUI);
 $('groundShadow').addEventListener('change', syncShadowUI);
 syncShadowUI();   // sets the initial disabled state at load
+// The three Lines-section sliders that belong to one layer group each, faded
+// out while that group draws nothing at all — the same treatment (and the same
+// .ctlDisabled class) the shadow controls above get. Each condition mirrors
+// the solver's own gate exactly, so a disabled slider is genuinely inert
+// rather than merely hidden: Contour cleanup and Max surface hops feed
+// buildContourDrops, which only allocates when layerOn.sv || layerOn.sh, and
+// Crease angle is only read inside the worker's own `wantC` guard, which is
+// this same cv || ch test arriving as gatherSettings' types.c.
+//
+// Never clears or rewrites a slider's value — re-enabling a layer resumes
+// whatever was set before, exactly as syncShadowUI leaves Invert shadows
+// alone. Called from three places, because layer checkboxes change in three
+// ways: the user clicking one (svg-export.js's own change handler), a .pen
+// scene restoring them by assignment (scene-io.js — assignment fires no
+// change event), and here at load for the initial state.
+function syncLineLayerUI(){
+  const contourOn = layerStyle('sv').on || layerStyle('sh').on;
+  const creaseOn  = layerStyle('cv').on || layerStyle('ch').on;
+  $('contourCleanupCtl').classList.toggle('ctlDisabled', !contourOn);
+  $('contourMaxHopsCtl').classList.toggle('ctlDisabled', !contourOn);
+  $('creaseDegCtl').classList.toggle('ctlDisabled', !creaseOn);
+}
+syncLineLayerUI();
 // Circles pattern's Center X/Y/threshold now live in the always-visible
 // General sub-tab (moved there alongside Hatching/Shadows), so there's no
 // group visibility to toggle here anymore — only the gizmo, which still
