@@ -1502,25 +1502,70 @@ function generate(cam, S, shadingBuffer){
      then continue; the emitted segment between two flat-array-adjacent
      points IS the bridge, real touch or not). */
   function emitContourRuns(contourRuns, contourDrops){
+    /* Crease restoration. §6.1's crease topology yields a silhouette-classified
+       edge to Contour WHOLE ("Contour wins overlaps"), and the comment there
+       states the invariant that justifies it: Contour's own chain walk draws
+       every isSilTopo edge unconditionally, so nothing is lost. Step 4 broke
+       that — its drops are sub-edge, so a stretch Contour declines to draw is
+       now drawn by nobody, which is the same "genuine gap" failure §6.1's
+       comment was written to avoid, in a new form.
+
+       So the dropped stretches are handed back to Crease here, on exactly the
+       terms §6.1 would have admitted them:
+         · eang[e] >= S.creaseDeg — the same crease-angle filter. This is also
+           what stops the repair from re-drawing what Step 4 correctly removed:
+           the doubled-up artifact along a dense smooth curve has a small
+           dihedral angle and stays gone, while a faceted model's sharp edge
+           comes back as the crease line it always was.
+         · et1[e] >= 0 — boundary and non-manifold edges are NOT excluded by
+           §6.1 (they fold into crease unconditionally), so Crease already
+           draws them and restoring them would double-stroke.
+       Visible/hidden comes from the run's own state, so no occlude() call is
+       needed and the repair can never disagree with what Contour decided
+       about the same stretch. Anything restored that turns out to lie under
+       surviving higher-priority ink is removed by the normal
+       dedupCollinear/subtractCovered cascade further down. */
+    const restoreToCrease = !!(contourDrops && wantC && (layerOn.cv || layerOn.ch));
+    const creaseRestorable = new Uint8Array(topo.nCS);
+    if (restoreToCrease) for (let i=0;i<topo.nCS;i++){
+      const e = topo.csEdge[i];
+      if (et1[e] >= 0 && eang[e] >= S.creaseDeg) creaseRestorable[i] = 1;
+    }
+    // Two spans stitch into one polyline when the first ends where the next
+    // begins. They are separate evaluations of the same interpolation (or two
+    // pieces sharing a welded vertex, both projected from the same sx/sy), so
+    // the difference is float noise at most — orders of magnitude below the
+    // 0.02px point-identity resolution used elsewhere in this file.
+    const SPAN_JOIN = 1e-4;
     if (contourDrops) for (const run of contourRuns){
       // Step 5: split each piece against contourDrops[seg] (if any), into an
       // ordered fragment list — 'keep' fragments carry a running point list,
-      // 'drop' fragments carry no data at all (their length is never tested,
-      // only their presence as a separator matters). Adjacent same-type
-      // fragments are merged as they're produced, so the list always
+      // 'drop' fragments carry no point list at all (their length is never
+      // tested, only their presence as a separator matters). Adjacent
+      // same-type fragments are merged as they're produced, so the list always
       // strictly alternates once built.
+      //
+      // BOTH types additionally carry `spans`: the [p0,p1] pairs this fragment
+      // covers on edges eligible for crease restoration (see this function's
+      // own block comment). Keeps need it too, because the absorption pass
+      // below turns short keeps into drops. Order is walk order throughout, so
+      // contiguous spans stitch back into one polyline when emitted.
       const frags = [];
       const pushFrag = (frag) => {
         const last = frags.length ? frags[frags.length-1] : null;
         if (last && last.type === frag.type){
           if (frag.type === 'keep') last.pts.push(...frag.pts.slice(1));
+          if (frag.spans.length) last.spans.push(...frag.spans);
           return;
         }
         frags.push(frag);
       };
       for (const pc of run.pieces){
+        const span = creaseRestorable[pc.seg]
+          ? ((p0, p1) => [[p0, p1]])
+          : (() => []);
         const drops = contourDrops[pc.seg];
-        if (!drops){ pushFrag({ type:'keep', pts:[pc.p0, pc.p1] }); continue; }
+        if (!drops){ pushFrag({ type:'keep', pts:[pc.p0, pc.p1], spans: span(pc.p0, pc.p1) }); continue; }
         const denom = pc.tEdge1 - pc.tEdge0;
         const subs = [];   // [s0,s1] in [0,1] along p0→p1
         for (let i=0;i+1<drops.length;i+=2){
@@ -1529,16 +1574,23 @@ function generate(cam, S, shadingBuffer){
           s0 = Math.max(0, s0); s1 = Math.min(1, s1);
           if (s1 - s0 > 1e-9) subs.push([s0,s1]);
         }
-        if (!subs.length){ pushFrag({ type:'keep', pts:[pc.p0, pc.p1] }); continue; }
+        if (!subs.length){ pushFrag({ type:'keep', pts:[pc.p0, pc.p1], spans: span(pc.p0, pc.p1) }); continue; }
         subs.sort((a,b)=>a[0]-b[0]);
         const pointAt = (s) => [ pc.p0[0]+(pc.p1[0]-pc.p0[0])*s, pc.p0[1]+(pc.p1[1]-pc.p0[1])*s ];
         let cur = 0;
         for (const [s0,s1] of subs){
-          if (s0 > cur + 1e-9) pushFrag({ type:'keep', pts:[pointAt(cur), pointAt(s0)] });
-          pushFrag({ type:'drop' });
+          if (s0 > cur + 1e-9){
+            const a=pointAt(cur), b=pointAt(s0);
+            pushFrag({ type:'keep', pts:[a, b], spans: span(a, b) });
+          }
+          const d0=pointAt(s0), d1=pointAt(s1);
+          pushFrag({ type:'drop', spans: span(d0, d1) });
           cur = s1;
         }
-        if (cur < 1 - 1e-9) pushFrag({ type:'keep', pts:[pointAt(cur), pointAt(1)] });
+        if (cur < 1 - 1e-9){
+          const a=pointAt(cur), b=pointAt(1);
+          pushFrag({ type:'keep', pts:[a, b], spans: span(a, b) });
+        }
       }
       if (!frags.length) continue;
       let frags2 = frags, closed = run.isClosedLoop;
@@ -1549,7 +1601,13 @@ function generate(cam, S, shadingBuffer){
       if (closed && frags2.length>1 && frags2[0].type===frags2[frags2.length-1].type){
         const lastF = frags2[frags2.length-1];
         frags2 = frags2.slice(0, frags2.length-1);
-        if (lastF.type==='keep') frags2[0] = { type:'keep', pts: lastF.pts.concat(frags2[0].pts.slice(1)) };
+        // The trailing fragment's spans have to survive the fold in BOTH
+        // branches — the drop branch used to be able to discard it outright
+        // only because a drop carried nothing worth keeping.
+        const spans = lastF.spans.concat(frags2[0].spans);
+        frags2[0] = lastF.type==='keep'
+          ? { type:'keep', pts: lastF.pts.concat(frags2[0].pts.slice(1)), spans }
+          : { type:'drop', spans };
       }
       for (const f of frags2) if (f.type==='keep'){
         let l=0; for (let i=1;i<f.pts.length;i++) l+=Math.hypot(f.pts[i][0]-f.pts[i-1][0], f.pts[i][1]-f.pts[i-1][1]);
@@ -1567,14 +1625,46 @@ function generate(cam, S, shadingBuffer){
           if (frags2[i].len < shortLen){ shortLen=frags2[i].len; shortest=i; }
         }
         if (shortest<0) break;
-        if (shortest>0 && shortest<frags2.length-1){
-          frags2.splice(shortest-1, 3, { type:'drop' });
+        // The absorbed keep is material Contour no longer draws, so its spans
+        // join the surrounding drops' rather than being discarded — that is
+        // what keeps a restored crease line continuous across it. Concatenated
+        // in walk order, seam cases included, so the stitch below still sees
+        // one contiguous sequence.
+        const merged = (...fs) => ({ type:'drop', spans: [].concat(...fs.map(f => f.spans)) });
+        const L = frags2.length;
+        if (shortest>0 && shortest<L-1){
+          frags2.splice(shortest-1, 3,
+            merged(frags2[shortest-1], frags2[shortest], frags2[shortest+1]));
         } else if (shortest===0){
           // wrap-around: merges frags2[last] + frags2[0] + frags2[1]
-          frags2 = [{ type:'drop' }, ...frags2.slice(2, frags2.length-1)];
+          frags2 = [merged(frags2[L-1], frags2[0], frags2[1]), ...frags2.slice(2, L-1)];
         } else {
           // wrap-around: merges frags2[last-1] + frags2[last] + frags2[0]
-          frags2 = [{ type:'drop' }, ...frags2.slice(1, frags2.length-2)];
+          frags2 = [merged(frags2[L-2], frags2[L-1], frags2[0]), ...frags2.slice(1, L-2)];
+        }
+      }
+      // Crease restoration emit — see this function's own block comment.
+      // Deliberately ahead of the hasContent early-out below: a run Step 4
+      // dropped ENTIRELY produces no contour output at all, and that is
+      // exactly the case most in need of the repair. Goes through emitRun, so
+      // it inherits the same MIN_SEG filter and layer gating as every other
+      // crease polyline.
+      if (restoreToCrease){
+        const arrC = run.st==='v' ? (layerOn.cv ? groups.cv : null)
+                                  : (layerOn.ch ? groups.ch : null);
+        if (arrC) for (const f of frags2){
+          if (f.type!=='drop' || !f.spans.length) continue;
+          let pts = null;
+          for (const [q0, q1] of f.spans){
+            const tail = pts && pts[pts.length-1];
+            if (tail && Math.abs(tail[0]-q0[0])<=SPAN_JOIN && Math.abs(tail[1]-q0[1])<=SPAN_JOIN){
+              pts.push(q1);                 // contiguous — extend the polyline
+              continue;
+            }
+            if (pts) emitRun(arrC, pts);    // a real break: flush and restart
+            pts = [q0, q1];
+          }
+          if (pts) emitRun(arrC, pts);
         }
       }
       // Step 6 emit: flat-concatenate every surviving keep fragment's own
