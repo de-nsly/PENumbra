@@ -23,6 +23,31 @@ import { MIN_SEG, pairJunctionArms, dedupCollinear, subtractCovered } from './de
 const EPS_FP_REL   = 1e-6;    // fp noise floor, relative to segment depth magnitude
 const EPS_SLOPE_PX  = 1.0;    // px of occluder depth-gradient guarding the edge's OWN surface
 const EPS_SLOPE_FAR = 0.005;  // token slope floor away from the edge's own neighborhood
+/* Straddle tolerance, in screen px — how far past a segment's own infinite
+   line an occluder must reach on BOTH sides before it counts as covering that
+   segment rather than merely touching it along a shared edge. See the test
+   itself in occlude() for what it is defending against.
+
+   Why a screen-space distance and not an epsilon on the half-plane signs: the
+   quantity being thresholded is how deep the occluder penetrates past the
+   line, which is a property of the occluder's own extent and NOT of its size.
+   An equivalent-looking fix — eroding each triangle by a fixed px and
+   rejecting when the eroded clip comes out empty — was measured and rejected:
+   erosion is scale-dependent, so on a dense mesh (26k-tri torus knot,
+   sub-pixel triangles) it wrongly rejects genuine thin occluders and ADDS
+   fragmentation, while on a coarse one it does not. The straddle distance has
+   no such dependence.
+
+   Value: measured directly on two scenes at opposite ends of the failure.
+   The degenerate case (axis-snapped ortho, coincident strands) produces
+   occluders penetrating at most 2.2e-3 px — they are the same line, so the
+   number is mesh-coordinate noise, not geometry. The stress case for the
+   opposite error (dense smooth self-occluding knot, generic perspective) has
+   its shallowest GENUINE occluder at 3.3e-3 px. Anything in [0.0025, 0.005]
+   separates the two exactly; 0.003 sits in that window. Promoting the
+   projection buffers to Float64Array was tried and moves this not at all —
+   the floor is the mesh's own authored coordinate precision, not float32. */
+const EPS_STRADDLE_PX = 0.003;
 // NOTE: no vertex-guard window. With exact g=0 boundary crossings, a
 // vertex-sharing occluder's depth plane passes exactly through the shared
 // vertex (g(0)=0 by construction), so it can only claim occlusion where it is
@@ -464,6 +489,7 @@ function generate(cam, S, shadingBuffer){
     // classification below discards, decided here with one comparison
     const segMinZ=Math.min(z0,z1);
     const dxs=x1-x0, dys=y1-y0, dzs=z1-z0;
+    const segInvLen = 1/(Math.hypot(dxs,dys)||1);   // normalizes the straddle test to px
     const slopeNear = va===undefined ? EPS_SLOPE_PX : EPS_SLOPE_FAR;
     for (let cyi=cellY(by0);cyi<=cellY(by1);cyi++)
       for (let cxi=cellX(bx0);cxi<=cellX(bx1);cxi++){
@@ -496,6 +522,24 @@ function generate(cam, S, shadingBuffer){
             else if (fb<0) tb=Math.min(tb, fa/(fa-fb));
           }
           if (!alive || tb-ta<1e-6) continue;
+          /* Straddle test — see EPS_STRADDLE_PX. An occluder can only cover
+             part of this segment if the segment's INFINITE line properly
+             CROSSES the triangle, i.e. the triangle reaches past that line on
+             both sides. A triangle lying wholly on one side can at most touch
+             the line along a shared edge, and touching is not covering — but
+             the clip just above decides in/out from three half-plane signs
+             that are all exactly 0 in precisely that case, so it accepts the
+             toucher, and the depth test below — which IS decisive, the toucher
+             sitting at a genuinely different depth — then hides the edge.
+             Placed after the clip rather than before it purely for speed: this
+             is a veto, so it only has to run on the few candidates the clip
+             already accepted, and the clip rejects the overwhelming majority
+             on its first half-plane. */
+          const da=(dxs*(ay-y0)-dys*(ax-x0))*segInvLen;
+          const db=(dxs*(by-y0)-dys*(bx-x0))*segInvLen;
+          const dc=(dxs*(cy2-y0)-dys*(cx-x0))*segInvLen;
+          if (!(Math.min(da,db,dc) < -EPS_STRADDLE_PX &&
+                Math.max(da,db,dc) >  EPS_STRADDLE_PX)) continue;
           // depth plane of triangle in (x, y, 1/z) space — precomputed
           const A=oA[j], B=oB[j], C=oC[j];
           // Per-occluder slope-scaled bias (see EPS_SLOPE_PX above). The full
@@ -1006,6 +1050,205 @@ function generate(cam, S, shadingBuffer){
              chainStart, chainSeg, chainRev, chainClosed };
   }
   const topo = buildContourTopology();
+
+  /* ================================================================
+     6.3b · Screen-coincidence collapse (depth-aware).
+
+     Distinct 3D contour strands can project onto the SAME screen line at
+     different depths — the extreme case being a view down an axis of an
+     extruded model, where every rim of the extrusion lands on one line, but
+     it happens off-axis too wherever a shape passes edge-on. A plotter can
+     only draw that line once, and only the frontmost strand is the one a
+     camera nudged infinitesimally off-axis would actually see, so the ones
+     behind must not draw.
+
+     Occlusion cannot decide this, and not because of any epsilon: the surface
+     separating the strands is exactly edge-on, so it has zero screen area,
+     and the strands behind sit exactly ON the visible surface's silhouette.
+     They are neither covered nor uncovered — a genuine measure-zero tie that
+     no occluder test can break. (Before the straddle test in occlude() they
+     appeared to be decided, but that verdict came from occluders merely
+     TOUCHING the line, and flipped once per facet on floating-point noise.)
+
+     This is emphatically NOT the depth-blind dedupCollinear that was removed
+     from sv/sh (see the intra-layer dedup pass in §9 for why it had to go).
+     That one MERGED strands that looked alike in 2D, which corrupted
+     self-crossing models. This one SUBTRACTS strands that are provably
+     behind, and it reads depth to decide — the exact information the old pass
+     lacked. Two strands at equal depth are left alone (both survive) rather
+     than one being picked arbitrarily, so a tie can never delete real line.
+
+     Output is one 'suppressed' interval list per contour segment, consumed by
+     Step 2/3 below as a third piece state alongside visible/hidden. It is
+     deliberately NOT folded into Step 4's contourDrops: a drop is BRIDGED
+     when emitted (Step 6 draws a straight connector across it), which for
+     collinear material would redraw the very line being removed. A separate
+     state instead becomes its own run, and a run boundary is a real break.
+     ================================================================ */
+  // Perpendicular distance, in screen px, within which two contour segments
+  // count as lying on one line. Far below a pen width, far above the ~2e-3 px
+  // mesh-coordinate noise measured for genuinely coincident strands.
+  // Deliberately a fixed pixel value and NOT the zoom-scaled effOffTol: two
+  // strands that project to the same line do so at every zoom, while two
+  // separated by real world distance visibly separate as you zoom in, and
+  // ceasing to treat those as coincident is the correct behavior. effOffTol
+  // is roughly 6x looser here and is the tolerance the old 2D-only dedup
+  // over-merged with.
+  const COINCIDE_PX = 0.05;
+  /* Per-contour-segment hidden intervals, solved ONCE here and read by both
+     the collapse below and Step 2/3 — which used to call occlude() itself.
+     The collapse needs them (it may only silence a strand when the nearer one
+     is actually drawing that stretch, see below) and Step 2/3 needs the exact
+     same answer, so solving twice would be both wasted work and a chance for
+     the two to disagree. null = nothing hidden; occlude() returns a shared
+     scratch array when empty, so that case must never be stored by reference. */
+  const EMPTY_HID = [];
+  const hidBySeg = new Array(topo.nCS).fill(null);
+  if (layerOn.sv || layerOn.sh){
+    const { nCS, csValid, csX0, csY0, csZ0, csX1, csY1, csZ1, csFaceA, csFaceB, csEdge } = topo;
+    for (let seg=0; seg<nCS; seg++){
+      if (!csValid[seg]) continue;
+      const e = csEdge[seg];
+      const hid = occlude(csX0[seg],csY0[seg],csZ0[seg],csX1[seg],csY1[seg],csZ1[seg],
+                           csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
+      if (hid.length) hidBySeg[seg] = hid;
+    }
+  }
+  // Is this segment visible at its own parameter u? Mirrors exactly how Step
+  // 2/3 turns the same interval list into 'v'/'h' pieces.
+  const segVisibleAt = (seg, u) => {
+    const hid = hidBySeg[seg];
+    if (!hid) return true;
+    for (let q=0;q<hid.length;q+=2) if (u >= hid[q] && u <= hid[q+1]) return false;
+    return true;
+  };
+  function buildCoincidenceCollapse(topo, contourDrops){
+    const { nCS, csValid, csX0, csY0, csZ0, csX1, csY1, csZ1 } = topo;
+    const out = new Array(nCS);
+    if (!(layerOn.sv || layerOn.sh)) return out;
+    /* "Drawing here" means visible AND not already removed by Step 4. Step 4
+       is what makes this necessary rather than merely tidy: on a stack of
+       coincident rims it drops several of them as depth-similar artifacts, and
+       before this pass that was harmless — some other copy of the same line
+       always survived to draw it. Once only ONE strand is elected, electing
+       one Step 4 then drops leaves the stretch drawn by nobody (30px of
+       outline vanished on the arches scene at its saved cleanup of 0.0315).
+       Skipping such a strand simply passes the line to the next one back. */
+    const segDropped = (seg, u) => {
+      const d = contourDrops && contourDrops[seg];
+      if (!d) return false;
+      for (let q=0;q<d.length;q+=2) if (u >= d[q] && u <= d[q+1]) return true;
+      return false;
+    };
+    const segDrawnAt = (seg, u) => segVisibleAt(seg, u) && !segDropped(seg, u);
+    const idx = [], flat = [];
+    for (let i=0;i<nCS;i++){
+      if (!csValid[i]) continue;
+      idx.push(i);
+      flat.push(csX0[i], csY0[i], csX1[i], csY1[i]);
+    }
+    if (idx.length < 2) return out;
+    // Same uniform grid the crossing-split pass uses — an all-pairs scan here
+    // would be O(k^2) over every contour segment in the scene.
+    const grid = buildSegGrid(flat);
+    const len = new Float64Array(nCS), ux = new Float64Array(nCS), uy = new Float64Array(nCS);
+    for (const i of idx){
+      const dx = csX1[i]-csX0[i], dy = csY1[i]-csY0[i];
+      len[i] = Math.hypot(dx,dy) || 1; ux[i] = dx/len[i]; uy[i] = dy/len[i];
+    }
+    let nSup = 0, supPx = 0;
+    const parts = [];
+    for (let k=0;k<idx.length;k++){
+      const i = idx[k];
+      if (len[i] < MIN_SEG) continue;
+      parts.length = 0;
+      grid.query(csX0[i], csY0[i], csX1[i], csY1[i], jk => {
+        if (jk === k) return;
+        const j = idx[jk];
+        if (Math.abs(ux[i]*uy[j] - uy[i]*ux[j]) > 0.02) return;          // not parallel
+        // both of j's endpoints must sit on i's own infinite line
+        if (Math.abs(uy[i]*(csX0[j]-csX0[i]) - ux[i]*(csY0[j]-csY0[i])) > COINCIDE_PX) return;
+        if (Math.abs(uy[i]*(csX1[j]-csX0[i]) - ux[i]*(csY1[j]-csY0[i])) > COINCIDE_PX) return;
+        let ta = (ux[i]*(csX0[j]-csX0[i]) + uy[i]*(csY0[j]-csY0[i])) / len[i];
+        let tb = (ux[i]*(csX1[j]-csX0[i]) + uy[i]*(csY1[j]-csY0[i])) / len[i];
+        let za = csZ0[j], zb = csZ1[j], flip = 0;
+        if (ta > tb){ const t=ta; ta=tb; tb=t; const z=za; za=zb; zb=z; flip = 1; }
+        if (tb <= 1e-9 || ta >= 1-1e-9) return;                          // no overlap with [0,1]
+        parts.push(ta, tb, za, zb, j, flip);
+      });
+      if (!parts.length) continue;
+      /* Cut points: every partner's span ends, PLUS every visible/hidden
+         transition on this segment and on each partner (mapped into this
+         segment's parameter). The sub-intervals below are classified from
+         their midpoint alone, so every boundary that can change the verdict
+         has to be a cut — without the visibility ones a stretch whose partner
+         is visible at the midpoint but hidden across part of it gets silenced
+         wholesale, which again deletes real line (3px on the knot). */
+      const cuts = new Set([0,1]);
+      const addCut = t => { if (t > 1e-9 && t < 1-1e-9) cuts.add(t); };
+      const ownHid = hidBySeg[i];
+      if (ownHid) for (let q=0;q<ownHid.length;q++) addCut(ownHid[q]);
+      const ownDrop = contourDrops && contourDrops[i];
+      if (ownDrop) for (let q=0;q<ownDrop.length;q++) addCut(ownDrop[q]);
+      for (let q=0;q<parts.length;q+=6){
+        const ta=parts[q], tb=parts[q+1];
+        addCut(ta); addCut(tb);
+        const j = parts[q+4], flip = parts[q+5];
+        const mapCut = u => addCut(ta + (tb-ta)*(flip ? 1-u : u));
+        const jHid = hidBySeg[j];
+        if (jHid) for (let h=0;h<jHid.length;h++) mapCut(jHid[h]);
+        const jDrop = contourDrops && contourDrops[j];
+        if (jDrop) for (let h=0;h<jDrop.length;h++) mapCut(jDrop[h]);
+      }
+      const cs = Array.from(cuts).sort((a,b)=>a-b);
+      let iv = null;
+      for (let c=0;c+1<cs.length;c++){
+        const a = cs[c], b = cs[c+1];
+        if (b - a < 1e-9) continue;
+        const mid = (a+b)/2;
+        const zi = csZ0[i] + (csZ1[i]-csZ0[i])*mid;
+        const iVis = segDrawnAt(i, mid);
+        let behind = false;
+        for (let q=0;q<parts.length;q+=6){
+          const ta=parts[q], tb=parts[q+1];
+          if (mid < ta || mid > tb) continue;
+          const u = (mid-ta)/((tb-ta) || 1);
+          // Strictly in front, never merely equal — an exact tie leaves BOTH
+          // strands drawn, which is redundant ink but never a missing line.
+          if (parts[q+2] + (parts[q+3]-parts[q+2])*u <= zi + 1e-9) continue;
+          /* The nearer strand may only silence this one where it is itself
+             DRAWING that stretch. In the ideal case this is free — anything
+             occluding the nearer strand also occludes this one, which is
+             further away along the same ray — but occlude() skips each edge's
+             own two faces, so the two strands do not answer to quite the same
+             occluder set and can genuinely disagree. Without this guard that
+             asymmetry silences the only visible line on a stretch: measured
+             on a dense self-occluding knot, 6px of contour vanished outright.
+             Hidden material needs no such guard — the nearer strand's hidden
+             stroke lands on the same line either way. */
+          if (iVis){
+            const j = parts[q+4], flip = parts[q+5];
+            if (!segDrawnAt(j, flip ? 1-u : u)) continue;
+          }
+          behind = true; break;
+        }
+        if (!behind) continue;
+        if (iv && Math.abs(iv[iv.length-1] - a) < 1e-9) iv[iv.length-1] = b;   // merge touching
+        else { (iv ||= []).push(a, b); }
+        nSup++; supPx += (b-a)*len[i];
+      }
+      if (iv) out[i] = iv;
+    }
+    counts.coincideCuts = nSup;
+    counts.coincidePx = supPx;
+    return out;
+  }
+  // NOTE: buildCoincidenceCollapse and buildContourRuns are both CALLED further
+  // down, after Step 4's contourDrops exist — the collapse may only elect a
+  // survivor Step 4 is going to keep, or it hands the line to a strand that is
+  // then dropped and the stretch is drawn by nobody. Declared here, beside the
+  // rest of the contour machinery, purely for readability.
+
   // Phase 3b (see PHASE3b-contour-run-identity.md) — Step 2+3: decompose
   // each chain into its TRUE occlusion runs — one occlude() call per whole
   // mesh edge (never per crossing-split sub-segment — occlude()'s own
@@ -1021,8 +1264,9 @@ function generate(cam, S, shadingBuffer){
   // (Step 5/6, right after it) can only ever SUBTRACT from a run's own
   // geometry, never split its identity into two or merge two into one.
   function buildContourRuns(topo){
-    const { siChains, csX0, csY0, csZ0, csX1, csY1, csZ1,
-            csFaceA, csFaceB, csEdge,
+    // csZ*/csFace*/csEdge are no longer read here — the occlude() call that
+    // needed them is hoisted into §6.3b's hidBySeg precompute.
+    const { siChains, csX0, csY0, csX1, csY1,
             chainStart, chainSeg, chainRev, chainClosed } = topo;
     let contourRunSeq = 0;
     const contourRuns = [];
@@ -1031,9 +1275,9 @@ function generate(cam, S, shadingBuffer){
       const pieces = [];
       for (let p=segStart; p<segEnd; p++){
         const seg = chainSeg[p], rev = !!chainRev[p];
-        const e = csEdge[seg];
-        const hid = occlude(csX0[seg],csY0[seg],csZ0[seg],csX1[seg],csY1[seg],csZ1[seg],
-                             csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
+        // Solved once in §6.3b's precompute — same occlude() call this used to
+        // make inline, hoisted so the collapse pass can read the same answer.
+        const hid = hidBySeg[seg] || EMPTY_HID;
         const nat = [];
         let t=0;
         for (let i=0;i<hid.length;i+=2){
@@ -1042,7 +1286,29 @@ function generate(cam, S, shadingBuffer){
           t=hid[i+1];
         }
         if (t<1) nat.push(['v', t, 1]);
-        const walked = rev ? nat.slice().reverse().map(([st,a,b])=>[st,1-b,1-a]) : nat;
+        /* 6.3b overlay — restate every stretch a nearer coincident strand
+           covers as state 'x'. Applied here, on the edge's own natural
+           parametrization and BEFORE the walk direction is resolved, so it is
+           just a third state the grouping below already knows how to handle:
+           each suppressed stretch becomes its own run, and a run boundary is
+           a genuine break that nothing downstream bridges across. */
+        const sup = coincideSup[seg];
+        let natF = nat;
+        if (sup && sup.length){
+          natF = [];
+          for (const [st, a, b] of nat){
+            let cur = a;
+            for (let q=0;q<sup.length;q+=2){
+              const s0 = Math.max(a, sup[q]), s1 = Math.min(b, sup[q+1]);
+              if (s1 - s0 <= 1e-9) continue;
+              if (s0 > cur + 1e-9) natF.push([st, cur, s0]);
+              natF.push(['x', s0, s1]);
+              cur = s1;
+            }
+            if (b > cur + 1e-9) natF.push([st, cur, b]);
+          }
+        }
+        const walked = rev ? natF.slice().reverse().map(([st,a,b])=>[st,1-b,1-a]) : natF;
         for (const [st,s0,s1] of walked){
           const t0 = rev ? 1-s0 : s0, t1w = rev ? 1-s1 : s1;
           // seg/tEdge0/tEdge1 (the edge's OWN csX0→csX1 parametrization, same
@@ -1093,7 +1359,7 @@ function generate(cam, S, shadingBuffer){
         run.prevId = ri>0 ? runs[ri-1].id : (cycle ? runs[runs.length-1].id : -1);
         run.nextId = ri<runs.length-1 ? runs[ri+1].id : (cycle ? runs[0].id : -1);
         let rl=0; for (const pc of run.pieces) rl += Math.hypot(pc.p1[0]-pc.p0[0], pc.p1[1]-pc.p0[1]);
-        (run.st==='v' ? contourRunLens.sv : contourRunLens.sh).push(rl);
+        if (run.st!=='x') (run.st==='v' ? contourRunLens.sv : contourRunLens.sh).push(rl);
         contourRuns.push(run);
       }
     }
@@ -1113,7 +1379,7 @@ function generate(cam, S, shadingBuffer){
     });
     return contourRuns;
   }
-  const contourRuns = buildContourRuns(topo);
+  // (called below, once Step 4's drops exist — see the note beside 6.3b)
 
   // Shared by ground-shadow and cast-shadow texture (further below): a
   // point-in-triangle coverage/nearest-face lookup against the same
@@ -1490,6 +1756,10 @@ function generate(cam, S, shadingBuffer){
     return contourDrops;
   }
   const contourDrops = buildContourDrops(topo, splits);
+  // 6.3b, then Step 2/3 — both deferred to here so the collapse can see which
+  // stretches Step 4 has already taken out of play.
+  const coincideSup = buildCoincidenceCollapse(topo, contourDrops);
+  const contourRuns = buildContourRuns(topo);
 
   /* 6.6 · Contour emit (Phase 3b Step 5+6) — subtract Step 4's drops from each run's own
      geometry (never losing or reassigning run.id, only ever splitting its
@@ -1649,7 +1919,12 @@ function generate(cam, S, shadingBuffer){
       // exactly the case most in need of the repair. Goes through emitRun, so
       // it inherits the same MIN_SEG filter and layer gating as every other
       // crease polyline.
-      if (restoreToCrease){
+      if (restoreToCrease && run.st!=='x'){
+        // 'x' runs are excluded: that material is real contour line a NEARER
+        // coincident strand is already drawing (§6.3b), so handing it to
+        // Crease would put the very duplicate stroke back on the page — the
+        // opposite of Step 4's case, where the dropped stretch is an artifact
+        // nobody else draws.
         const arrC = run.st==='v' ? (layerOn.cv ? groups.cv : null)
                                   : (layerOn.ch ? groups.ch : null);
         if (arrC) for (const f of frags2){
@@ -1695,7 +1970,15 @@ function generate(cam, S, shadingBuffer){
       }
       if (!run.hasContent) continue;
       const isV = run.st==='v';
-      const arr = isV ? (layerOn.sv ? groups.sv : null) : (layerOn.sh ? groups.sh : null);
+      // An 'x' run draws nowhere. Note hasContent/tipP0/tipP1 above are still
+      // recorded truthfully for it, and that matters: js/svg-export.js's
+      // mergeContourRunSplits bridges only across runs left with NOTHING, so a
+      // truthful hasContent is exactly what stops it from drawing a straight
+      // connector over a stretch this pass deliberately removed. It is the
+      // same distinction that comment already draws for a layer whose own
+      // checkbox is off — real content, simply not drawn here.
+      const arr = run.st==='x' ? null
+                : isV ? (layerOn.sv ? groups.sv : null) : (layerOn.sh ? groups.sh : null);
       if (!arr) continue;
       const runArr = isV ? runIds.sv : runIds.sh;
       const seqArr = isV ? seqs.sv : seqs.sh;
