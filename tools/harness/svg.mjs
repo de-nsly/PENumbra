@@ -1,0 +1,110 @@
+/* ================================================================
+   tools/harness/svg.mjs — the main thread's half of the pipeline
+   onResult() (js/svg-export.js) turns the worker's flat per-layer
+   segment arrays into the actual <path> data that gets exported. For
+   Contour (sv/sh) that is chainByRun -> mergeContourRunSplits ->
+   splitSelfTouching -> simplifyCollinear; Silhouette (so/iv/ih) and
+   Crease (cv/ch) each have their own chain path. All of those are pure
+   geometry functions, so they're lifted out of the real file rather
+   than reimplemented (see extract.mjs) — if the app's chaining changes,
+   the harness changes with it.
+
+   Two emit modes:
+     'chained' — what the app actually exports (post-chaining).
+     'raw'     — one <path> subpath per worker segment, nothing joined.
+                 Use this to tell "the worker never emitted it" apart
+                 from "the chaining lost it".
+   ================================================================ */
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { extractFrom, evalWithEnv } from './extract.mjs';
+
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/* Every pure declaration onResult's chaining branches depend on, in
+   dependency order. layerStyle/$ are never reached from any of them. */
+const PURE = [
+  'SIMPLIFY_COLLINEAR_TOL', 'CHAIN_CLOSE_SNAP_TOL', 'simplifyCollinear',
+  'accumulatePathStats', 'chainSegments', 'trimTipFoldback', 'mergeSilhouetteClose',
+  'buildChainedPathD', 'chainByRun', 'mergeContourRunSplits',
+  'mergeAdjacentTouching', 'mergeCreaseScreenSpace', 'splitSelfTouching',
+];
+const exported = evalWithEnv(extractFrom(path.join(REPO, 'js', 'svg-export.js'), PURE), {}, PURE);
+export const {
+  chainByRun, mergeContourRunSplits, splitSelfTouching, simplifyCollinear,
+  chainSegments, mergeAdjacentTouching, mergeCreaseScreenSpace, buildChainedPathD,
+} = exported;
+
+const CHAIN_LAYERS = { so:1, iv:1, ih:1 };
+const SEQ_CHAIN_LAYERS = { cv:1, ch:1 };
+
+/* The per-layer branch of onResult's LAYERS loop, for one layer key.
+   Returns the layer's `d` string in solver-px units, exactly as the app
+   would put it on the <path>. */
+export function layerPathD(m, key, { mmToPx = 1, mode = 'chained' } = {}){
+  const segs = m.groups[key];
+  if (!segs || !segs.length) return '';
+  const d = [];
+  if (mode === 'raw'){
+    for (let i=0;i<segs.length;i+=4)
+      d.push('M', segs[i].toFixed(2), segs[i+1].toFixed(2), 'L', segs[i+2].toFixed(2), segs[i+3].toFixed(2));
+    return d.join(' ');
+  }
+  const emit = (pts, closed) => {
+    d.push('M', pts[0][0].toFixed(2), pts[0][1].toFixed(2));
+    for (let i=1;i<pts.length;i++) d.push('L', pts[i][0].toFixed(2), pts[i][1].toFixed(2));
+    if (closed) d.push('Z');
+  };
+  if (key === 'sv' || key === 'sh'){
+    const chains = mergeContourRunSplits(
+      chainByRun(segs, m.runIds[key], m.seqs[key]),
+      m.counts && m.counts.contourAdjacency);
+    for (const chain of chains)
+      for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
+        emit(simplifyCollinear(rawPts, closed), closed);
+  } else if (CHAIN_LAYERS[key]){
+    d.push(buildChainedPathD(segs, null, {
+      tolMerge: 0.25 * mmToPx, foldbackAngleThreshDeg: 150, protectedPoints: null }));
+  } else if (SEQ_CHAIN_LAYERS[key]){
+    for (const chain of mergeCreaseScreenSpace(mergeAdjacentTouching(segs)))
+      for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
+        emit(simplifyCollinear(rawPts, closed), closed);
+  } else {
+    for (let i=0;i<segs.length;i+=4){
+      d.push('M', segs[i].toFixed(2), segs[i+1].toFixed(2), 'L', segs[i+2].toFixed(2), segs[i+3].toFixed(2));
+    }
+  }
+  return d.join(' ');
+}
+
+/* A paper-space SVG of the given layers, laid out through the app's own
+   computePaperLayout — the same page a real export produces, so the output
+   overlays 1:1 on anything exported from the browser.
+   `layers`: [{ key, color, width, dash }]. */
+export function buildPaperSvg(m, layers, layout, extra = []){
+  const mmToPx = 1/Math.max(1e-6, layout.scale);
+  const parts = [];
+  for (const L of layers.slice().reverse()){         // same reverse paint order as onResult
+    const d = layerPathD(m, L.key, { mmToPx, mode: L.mode });
+    if (!d) continue;
+    parts.push('<path data-layer="' + L.key + '" d="' + d + '" fill="none" stroke="' +
+      (L.color || '#000') + '" stroke-width="' + ((L.width || 0.3) * mmToPx).toFixed(4) +
+      '" stroke-linecap="round" stroke-linejoin="round"' +
+      (L.opacity != null ? ' stroke-opacity="' + L.opacity + '"' : '') + '/>');
+  }
+  for (const e of extra) parts.push(e);
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + layout.paperW.toFixed(2) + 'mm" height="' +
+    layout.paperH.toFixed(2) + 'mm" viewBox="0 0 ' + layout.paperW.toFixed(3) + ' ' + layout.paperH.toFixed(3) + '">' +
+    '<rect width="100%" height="100%" fill="#fbf9f3"/>' +
+    '<g transform="translate(' + layout.offX.toFixed(3) + ',' + layout.offY.toFixed(3) +
+    ') scale(' + layout.scale.toFixed(6) + ')">' + parts.join('') + '</g></svg>';
+}
+
+/* Marker for annotating a spot on the paper SVG, in SOLVER-px coordinates
+   (i.e. inside the same <g> the paths live in). */
+export function marker(x, y, r, layout, color = '#e02020'){
+  const mmToPx = 1/Math.max(1e-6, layout.scale);
+  return '<circle cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="' + r.toFixed(2) +
+    '" fill="none" stroke="' + color + '" stroke-width="' + (0.4*mmToPx).toFixed(3) + '"/>';
+}
