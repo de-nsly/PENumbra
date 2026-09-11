@@ -93,3 +93,18 @@ every setting, layer styles) as a single JSON-ish `.pen` file, with the model em
 - `svg-export.js`'s header comment flags itself as the most likely place to look for line-position/drift
   bugs in exported SVGs (`chainSegments`, `mergeAdjacentTouching`, `mergeCreaseScreenSpace`,
   `splitSelfTouching`), separate from the worker's own `worldOnFace`/`intersectSegs`.
+
+## CSS styling conventions (`styles.css`)
+
+`styles.css` was deliberately consolidated to a small set of reusable tokens and shared element classes
+— keep it that way:
+
+- **Never invent a new font styling combination** (size/weight/color/tracking/family). Reuse one of the
+  existing `--fs-*`/`--ls-*` tokens and semantic colors (`--text`/`--muted`/`--accent`/etc.) in
+  `:root`. Only add a new one if the user explicitly asks for it.
+- **Never write new styling for a common element type** (buttons, icon buttons, checkboxes, sliders,
+  pill toggles, segmented toggles, control rows, etc.). Reuse the existing shared class (`.btn`,
+  `.chk`, `.pillToggle`, `.ctl`, the icon-button group, ...) instead of a one-off rule, unless it's
+  genuinely unavoidable.
+- Every element that looks the same (or nearly the same) as an existing one should share **one single
+  source of truth** in CSS, not a duplicate/near-duplicate rule.
