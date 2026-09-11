@@ -3,9 +3,11 @@
    Stateless helpers generate() (solver.js) composes into the solve
    pipeline: segment intersection/spatial indexing, the light-space
    shadow map, screen->world face recovery, circle/ring pattern
-   walking, and shading-buffer sampling. makeLightBasis and
-   walkCircleSplit are internal to buildShadowMap/buildPatternSegsFromTest
-   respectively and not used anywhere else.
+   walking, and shading-buffer sampling. makeLightBasis is internal to
+   buildShadowMap and not used anywhere else; walkCircleSplit is internal
+   to buildPatternSegsFromTest, which shares makeRingPiece with
+   mergeRingPieces (the pass that rejoins one ring's arcs after the
+   ground and model-surface walks each reported their own half).
    ================================================================ */
 /* ---------------- generate: project · classify · occlude · hatch ---------------- */
 export function intersectSegs(ax,ay,bx,by,cx,cy,dx,dy){
@@ -332,7 +334,7 @@ function walkCircleSplit(cx, cy, radius, testFn, seedPx, cutPx){
     merged[0][1] = merged[merged.length-1][1] - 1;   // extend first piece backward across the seam
     merged.pop();
   }
-  return { merged, Px, Py };
+  return merged;
 }
 // Shared by ground-texture and cast-texture: generates just enough
 // concentric rings (spacing apart, from the given center) to reach the
@@ -343,6 +345,20 @@ function walkCircleSplit(cx, cy, radius, testFn, seedPx, cutPx){
 // shadow test) — ring generation and boundary refinement are identical,
 // so this is the one place that logic lives rather than being duplicated
 // per texture type.
+// One kept arc of one ring, in the shape the whole downstream pipeline
+// expects: the rich circle description (cx/cy/radius/u0/u1) that lets
+// svg-export emit true Beziers, plus the sampled `poly` the wobble path
+// falls back to. Shared by the walk below and by mergeRingPieces, so a
+// merged arc is built exactly like a walked one.
+function makeRingPiece(cx, cy, radius, ringIdx, u0, u1, closed){
+  const nSub = Math.max(2, Math.ceil((u1-u0)*2*Math.PI*radius / 2));
+  const poly = [];
+  for (let k=0; k<=nSub; k++){
+    const u = u0 + (u1-u0)*k/nSub;
+    poly.push(cx + radius*Math.cos(u*2*Math.PI), cy + radius*Math.sin(u*2*Math.PI));
+  }
+  return { poly, ringIdx, closed, cx, cy, radius, u0, u1 };
+}
 export function buildPatternSegsFromTest(testFn, cx, cy, spacing, corners){
   let maxDist = 0;
   for (const [x,y] of corners) maxDist = Math.max(maxDist, Math.hypot(x-cx, y-cy));
@@ -352,20 +368,80 @@ export function buildPatternSegsFromTest(testFn, cx, cy, spacing, corners){
   for (let r=1; r<=nRings; r++){
     const radius = r*spacing;
     const testFnForRing = (px, py) => testFn(px, py, r);
-    const { merged, Px, Py } = walkCircleSplit(cx, cy, radius, testFnForRing, SEED_PX, CUT_PX);
+    const merged = walkCircleSplit(cx, cy, radius, testFnForRing, SEED_PX, CUT_PX);
     const closed = merged.length === 1;   // no transition anywhere -> whole ring survived uncut
     for (const [state, u0, u1] of merged){
       if (!state) continue;
-      const nSub = Math.max(2, Math.ceil((u1-u0)*2*Math.PI*radius / 2));
-      const poly = [];
-      for (let k=0; k<=nSub; k++){
-        const u = u0 + (u1-u0)*k/nSub;
-        poly.push(Px(u), Py(u));
-      }
-      pieces.push({ poly, ringIdx: r, closed, cx, cy, radius, u0, u1 });
+      pieces.push(makeRingPiece(cx, cy, radius, r, u0, u1, closed));
     }
   }
   return pieces;
+}
+/* Rejoins arcs of the SAME ring that meet end-to-end but were produced by
+   separate walks. The ground-plane ring set and the model-surface ring set
+   are two independent buildPatternSegsFromTest passes over the very same
+   circles (same center, same spacing, so ring r of one IS ring r of the
+   other), each of which can only ever report the part of a ring lying on
+   its own receiving surface: the ground walk stops dead at the model's
+   silhouette, and the cast walk begins there. Left alone, a ring running
+   out of the ground shadow and up onto the model comes out as two separate
+   subpaths — a pen lift mid-curve, plus a hairline seam where each walk
+   refined the same crossing independently, plus (worst of all) the
+   end-focused texture effects retracting BOTH arcs away from a boundary
+   that isn't really an end of anything.
+   Regular hatch never had this problem because it already does exactly
+   this: model-surface intervals and analytic ground-shadow intervals are
+   accumulated into ONE per-carrier interval list (lineVis in solver.js)
+   and merged into maximal runs before emitting. This is that same step for
+   rings, with the same tolerance rationale — bridge seams and slivers,
+   never a genuine gap (which is always at least MIN_SEG wide).
+   Overlap can't normally happen (a screen point is either on the model or
+   on the ground behind it, never both), but the union below handles it
+   correctly anyway rather than assuming it. */
+export function mergeRingPieces(pieces, tolPx){
+  // Keyed by ring index alone: radius is a pure function of it (r*spacing)
+  // and both passes share one center and one spacing, so equal index means
+  // the identical circle.
+  const byRing = new Map();
+  for (const p of pieces){
+    let arr = byRing.get(p.ringIdx);
+    if (!arr){ arr = []; byRing.set(p.ringIdx, arr); }
+    arr.push(p);
+  }
+  const out = [];
+  for (const [ringIdx, arr] of byRing){
+    if (arr.length === 1){ out.push(arr[0]); continue; }
+    const { cx, cy, radius } = arr[0];
+    const circumference = 2*Math.PI*radius;
+    const tolU = circumference > 1e-9 ? tolPx/circumference : 0;
+    // Canonical spans: start folded into [0,1) (a piece extended backward
+    // across the seam by walkCircleSplit carries a negative u0), length
+    // kept as-is so a span may legitimately run past u=1.
+    const spans = arr
+      .map(p => { const s = p.u0 - Math.floor(p.u0); return [s, s + Math.min(1, p.u1 - p.u0)]; })
+      .sort((a,b) => a[0] - b[0]);
+    const runs = [spans[0].slice()];
+    for (let i=1; i<spans.length; i++){
+      const last = runs[runs.length-1];
+      if (spans[i][0] <= last[1] + tolU) last[1] = Math.max(last[1], spans[i][1]);
+      else runs.push(spans[i].slice());
+    }
+    // ...and once more across the seam itself: the last run ending where the
+    // first one starts, one turn later, is one arc through u=0.
+    if (runs.length > 1){
+      const first = runs[0], last = runs[runs.length-1];
+      if (last[1] >= first[0] + 1 - tolU){
+        first[0] = last[0] - 1;
+        first[1] = Math.max(first[1], last[1] - 1);
+        runs.pop();
+      }
+    }
+    for (const [u0, u1] of runs){
+      const whole = (u1 - u0) >= 1 - tolU;   // the seams closed up into a complete ring again
+      out.push(makeRingPiece(cx, cy, radius, ringIdx, u0, whole ? u0 + 1 : u1, whole));
+    }
+  }
+  return out;
 }
 
 /* ================= Shading-buffer sampling =================

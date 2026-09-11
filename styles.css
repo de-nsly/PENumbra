@@ -355,6 +355,17 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
    so the radius below is literal screen px and stays put under zoom. The pale
    ring keeps a dot readable against both dark ink and a dark page colour. */
 .pathEndpointDot{fill:#ff2d2d;fill-opacity:.85;stroke:#fff;stroke-width:.75;stroke-opacity:.9;pointer-events:none}
+/* "Trim SVG export to margins" preview mask — an even-odd frame (page rect
+   with the margin rect punched out) painted in the page colour itself, so
+   the band between page edge and margin reads as bare paper and whatever
+   the export is about to clip away simply isn't visible. Purely a display
+   stand-in for the real clip, which happens on the export clone only (see
+   trimCloneToMargins in svg-export.js). Deliberately NOT given a blend
+   mode: it lives outside #paperContent/.layoutLayerStroke, the only two
+   things the "Blend overlapping colors" rules below target, so it always
+   paints opaquely over the ink regardless of that toggle. */
+.trimMaskFrame{fill:var(--paper);fill-rule:evenodd;stroke:none;pointer-events:none}
+.trimMask{pointer-events:none}
 /* dashed reference / snap guides — all zoom-independent (non-scaling-stroke),
    differing only in stroke width + dash pattern (+ colour for the axis locks) */
 .layoutMarginGuide,.layoutGridGuide,.pvMarginGuide,.pvGridGuide,.layoutSnapGuide,.layoutAxisLockGuide{

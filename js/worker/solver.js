@@ -7,7 +7,7 @@
    ================================================================ */
 import { parseSTL, parseOBJ, demoSoup } from './parsers.js';
 import { M, buildMesh, computeCornerNormals } from './mesh.js';
-import { intersectSegs, buildSegGrid, buildShadowMap, worldOnFace, buildPatternSegsFromTest, flipBufferRowsY, sampleShading } from './geom-utils.js';
+import { intersectSegs, buildSegGrid, buildShadowMap, worldOnFace, buildPatternSegsFromTest, mergeRingPieces, flipBufferRowsY, sampleShading } from './geom-utils.js';
 import { MIN_SEG, pairJunctionArms, dedupCollinear, subtractCovered } from './dedup.js';
 /* Occlusion depth bias. The bias has exactly two legitimate jobs: absorb
    floating-point noise, and keep a surface from occluding edges that lie ON
@@ -1346,9 +1346,10 @@ function generate(cam, S, shadingBuffer){
         const groundCorners = S.invertShadows
           ? [[pb.x0,pb.y0],[pb.x1,pb.y0],[pb.x0,pb.y1],[pb.x1,pb.y1]]
           : [[0,0],[W,0],[0,H],[W,H]];
-        for (const piece of buildPatternSegsFromTest(groundTest, cx5, cy5, minS, groundCorners)){
-          piece.source = 'ground'; segs.push(piece);
-        }
+        // Pushed into the one shared list the cast pass below also feeds:
+        // which surface an arc came from stops mattering the moment
+        // mergeRingPieces rejoins them, so nothing tags the source.
+        for (const piece of buildPatternSegsFromTest(groundTest, cx5, cy5, minS, groundCorners)) segs.push(piece);
       }
     }
 
@@ -1396,12 +1397,15 @@ function generate(cam, S, shadingBuffer){
         else result = brightOK;
         return invertShadows ? !result : result;
       };
-      for (const piece of buildPatternSegsFromTest(castTest, cx5, cy5, minS, [[0,0],[W,0],[0,H],[W,H]])){
-        piece.source = 'cast'; segs.push(piece);
-      }
+      for (const piece of buildPatternSegsFromTest(castTest, cx5, cy5, minS, [[0,0],[W,0],[0,H],[W,H]])) segs.push(piece);
     }
 
-    if (segs.length) circlePatternSegs = segs;
+    // The two ring sets above walk the SAME circles over two different
+    // receiving surfaces, so a ring crossing from the ground shadow onto the
+    // model arrives here as two abutting arcs. Rejoin them into one, the way
+    // hatch already merges its own per-carrier intervals from both sources
+    // (lineVis, further down) — same MIN_SEG*0.5 tolerance, same reasoning.
+    if (segs.length) circlePatternSegs = mergeRingPieces(segs, MIN_SEG*0.5);
   }
 
   /* 8 · hatching */

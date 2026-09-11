@@ -141,8 +141,8 @@ function canvasMmToScreen(wx, wy){
 }
 
 /* ================= one-time SVG scaffold =================
-   Three persistent layers inside #layoutPlot, bottom to top: the margin
-   guide, the blocks themselves, and snap guides. Created once here; never
+   Persistent layers inside #layoutPlot, bottom to top: the margin
+   guide, the blocks themselves, the trim-preview mask, and snap guides. Created once here; never
    torn down. The selection overlay (box/handles/gizmo) is deliberately
    NOT in here — it draws into the separate #layoutOverlaySvg instead,
    which isn't clipped to the paper, so a block positioned off-page still
@@ -170,6 +170,14 @@ function initLayoutPlot(){
   const blocksLayer = document.createElementNS(SVG_NS, 'g');
   blocksLayer.id = 'layoutBlocksLayer';
   svg.appendChild(blocksLayer);
+  // "Trim SVG export to margins" mask — above the blocks (it has to cover
+  // their ink to stand in for the export clip) but below the interaction
+  // chrome, so snap/axis guides and anything drawn for a drag in progress
+  // stay readable over it. Content is rebuilt by syncLayoutTrimMask; this
+  // only reserves its place in the stacking order.
+  const trimMask = document.createElementNS(SVG_NS, 'g');
+  trimMask.id = 'layoutTrimMaskSlot';
+  svg.appendChild(trimMask);
   const snapGuides = document.createElementNS(SVG_NS, 'g');
   snapGuides.id = 'layoutSnapGuides';
   svg.appendChild(snapGuides);
@@ -193,6 +201,20 @@ function syncLayoutPaperFrame(){
   guide.setAttribute('width', Math.max(0, dims.paperW - dims.margin.left - dims.margin.right));
   guide.setAttribute('height', Math.max(0, dims.paperH - dims.margin.top - dims.margin.bottom));
   syncLayoutGridGuides(dims);
+  syncLayoutTrimMask(dims);
+}
+// Layout's half of the trim preview — same frame, same page-colour fill,
+// same "the export clips, the screen only masks" contract as the Preview
+// tab (see buildTrimMaskGroup/syncPreviewTrimMask in svg-export.js, the
+// shared builder). Blocks keep their full geometry underneath: a block
+// dragged half off the margin is still whole, still draggable back, just
+// not visible (and not exported) past the margin.
+function syncLayoutTrimMask(dims){
+  const slot = document.getElementById('layoutTrimMaskSlot');
+  if (!slot) return;
+  slot.innerHTML = '';
+  if (!$('trimToMargins').checked) return;
+  slot.appendChild(buildTrimMaskGroup('layoutTrimMask', dims || computeLayoutPaperDims(), 'layoutMarginGuide'));
 }
 function syncLayoutGridGuides(dims){
   dims = dims || computeLayoutPaperDims();
@@ -641,6 +663,9 @@ function renderPreviewLayoutOverlay(){
   const content = document.getElementById('paperContent');
   if (layoutOverlayFront || !content) plot.appendChild(g);
   else plot.insertBefore(g, content);
+  // The trim mask has to stay the last child of #plot to cover everything,
+  // and the append above just moved this overlay past it.
+  if (typeof syncPreviewTrimMask === 'function') syncPreviewTrimMask();
 }
 // Feeds refreshStatusR() (svg-export.js) — sums computeDStats() over every
 // visible layer of every visible block, skipping a hidden block entirely

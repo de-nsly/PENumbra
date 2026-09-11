@@ -230,7 +230,7 @@ function base64ToArrayBuffer(b64){
 // mechanism (their own listener re-lays-out the page rather than staling it)
 function sceneSettingIds(){
   return [...document.querySelectorAll('[data-regen]')].map(el => el.id)
-    .concat(['paperSize', 'orient', 'marginMm', 'marginIndependent', 'marginTopMm', 'marginBottomMm', 'marginLeftMm', 'marginRightMm', 'pageColor', 'gridGuideEnabled', 'gridGuideX', 'gridGuideY'])
+    .concat(['paperSize', 'orient', 'marginMm', 'marginIndependent', 'marginTopMm', 'marginBottomMm', 'marginLeftMm', 'marginRightMm', 'trimToMargins', 'pageColor', 'gridGuideEnabled', 'gridGuideX', 'gridGuideY'])
     .concat(DASH_KEYS.flatMap(k => [0,1,2,3,4,5].map(i => 'dash' + k + '_' + i)));
 }
 
