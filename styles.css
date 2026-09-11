@@ -251,9 +251,10 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
   border:1px solid var(--edge-glass);border-radius:10px;box-shadow:var(--shadow-float);
   padding:12px 12px 10px;
   -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
-#camFloat,#rotateFloat,#viewsFloat,#genExportFloat,#addToLayoutFloat{width:224px;
-  background:color-mix(in srgb, var(--panel3), transparent 20%)}
-#blocksFloat{width:var(--blocks-float-w);background:color-mix(in srgb, var(--bg) 58%, transparent)}
+#camFloat,#rotateFloat,#viewsFloat,#genExportFloat,#addToLayoutFloat,#blocksFloat{
+  background:color-mix(in srgb, var(--panel3), transparent 25%)}
+#camFloat,#rotateFloat,#viewsFloat,#genExportFloat,#addToLayoutFloat{width:224px}
+#blocksFloat{width:var(--blocks-float-w)}
 /* camFloat/rotateFloat labels are all 1-3 characters (FOV, X, Y, Z) — a much
    narrower label column than a settings-style row needs (room for something
    like "Orientation") hands the freed width straight to the slider track,
@@ -354,6 +355,17 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
    so the radius below is literal screen px and stays put under zoom. The pale
    ring keeps a dot readable against both dark ink and a dark page colour. */
 .pathEndpointDot{fill:#ff2d2d;fill-opacity:.85;stroke:#fff;stroke-width:.75;stroke-opacity:.9;pointer-events:none}
+/* "Trim SVG export to margins" preview mask — an even-odd frame (page rect
+   with the margin rect punched out) painted in the page colour itself, so
+   the band between page edge and margin reads as bare paper and whatever
+   the export is about to clip away simply isn't visible. Purely a display
+   stand-in for the real clip, which happens on the export clone only (see
+   trimCloneToMargins in svg-export.js). Deliberately NOT given a blend
+   mode: it lives outside #paperContent/.layoutLayerStroke, the only two
+   things the "Blend overlapping colors" rules below target, so it always
+   paints opaquely over the ink regardless of that toggle. */
+.trimMaskFrame{fill:var(--paper);fill-rule:evenodd;stroke:none;pointer-events:none}
+.trimMask{pointer-events:none}
 /* dashed reference / snap guides — all zoom-independent (non-scaling-stroke),
    differing only in stroke width + dash pattern (+ colour for the axis locks) */
 .layoutMarginGuide,.layoutGridGuide,.pvMarginGuide,.pvGridGuide,.layoutSnapGuide,.layoutAxisLockGuide{
