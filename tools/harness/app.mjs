@@ -153,13 +153,15 @@ export class HarnessApp {
     // declared inside the evaluated scope instead, with a tiny setter exported
     // alongside. `vp` needs no such treatment: it's a stable object whose
     // properties are mutated in place, exactly like a real DOM element.
+
     // svg-export.js: the paper transform (solver px -> page mm)
     const paperSrc = extractFrom(path.join(REPO, 'js', 'svg-export.js'),
       ['PAPERS', 'getMargins', 'computePaperLayout']);
     const paper = evalWithEnv(
       'let lastGen = null;\n' + paperSrc + '\nfunction __setLastGen(v){ lastGen = v; }',
       { $ }, ['computePaperLayout', 'getMargins', '__setLastGen']);
-    this._setPaperLastGen = paper.__setLastGen;
+    // dims is optional in the app too — computePaperLayout falls back to
+    // lastGen, so that has to be pushed in fresh on every call
     this.computePaperLayout = dims => { paper.__setLastGen(app.lastGen); return paper.computePaperLayout(dims); };
     this.getMargins = paper.getMargins;
 

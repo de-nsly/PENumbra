@@ -33,6 +33,7 @@ const exported = evalWithEnv(extractFrom(path.join(REPO, 'js', 'svg-export.js'),
 export const {
   chainByRun, mergeContourRunSplits, splitSelfTouching, simplifyCollinear,
   chainSegments, mergeAdjacentTouching, mergeCreaseScreenSpace, buildChainedPathD,
+  SIMPLIFY_COLLINEAR_TOL,
 } = exported;
 
 const CHAIN_LAYERS = { so:1, iv:1, ih:1 };
@@ -99,12 +100,4 @@ export function buildPaperSvg(m, layers, layout, extra = []){
     '<rect width="100%" height="100%" fill="#fbf9f3"/>' +
     '<g transform="translate(' + layout.offX.toFixed(3) + ',' + layout.offY.toFixed(3) +
     ') scale(' + layout.scale.toFixed(6) + ')">' + parts.join('') + '</g></svg>';
-}
-
-/* Marker for annotating a spot on the paper SVG, in SOLVER-px coordinates
-   (i.e. inside the same <g> the paths live in). */
-export function marker(x, y, r, layout, color = '#e02020'){
-  const mmToPx = 1/Math.max(1e-6, layout.scale);
-  return '<circle cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="' + r.toFixed(2) +
-    '" fill="none" stroke="' + color + '" stroke-width="' + (0.4*mmToPx).toFixed(3) + '"/>';
 }
