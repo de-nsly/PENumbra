@@ -33,7 +33,24 @@ node tools/harness/run.mjs scene.pen --json              # counts only
 
 # hunt for Contour ink that went missing
 node tools/harness/contour-audit.mjs scene.pen [--hidden] [--png out.png]
+
+# regression sweep: capture a fingerprint, change something, compare
+node tools/harness/sweep.mjs pen_files/pipe_X_aligned.pen --out before.json
+node tools/harness/sweep.mjs demo --out demo-before.json      # the built-in demo mesh
+#   …make the change…
+node tools/harness/sweep.mjs pen_files/pipe_X_aligned.pen --out after.json
+node tools/harness/sweep.mjs --diff before.json after.json
 ```
+
+`sweep.mjs` solves the scene from 28 camera angles — the six exact
+axis-aligned orthographic poles (where different parts of the mesh project
+onto each other exactly, which is where this pipeline is fragile), the same
+six in perspective, a 15-view generic off-axis grid as a control group, and
+the scene's own camera — with all seven line layers on, and fingerprints
+each (view, layer)'s emitted path data by hash, segment count and total
+drawn length. `--diff` reports every pair that moved and, crucially, the
+**direction**: `INK ADDED` vs `INK LOST`. Pass `demo` instead of a `.pen`
+path to sweep the app's built-in demo mesh as an independent second scene.
 
 ## Files
 
@@ -45,6 +62,7 @@ node tools/harness/contour-audit.mjs scene.pen [--hidden] [--png out.png]
 | `extract.mjs` | pulls named declarations out of the app's global-scope scripts and evaluates them in a sandbox. |
 | `run.mjs` | CLI. |
 | `contour-audit.mjs` | Contour-specific diagnostics (see below). |
+| `sweep.mjs` | multi-view golden-output fingerprint + diff. |
 | `vendor/three.min.js` | three.js r128, byte-identical to the CDN file `index.html` loads. |
 
 ## Two things the harness cannot reproduce
@@ -64,12 +82,16 @@ node tools/harness/contour-audit.mjs scene.pen [--hidden] [--png out.png]
 
 Two checks, both aimed at "a stretch of Contour is simply absent":
 
-1. **Fold-back drops.** Re-runs `simplifyCollinear`'s sweep and reports every
-   point it drops whose projection onto the `a→c` line lands *outside* the
-   `a..c` span. On a genuinely straight run that never happens — the dropped
-   point always sits between its neighbours. It happens when a contour chain
-   doubles back on itself along a near-coincident line, and the drop then
-   erases the whole out-and-back excursion. `erased` is the pen travel lost.
+1. **Fold-backs.** Re-runs `simplifyCollinear`'s sweep and reports every point
+   whose projection onto the `a→c` line lands *outside* the `a..c` span. On a
+   genuinely straight run that never happens — the point always sits between
+   its neighbours. It happens when a contour chain doubles back on itself
+   along a near-coincident line, where dropping the point would erase the
+   whole out-and-back excursion rather than a redundant midpoint. Each is
+   reported as `preserved` or `COLLAPSED`; anything collapsed with an
+   excursion above `SIMPLIFY_FOLDBACK_TOL` is real ink being deleted.
+   (This is the check that found the 55.5px Contour gap in
+   `pipe_X_aligned.pen`; see `SIMPLIFY_FOLDBACK_TOL` in `js/svg-export.js`.)
 2. **Collinear holes.** Clusters emitted ink onto infinite lines and reports
    gaps in the middle of an otherwise continuous run. Run with `--hidden`:
    without it, every genuinely occluded stretch shows up as a hole.

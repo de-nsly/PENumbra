@@ -563,6 +563,24 @@ function chainSegments(segs){
    catch only genuine (near-)exact collinearity from mesh topology, not a
    perceptual "close enough" judgment the way the dedup tolerances are. */
 const SIMPLIFY_COLLINEAR_TOL = 0.05;   // px, perpendicular deviation allowed
+/* How far past its own neighbors a point may stick out and still count as
+   redundant. The perpendicular test below asks whether b sits on the a→c
+   LINE; on its own it says nothing about whether b sits BETWEEN a and c. For
+   an ordinary straight run that distinction is empty — b always does — but a
+   chain that doubles back on itself along a near-coincident line puts b far
+   PAST c on that same line, and dropping it there doesn't remove a redundant
+   midpoint, it erases the entire out-and-back excursion. That happens exactly
+   where two parts of the mesh at different depths project onto the same
+   screen line, i.e. constantly in axis-snapped orthographic views: measured
+   on an X-aligned view of the pipe model, one such drop deleted a 55.5px
+   stretch of Contour that the worker had emitted correctly (the two strands
+   were 0.03px apart in y, well inside the perpendicular tolerance, while b
+   sat 105px beyond c).
+   Set to MIN_SEG rather than to SIMPLIFY_COLLINEAR_TOL so a fold-back too
+   short to be a pen mark at all — fp noise between two independently-computed
+   representations of the same point — still collapses exactly as it did
+   before, and only excursions a plotter would actually draw are kept. */
+const SIMPLIFY_FOLDBACK_TOL = 0.3;   // px — MIN_SEG, the pipeline's "not worth a separate pen mark" floor
 // A walk that dead-ends a hair's width from its own start point (confirmed
 // against real output: gaps on the order of 1e-5 units after unit
 // conversion — far below anything a plotter, or a person, could ever
@@ -597,7 +615,11 @@ function simplifyCollinear(pts, closed, tol=SIMPLIFY_COLLINEAR_TOL){
     const lenAC = Math.hypot(acx,acy);
     if (lenAC > 1e-9){
       const cross = (b[0]-a[0])*acy - (b[1]-a[1])*acx;
-      if (Math.abs(cross)/lenAC <= tol) continue;   // b sits on the a→c line — redundant, drop it
+      const t = ((b[0]-a[0])*acx + (b[1]-a[1])*acy) / (lenAC*lenAC);
+      const overshoot = t < 0 ? -t*lenAC : t > 1 ? (t-1)*lenAC : 0;
+      // both tests together are "b is close to the a→c SEGMENT", not merely to
+      // its infinite line — see SIMPLIFY_FOLDBACK_TOL
+      if (Math.abs(cross)/lenAC <= tol && overshoot <= SIMPLIFY_FOLDBACK_TOL) continue;   // redundant, drop it
     }
     out.push(b);
   }

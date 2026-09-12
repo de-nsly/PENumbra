@@ -228,7 +228,24 @@ export class HarnessApp {
 
   /* ---- scene-io.js importScene() + applyImportedScene() ---- */
   async loadScene(penPath, opts = {}){
-    const data = JSON.parse(readFileSync(penPath, 'utf8'));
+    // 'demo' stands in for a .pen holding the app's own built-in demo scene —
+    // a second, independent mesh to regression-sweep against without needing
+    // a fixture file. Settings/layers stay at the app's HTML defaults (absent
+    // ids read as empty, which is what a fresh page does before any input).
+    const data = penPath === 'demo'
+      ? { penumbraScene: 1, model: { demo: true },
+          camera: { theta: 0.7, phi: 1.12, radius: 5, exactPole: 0, target: [0,0,0], ortho: false },
+          settings: { fovDeg: '40', camShiftX: '0', camShiftY: '0', rotX: '0', rotY: '0', rotZ: '0',
+            lightAz: '35', lightEl: '42', hatchAng: '45', hatchMin: '1', hatchMax: '7', hatchCap: '4',
+            hatchThr: '0.92', crossThr: '0.45', deepThr: '0.18', texCirclesThr: '0.92',
+            texGroundPatternCenterX: '0', texGroundPatternCenterY: '0',
+            watertight: true, dedupOffMult: '1', dedupGapMult: '1',
+            contourCleanup: '0.025', contourMaxHops: '3', creaseDeg: '1',
+            softShadows: false, invertShadows: false, castShadows: true, groundShadow: false,
+            shadowBudget: '1', groundOff: '0', smoothShading: false, smoothAngleDeg: '30',
+            paperSize: 'A3', orient: 'portrait', marginMm: '5', marginIndependent: false },
+          layers: {} }
+      : JSON.parse(readFileSync(penPath, 'utf8'));
     if (!data || data.penumbraScene !== 1 || !data.model)
       throw new Error('unrecognized scene file: ' + penPath);
     this.scene = data;

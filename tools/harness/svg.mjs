@@ -24,7 +24,7 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 /* Every pure declaration onResult's chaining branches depend on, in
    dependency order. layerStyle/$ are never reached from any of them. */
 const PURE = [
-  'SIMPLIFY_COLLINEAR_TOL', 'CHAIN_CLOSE_SNAP_TOL', 'simplifyCollinear',
+  'SIMPLIFY_COLLINEAR_TOL', 'SIMPLIFY_FOLDBACK_TOL', 'CHAIN_CLOSE_SNAP_TOL', 'simplifyCollinear',
   'accumulatePathStats', 'chainSegments', 'trimTipFoldback', 'mergeSilhouetteClose',
   'buildChainedPathD', 'chainByRun', 'mergeContourRunSplits',
   'mergeAdjacentTouching', 'mergeCreaseScreenSpace', 'splitSelfTouching',
@@ -33,7 +33,7 @@ const exported = evalWithEnv(extractFrom(path.join(REPO, 'js', 'svg-export.js'),
 export const {
   chainByRun, mergeContourRunSplits, splitSelfTouching, simplifyCollinear,
   chainSegments, mergeAdjacentTouching, mergeCreaseScreenSpace, buildChainedPathD,
-  SIMPLIFY_COLLINEAR_TOL,
+  SIMPLIFY_COLLINEAR_TOL, SIMPLIFY_FOLDBACK_TOL,
 } = exported;
 
 const CHAIN_LAYERS = { so:1, iv:1, ih:1 };
@@ -76,6 +76,24 @@ export function layerPathD(m, key, { mmToPx = 1, mode = 'chained' } = {}){
     }
   }
   return d.join(' ');
+}
+
+/* Flattens a `d` string back into a flat [x0,y0,x1,y1,…] segment list.
+   Use this, not m.groups[key], whenever you want to LOOK at what the app
+   actually exports: the worker's raw segments and the emitted path differ by
+   the whole chaining/merge/simplify tail, which is exactly where ink can go
+   missing. */
+export function pathDToSegs(d){
+  const t = d.trim().split(/[\s,]+/);
+  const out = [];
+  let c = null, s = null;
+  for (let i = 0; i < t.length;){
+    if (t[i] === 'M'){ c = [+t[i+1], +t[i+2]]; s = c; i += 3; }
+    else if (t[i] === 'L'){ const p = [+t[i+1], +t[i+2]]; out.push(c[0], c[1], p[0], p[1]); c = p; i += 3; }
+    else if (t[i] === 'Z' || t[i] === 'z'){ out.push(c[0], c[1], s[0], s[1]); c = s; i += 1; }
+    else i += 1;
+  }
+  return out;
 }
 
 /* A paper-space SVG of the given layers, laid out through the app's own

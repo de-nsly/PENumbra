@@ -4,14 +4,17 @@
    Two checks over one scene, both aimed at the "a stretch of Contour
    is simply absent" class of bug:
 
-   1. FOLD-BACK DROPS — re-runs simplifyCollinear's own sweep and
-      reports every point it drops whose projection onto the a→c line
-      lands OUTSIDE the a..c span. For a genuinely straight run that
-      never happens (the dropped point always sits between its
-      neighbours); when a chain doubles back on itself along a
-      near-coincident line, it does, and dropping the point erases the
-      whole out-and-back excursion. `erased` is how much pen travel
-      each drop deletes.
+   1. FOLD-BACKS — re-runs simplifyCollinear's own sweep and reports
+      every point whose projection onto the a→c line lands OUTSIDE the
+      a..c span. For a genuinely straight run that never happens (the
+      point always sits between its neighbours); when a chain doubles
+      back on itself along a near-coincident line, it does, and
+      dropping such a point would erase the whole out-and-back
+      excursion rather than a redundant midpoint. Each is reported with
+      its excursion length and whether the CURRENT rule collapses it
+      (it may, below SIMPLIFY_FOLDBACK_TOL, where the excursion is too
+      short to be a pen mark at all). A "COLLAPSED" line above that
+      floor is the bug this check exists for.
 
    2. COLLINEAR HOLES — clusters all emitted ink onto infinite lines
       and reports gaps in the middle of an otherwise continuous run.
@@ -25,7 +28,8 @@
    ================================================================ */
 import { writeFileSync } from 'node:fs';
 import { openScene, DEFAULT_VIEWPORT } from './app.mjs';
-import { chainByRun, mergeContourRunSplits, splitSelfTouching, SIMPLIFY_COLLINEAR_TOL } from './svg.mjs';
+import { chainByRun, mergeContourRunSplits, splitSelfTouching, layerPathD, pathDToSegs,
+         SIMPLIFY_COLLINEAR_TOL, SIMPLIFY_FOLDBACK_TOL } from './svg.mjs';
 import { Raster } from './raster.mjs';
 
 const argv = process.argv.slice(2);
@@ -41,8 +45,8 @@ const vp = vpAt >= 0
   ? (([w,h]) => ({w,h}))(argv[vpAt+1].split('x').map(Number))
   : DEFAULT_VIEWPORT;
 
-// the real tolerance, lifted from js/svg-export.js — never a second copy
-const TOL = SIMPLIFY_COLLINEAR_TOL;
+// the real tolerances, lifted from js/svg-export.js — never a second copy
+const TOL = SIMPLIFY_COLLINEAR_TOL, FOLD_TOL = SIMPLIFY_FOLDBACK_TOL;
 
 const app = await openScene(pen, { viewport: vp });
 app.setLayers({ so:false, iv:false, ih:false, cv:false, ch:false, sv:true, sh:withHidden });
@@ -72,12 +76,13 @@ function auditSimplify(pts, closed){
     const acx = c[0]-a[0], acy = c[1]-a[1], lenAC = Math.hypot(acx, acy);
     if (lenAC > 1e-9){
       const cross = (b[0]-a[0])*acy - (b[1]-a[1])*acx;
-      if (Math.abs(cross)/lenAC <= TOL){
-        const t = ((b[0]-a[0])*acx + (b[1]-a[1])*acy) / (lenAC*lenAC);
-        if (t < -1e-9 || t > 1+1e-9)
-          drops.push({ a, b, c, t, erased: (t < 0 ? -t : t-1) * lenAC, perp: Math.abs(cross)/lenAC });
-        continue;
-      }
+      const t = ((b[0]-a[0])*acx + (b[1]-a[1])*acy) / (lenAC*lenAC);
+      const excursion = t < 0 ? -t*lenAC : t > 1 ? (t-1)*lenAC : 0;
+      const nearLine = Math.abs(cross)/lenAC <= TOL;
+      if (nearLine && excursion > 0)
+        drops.push({ a, b, c, t, excursion, perp: Math.abs(cross)/lenAC,
+                     collapsed: excursion <= FOLD_TOL });
+      if (nearLine && excursion <= FOLD_TOL) continue;   // mirrors simplifyCollinear
     }
     out.push(b);
   }
@@ -94,15 +99,19 @@ for (const k of keys){
     for (const p of splitSelfTouching(c.pts, c.closed))
       for (const d of auditSimplify(p.pts, p.closed)) foldbacks.push({ ...d, layer: k });
 }
-foldbacks.sort((x,y) => y.erased - x.erased);
-const significant = foldbacks.filter(d => d.erased >= 1);
-console.log('== simplifyCollinear fold-back drops ==');
-console.log('   ' + foldbacks.length + ' total, ' + significant.length + ' erasing >= 1px  (tol=' + TOL + 'px)');
+foldbacks.sort((x,y) => y.excursion - x.excursion);
+const significant = foldbacks.filter(d => d.excursion >= 1);
+const erased = foldbacks.filter(d => d.collapsed && d.excursion > FOLD_TOL);
+console.log('== simplifyCollinear fold-backs ==');
+console.log('   ' + foldbacks.length + ' total, ' + significant.length + ' with an excursion >= 1px' +
+            '  (line tol=' + TOL + 'px, fold-back tol=' + FOLD_TOL + 'px)');
 for (const d of significant)
-  console.log('   [' + d.layer + '] erased ' + d.erased.toFixed(2) + 'px  perpendicular offset ' + d.perp.toFixed(4) + 'px\n' +
+  console.log('   [' + d.layer + '] ' + (d.collapsed ? 'COLLAPSED' : 'preserved') +
+    '  excursion ' + d.excursion.toFixed(2) + 'px  perpendicular offset ' + d.perp.toFixed(4) + 'px\n' +
     '        a=(' + d.a[0].toFixed(2) + ',' + d.a[1].toFixed(2) + ')  ' +
     'b=(' + d.b[0].toFixed(2) + ',' + d.b[1].toFixed(2) + ')  ' +
     'c=(' + d.c[0].toFixed(2) + ',' + d.c[1].toFixed(2) + ')   t=' + d.t.toFixed(3));
+if (erased.length) console.log('   *** ' + erased.length + ' fold-back(s) still collapsed above the floor — real ink is being deleted ***');
 
 /* ---- 2. holes in collinear runs ---- */
 const segs = [];
@@ -146,9 +155,12 @@ if (pngAt >= 0){
   let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
   for (const s of segs){ x0=Math.min(x0,s[0],s[2]); x1=Math.max(x1,s[0],s[2]);
                          y0=Math.min(y0,s[1],s[3]); y1=Math.max(y1,s[1],s[3]); }
+  // the EMITTED path, not m.groups — the chaining tail is where ink vanishes,
+  // so a picture of the raw worker output would hide exactly what's being audited
+  const mmToPx = 1/app.computePaperLayout({ w: m.w, h: m.h }).scale;
   const r = new Raster({x0,y0,x1,y1}, 1.13);
-  if (withHidden) r.segs(m.groups.sh, [175,178,184], 1.0);
-  r.segs(m.groups.sv, [20,20,20], 1.2);
+  if (withHidden) r.segs(pathDToSegs(layerPathD(m, 'sh', { mmToPx })), [175,178,184], 1.0);
+  r.segs(pathDToSegs(layerPathD(m, 'sv', { mmToPx })), [20,20,20], 1.2);
   for (const d of significant){ r.line(d.a[0],d.a[1],d.b[0],d.b[1],[0,150,235],3);
                                 r.line(d.b[0],d.b[1],d.c[0],d.c[1],[0,150,235],3); }
   writeFileSync(argv[pngAt+1], r.png());
