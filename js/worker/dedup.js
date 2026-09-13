@@ -582,3 +582,213 @@ export function subtractCovered(loArr, hiArr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP
   }
   return runIds ? { arr: out, runIds: outRunIds, seqs: outSeqs } : out;
 }
+
+/* Cross-run coincidence removal WITHIN one Contour layer.
+   Two parts of the mesh whose silhouettes project onto the same screen line
+   each produce their own Contour run, and both are genuinely visible —
+   neither occludes the other, since they graze. Nothing upstream removes
+   either, so the plotter re-strokes that stretch: on an X-aligned view of the
+   pipe model, 92mm of ink drawn twice, the two strands 20-55µm apart on the
+   page. Generic (off-axis) views have none of it at all — this is an artifact
+   of coincident projection, not a general property of Contour.
+
+   Deliberately NOT built on dedupCollinear or subtractCovered, both of which
+   were tried and measured first:
+     - dedupCollinear CLUSTERS and MERGES collinear strands into a new
+       backbone, blind to depth and run identity, and provably corrupts
+       self-crossing Contour (see the Step 7 note at its call site in
+       solver.js — a torus knot went from 81 paths to 22).
+     - subtractCovered only ever trims, but it subtracts against a MERGED
+       backbone of every higher-priority run at once, so unrelated runs that
+       merely pass near each other compound into coverage that was never
+       really there. Measured: it deleted real geometry in 14 of 28 sweep
+       views, generic ones included, and the losses barely moved when the
+       tolerance was tightened — the accumulation, not the tolerance, was the
+       problem. It also has to regroup segments by run, and that reordering
+       alone perturbed the cross-layer cascade downstream even in views where
+       nothing at all was removed.
+   So this is a direct pairwise pass instead: a segment only ever yields to
+   ONE other segment at a time, each of which must independently pass the
+   full coincidence test, and the output keeps the input's segment order so a
+   view with no coincidence is a bit-exact no-op.
+
+   Priority is longest-run-first, run id breaking ties: the longest continuous
+   stroke keeps all its ink and shorter coincident runs yield. Since every
+   strand involved is visible Contour, which one survives is a plotter-economy
+   question, not a correctness one — the drawn page looks the same either way. */
+const COINCIDENT_SIN_MAX = 0.01;    // |sin| between directions — ~0.57°, matches the audit's parallel test
+export function dedupCrossRunCoincident(arr, runIds, seqs, offTol=DEDUP_OFF_TOL){
+  const n = arr.length/4;
+  if (n < 2) return { arr, runIds, seqs };
+  // rank each run: longest total length first, run id as a stable tie-break
+  const lenByRun = new Map();
+  for (let i=0;i<n;i++){
+    const L = Math.hypot(arr[i*4+2]-arr[i*4], arr[i*4+3]-arr[i*4+1]);
+    lenByRun.set(runIds[i], (lenByRun.get(runIds[i]) || 0) + L);
+  }
+  if (lenByRun.size < 2) return { arr, runIds, seqs };   // one run can't duplicate itself
+  const ranked = [...lenByRun.keys()].sort((a,b) => lenByRun.get(b) - lenByRun.get(a) || a - b);
+  const rank = new Map(ranked.map((r,i) => [r,i]));
+  const order = [];                                      // segment indices, highest-priority run first
+  for (let i=0;i<n;i++) order.push(i);
+  order.sort((x,y) => rank.get(runIds[x]) - rank.get(runIds[y]) || x - y);
+
+  /* Two descriptions of the same segment, for two different jobs.
+     `ux,uy` is the segment's OWN direction, used for every interval
+     computation and for emitting: pieces are built from the segment's own
+     start point along its own direction, so a surviving piece keeps both the
+     position AND the orientation of its input. (Parameterising along a
+     canonicalized direction instead mirrors every leftward segment about its
+     own start point — geometry moved bodily across the page — and even done
+     correctly it would reverse endpoints, which chainByRun reads as a broken
+     chain and splits.)
+     Nothing else is derived from the direction — candidate lookup is spatial
+     (see the grid below), so there is no canonicalized form to keep in step. */
+  const describe = (x0,y0,x1,y1) => {
+    let ux = x1-x0, uy = y1-y0;
+    const L = Math.hypot(ux,uy);
+    if (L < 1e-12) return null;
+    ux /= L; uy /= L;
+    return { x0, y0, ux, uy, L };
+  };
+  /* Candidate lookup is SPATIAL — a grid over screen space, each segment
+     registered in every cell it passes through — and never line-parametric.
+     Bucketing on (quantized direction, perpendicular offset) is the obvious
+     choice and is wrong here: that offset is measured from the origin, so two
+     strands that are 0.2px apart but differ in direction by a thousandth land
+     several buckets apart once they sit a few hundred px out (offset moves by
+     y·Δdirection — a 646px lever arm turns 0.003 of direction into 2px of
+     offset). It also has a seam at vertical, where canonicalizing into the
+     right half-plane sends the same physical line to either end of the angle
+     range. Both failure modes silently drop candidates, and together they
+     were why an earlier version of this pass cleaned up the horizontal
+     coincidences in this scene and left nearly all the vertical ones.
+     Two segments that overlap on the page are, by definition, in the same
+     neighbourhood of it — so proximity is the filter that cannot miss. */
+  const CELL = Math.max(8, offTol * 8);
+  const grid = new Map();
+  const cellsAlong = (s, fn) => {
+    const steps = Math.max(1, Math.ceil(s.L / CELL) + 1);
+    let pcx = NaN, pcy = NaN;
+    for (let k = 0; k <= steps; k++){
+      const t = (k/steps) * s.L;
+      const cx = Math.floor((s.x0 + s.ux*t) / CELL), cy = Math.floor((s.y0 + s.uy*t) / CELL);
+      if (cx === pcx && cy === pcy) continue;
+      pcx = cx; pcy = cy;
+      fn(cx, cy);
+    }
+  };
+  const addSurvivor = (s, run) => {
+    const entry = { s, run };
+    cellsAlong(s, (cx, cy) => {
+      // one cell ring of slack, so a candidate running just outside this
+      // segment's own cells is still reachable
+      for (let dx=-1; dx<=1; dx++) for (let dy=-1; dy<=1; dy++){
+        const k = (cx+dx) + ':' + (cy+dy);
+        let list = grid.get(k);
+        if (!list){ list = []; grid.set(k, list); }
+        list.push(entry);
+      }
+    });
+  };
+
+  /* Survivors, not originals, are what a segment is tested against. Runs are
+     visited highest-priority first, so by the time a run is reached every run
+     that could take ink from it is already final — testing against the
+     original array instead lets a three-way chain lose ink for real (the
+     middle run yields to the top one, the bottom run yields the same stretch
+     to the middle one's ORIGINAL extent, and nothing is left drawing it). */
+  const piecesAt = new Array(n);                          // original index -> surviving pieces
+  for (const i of order){
+    const a = describe(arr[i*4], arr[i*4+1], arr[i*4+2], arr[i*4+3]);
+    if (!a){ piecesAt[i] = []; continue; }                 // degenerate; the MIN_SEG guard would drop it anyway
+    const nx = -a.uy, ny = a.ux;                           // a's own normal
+    const cover = [];
+    const seen = new Set();                                // a candidate sits in many cells
+    const lists = [];
+    cellsAlong(a, (cx, cy) => { const l = grid.get(cx + ':' + cy); if (l) lists.push(l); });
+    for (const list of lists){
+      for (const entry of list){
+        if (seen.has(entry)) continue;
+        seen.add(entry);
+        const { s: q, run } = entry;
+        if (run === runIds[i]) continue;                   // a run never duplicates itself
+        if (Math.abs(a.ux*q.uy - a.uy*q.ux) > COINCIDENT_SIN_MAX) continue;         // not parallel
+        // both of q's endpoints must sit ON a's line, not merely near it
+        const qx1 = q.x0 + q.ux*q.L, qy1 = q.y0 + q.uy*q.L;
+        const d0 = Math.abs((q.x0-a.x0)*nx + (q.y0-a.y0)*ny);
+        const d1 = Math.abs((qx1  -a.x0)*nx + (qy1  -a.y0)*ny);
+        if (d0 > offTol || d1 > offTol) continue;
+        const t0 = (q.x0-a.x0)*a.ux + (q.y0-a.y0)*a.uy;
+        const t1 = (qx1  -a.x0)*a.ux + (qy1  -a.y0)*a.uy;
+        let lo = Math.max(0, Math.min(t0,t1)), hi = Math.min(a.L, Math.max(t0,t1));
+        /* Snap an interval end that lands a float-noise distance from this
+           segment's own end onto it. Two runs that meet at a shared mesh
+           vertex compute that point down two different paths, so the cover
+           can start 5e-5px short of t=0 — and that crumb then reads as a
+           "stranded sliver" below and abandons the trim for the whole
+           segment. Measured: it was why the largest doubled stretch in the
+           pipe scene (55px) survived untouched. EXACT_DUP_EPS is the module's
+           existing "same point, different arithmetic" scale. */
+        if (lo < EXACT_DUP_EPS) lo = 0;
+        if (hi > a.L - EXACT_DUP_EPS) hi = a.L;
+        // every real overlap counts, however short. Filtering these by MIN_SEG
+        // (the obvious-looking guard) punches a sub-MIN_SEG hole into otherwise
+        // continuous coverage wherever a covering run's segment boundary falls
+        // just inside this one — and that hole then becomes a stranded sliver,
+        // which abandons the trim for the whole segment. The MIN_SEG guard
+        // belongs on what is EMITTED, not on what counts as covered.
+        if (hi > lo + 1e-9) cover.push([lo, hi]);
+      }
+    }
+    let pieces = [];
+    if (!cover.length){
+      // untouched: keep the ORIGINAL endpoints verbatim rather than
+      // rebuilding them from (start + direction * t), so a view with no
+      // coincidence at all is bit-exact, not merely visually identical
+      pieces.push(describe(arr[i*4], arr[i*4+1], arr[i*4+2], arr[i*4+3]));
+    } else {
+      cover.sort((p,q) => p[0]-q[0]);
+      /* A trim that would leave a remainder too short to be its own pen mark
+         is abandoned outright, and the segment kept whole. The sliver itself
+         is not the real cost — it is what discarding it does to the CHAINS.
+         Two runs that coincide rarely have their segment boundaries in the
+         same places, so a trim usually ends a sub-MIN_SEG crumb short of the
+         segment's end; dropping that crumb cuts the run there, and if the run
+         was a closed loop the loop opens, costing a pen lift. Measured over
+         14 views: dropping crumbs takes the residual double ink from 85.7mm
+         down to 23.2mm but drops closed subpaths from 208 to 129, and the
+         single largest surviving duplicate (90.9px, axis-Y) is held by a
+         0.07px crumb guarding exactly such a loop. Keeping the guard trades
+         the last ~9% of duplicate ink for ~80 closed loops, which is the
+         better deal for a plotter. Neither setting loses any ink from the
+         page (0 gap cells either way). */
+      let stranded = false;
+      const keep = (s,e) => {
+        if (e - s <= MIN_SEG){ stranded = true; return; }
+        pieces.push(describe(a.x0 + a.ux*s, a.y0 + a.uy*s, a.x0 + a.ux*e, a.y0 + a.uy*e));
+      };
+      let cur = 0;
+      for (const [s,e] of cover){
+        if (e <= cur) continue;
+        if (s > cur) keep(cur, s);
+        cur = e;
+        if (cur >= a.L) break;
+      }
+      if (cur < a.L) keep(cur, a.L);
+      if (stranded) pieces = [describe(arr[i*4], arr[i*4+1], arr[i*4+2], arr[i*4+3])];
+    }
+    piecesAt[i] = pieces = pieces.filter(Boolean);
+    for (const p of pieces) addSurvivor(p, runIds[i]);
+  }
+  // emit in the INPUT's own segment order — regrouping by run was measured to
+  // perturb the cross-layer cascade downstream even where nothing was removed
+  const outArr = [], outRunIds = [], outSeqs = [];
+  for (let i=0;i<n;i++){
+    for (const p of piecesAt[i] || []){
+      outArr.push(p.x0, p.y0, p.x0 + p.ux*p.L, p.y0 + p.uy*p.L);
+      outRunIds.push(runIds[i]); outSeqs.push(seqs[i]);
+    }
+  }
+  return { arr: outArr, runIds: outRunIds, seqs: outSeqs };
+}

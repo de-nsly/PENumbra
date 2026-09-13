@@ -8,7 +8,7 @@
 import { parseSTL, parseOBJ, demoSoup } from './parsers.js';
 import { M, buildMesh, computeCornerNormals } from './mesh.js';
 import { intersectSegs, buildSegGrid, buildShadowMap, worldOnFace, buildPatternSegsFromTest, mergeRingPieces, flipBufferRowsY, sampleShading } from './geom-utils.js';
-import { MIN_SEG, pairJunctionArms, dedupCollinear, subtractCovered } from './dedup.js';
+import { MIN_SEG, pairJunctionArms, dedupCollinear, subtractCovered, dedupCrossRunCoincident } from './dedup.js';
 /* Occlusion depth bias. The bias has exactly two legitimate jobs: absorb
    floating-point noise, and keep a surface from occluding edges that lie ON
    that surface (crease/silhouette edges vs. their fan-neighbor faces, or
@@ -2963,8 +2963,12 @@ function generate(cam, S, shadingBuffer){
      torus knot went from 81 fragmented paths to 22, one closed, purely by
      disabling this for Contour, everything else held constant). Contour's
      own run identity (Step 2/3 above) already guarantees no duplicate ink
-     within a run, and cross-run duplicate ink is vanishingly rare compared
-     to the corruption risk, so it's never run here at all.
+     within a run, so it's never run here at all. Cross-run duplicate ink is
+     NOT rare in axis-aligned views, though — it is handled separately, by the
+     trim-only dedupCrossRunCoincident pass after the cascade below. Re-measured
+     against the current pipeline (tools/harness/dedup-experiment.mjs): this
+     exclusion still holds — dedupCollinear on sv/sh opened 195 of 206 closed
+     loops and deleted real ink over 14 views.
      iv/ih were missing from this list until now, which the paragraph above
      never intended — they are straight-line edge layers and they are not
      Contour. The omission dates from the layer-model split (the old single
@@ -3027,6 +3031,31 @@ function generate(cam, S, shadingBuffer){
       } else {
         groups[lo] = subtractCovered(groups[lo], groups[hi], effOffTol, effGapTol);
       }
+    }
+  }
+
+  /* Pass 3: cross-run coincidence removal inside Contour itself — the one
+     kind of duplicate ink Contour's own run identity cannot rule out (a run
+     never duplicates itself, but two runs from different parts of the mesh
+     whose silhouettes project onto the same screen line do). See
+     dedupCrossRunCoincident for why it is built the way it is.
+     Deliberately AFTER the cross-layer cascade, not before: run earlier, the
+     segment it picks as the surviving copy can itself be subtracted away by
+     a higher layer a moment later, taking a stretch off the page that
+     nothing redraws. Everything it sees here is final ink, so removing a
+     duplicate can no longer interact with a later subtraction.
+     Always on. It is a deliberate, measured departure from Phase 3b's "never
+     touch sv/sh intra-layer" rule: on the X-aligned pipe scene it removed 91%
+     of the doubled Contour ink over 14 views with no ink lost from the page
+     and no closed loops opened, and it is an exact no-op in views without
+     coincident projection. contourCoincidentDedup === false turns it off; no
+     UI control sends that key — it exists only so the regression harness
+     (tools/harness) can still A/B the pass. */
+  if (S.contourCoincidentDedup !== false){
+    for (const k of ['sv','sh']){
+      if (!groups[k].length) continue;
+      const res = dedupCrossRunCoincident(groups[k], runIds[k], seqs[k], effOffTol);
+      groups[k] = res.arr; runIds[k] = res.runIds; seqs[k] = res.seqs;
     }
   }
 
