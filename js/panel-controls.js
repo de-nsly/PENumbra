@@ -240,12 +240,11 @@ function gatherSettings(){
     // reintroduced as a bug by a user-facing absolute value.
     dedupOffMult: +$('dedupOffMult').value,
     dedupGapMult: +$('dedupGapMult').value,
-    // Contour's backdrop depth-similarity tolerance (Lines section), plus the
-    // Debug panel's kill-switch for the same test. The worker keeps its own
-    // literal default for whenever contourCleanup isn't a finite number, so a
+    // Contour's backdrop depth-similarity tolerance (Lines section, "Cleanup").
+    // The worker keeps its own literal default for whenever contourCleanup isn't a finite number, so a
     // scene saved before this control existed still solves identically.
     contourCleanup: +$('contourCleanup').value,
-    // The surface-distance half of the same decision, composed onto the depth
+    // "Max hops": the surface-distance half of the same decision, composed onto the depth
     // test rather than replacing it: a depth-similar stretch is only dropped
     // if its backdrop is also within this many triangle steps across the
     // surface. Both halves are per-model aesthetic controls — see the block
@@ -377,8 +376,8 @@ syncShadowUI();   // sets the initial disabled state at load
 // out while that group draws nothing at all — the same treatment (and the same
 // .ctlDisabled class) the shadow controls above get. Each condition mirrors
 // the solver's own gate exactly, so a disabled slider is genuinely inert
-// rather than merely hidden: Contour cleanup and Max surface hops feed
-// buildContourDrops, which only allocates when layerOn.sv || layerOn.sh, and
+// rather than merely hidden: Contour Cleanup and Max hops feed
+// buildContourDrops, which does nothing unless layerOn.sv || layerOn.sh, and
 // Crease angle is only read inside the worker's own `wantC` guard, which is
 // this same cv || ch test arriving as gatherSettings' types.c.
 //

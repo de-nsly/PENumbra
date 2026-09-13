@@ -24,11 +24,12 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 /* Every pure declaration onResult's chaining branches depend on, in
    dependency order. layerStyle/$ are never reached from any of them. */
 const PURE = [
-  'SIMPLIFY_COLLINEAR_TOL', 'SIMPLIFY_FOLDBACK_TOL', 'CHAIN_CLOSE_SNAP_TOL', 'simplifyCollinear',
+  'SIMPLIFY_COLLINEAR_TOL', 'MIN_SEG_PX', 'SIMPLIFY_FOLDBACK_TOL', 'CHAIN_CLOSE_SNAP_TOL', 'simplifyCollinear',
   'accumulatePathStats', 'chainSegments', 'trimTipFoldback', 'mergeSilhouetteClose',
-  'buildChainedPathD', 'chainByRun', 'mergeContourRunSplits',
+  'chainByRun', 'mergeContourRunSplits', 'appendPolylineD', 'buildChainedPathD',
   'mergeAdjacentTouching', 'mergeCreaseScreenSpace', 'splitSelfTouching',
   'CONTOUR_MICRO_TOL', 'trimContourFoldbacks', 'dropRedundantContourSlivers',
+  'appendContourPathD', 'appendCreasePathD',
 ];
 const exported = evalWithEnv(extractFrom(path.join(REPO, 'js', 'svg-export.js'), PURE), {}, PURE);
 export const {
@@ -36,14 +37,16 @@ export const {
   chainSegments, mergeAdjacentTouching, mergeCreaseScreenSpace, buildChainedPathD,
   SIMPLIFY_COLLINEAR_TOL, SIMPLIFY_FOLDBACK_TOL, trimTipFoldback,
   trimContourFoldbacks, dropRedundantContourSlivers,
+  appendContourPathD, appendCreasePathD,
 } = exported;
 
 const CHAIN_LAYERS = { so:1, iv:1, ih:1 };
 const SEQ_CHAIN_LAYERS = { cv:1, ch:1 };
 
-/* The per-layer branch of onResult's LAYERS loop, for one layer key.
-   Returns the layer's `d` string in solver-px units, exactly as the app
-   would put it on the <path>. */
+/* The per-layer branch of onResult's LAYERS loop, for one layer key —
+   calling the same per-layer builders onResult calls. Returns the layer's
+   `d` string in solver-px units, exactly as the app would put it on the
+   <path>. */
 export function layerPathD(m, key, { mmToPx = 1, mode = 'chained' } = {}){
   const segs = m.groups[key];
   if (!segs || !segs.length) return '';
@@ -53,28 +56,13 @@ export function layerPathD(m, key, { mmToPx = 1, mode = 'chained' } = {}){
       d.push('M', segs[i].toFixed(2), segs[i+1].toFixed(2), 'L', segs[i+2].toFixed(2), segs[i+3].toFixed(2));
     return d.join(' ');
   }
-  const emit = (pts, closed) => {
-    d.push('M', pts[0][0].toFixed(2), pts[0][1].toFixed(2));
-    for (let i=1;i<pts.length;i++) d.push('L', pts[i][0].toFixed(2), pts[i][1].toFixed(2));
-    if (closed) d.push('Z');
-  };
   if (key === 'sv' || key === 'sh'){
-    const chains = mergeContourRunSplits(
-      chainByRun(segs, m.runIds[key], m.seqs[key]),
-      m.counts && m.counts.contourAdjacency);
-    let pieces = [];
-    for (const chain of chains)
-      for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
-        pieces.push({ pts: simplifyCollinear(rawPts, closed), closed });
-    for (const { pts, closed } of dropRedundantContourSlivers(trimContourFoldbacks(pieces)))
-      emit(pts, closed);
+    appendContourPathD(d, segs, m.runIds[key], m.seqs[key], m.counts && m.counts.contourAdjacency, null);
   } else if (CHAIN_LAYERS[key]){
     d.push(buildChainedPathD(segs, null, {
       tolMerge: 0.25 * mmToPx, foldbackAngleThreshDeg: 150, protectedPoints: null }));
   } else if (SEQ_CHAIN_LAYERS[key]){
-    for (const chain of mergeCreaseScreenSpace(mergeAdjacentTouching(segs)))
-      for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
-        emit(simplifyCollinear(rawPts, closed), closed);
+    appendCreasePathD(d, segs, null);
   } else {
     for (let i=0;i<segs.length;i+=4){
       d.push('M', segs[i].toFixed(2), segs[i+1].toFixed(2), 'L', segs[i+2].toFixed(2), segs[i+3].toFixed(2));

@@ -246,13 +246,11 @@ export function buildMesh(input){
     }
   }
 
-  // Face → neighbouring-faces map, CSR (Phase 5 — see
-  // PHASE5-contour-cleanup-discriminator.md §5). The edge list above is
-  // edge → faces; walking ACROSS the surface needs the transpose, and there
-  // was no such mapping before. Pure topology, invariant under both camera
-  // and the Rotate-model panel, so it's derived once here at load rather
-  // than per generate() — which §5 flags as the one way to make the
-  // surface-distance probe that reads it expensive.
+  // Face → neighbouring-faces map, CSR, read by Contour cleanup's
+  // surface-hop probe (makeHopProbe in solver.js). The edge list above is
+  // edge → faces; walking ACROSS the surface needs the transpose. Pure
+  // topology, invariant under both camera and the Rotate-model panel, so
+  // it's derived once here at load rather than per generate().
   //
   // Only edges with two faces make their pair neighbours: boundary edges
   // (one face) and non-manifold edges (3+, stored above with et1 = -1)

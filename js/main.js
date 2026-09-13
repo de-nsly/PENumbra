@@ -25,9 +25,8 @@ const APP_VERSION = '0.8.4';
    for the hidden sub-layers) would leave lower layers stale until the next
    unrelated regenerate.
    host → which container in index.html the row is appended to. The edge
-   layers are split across three of them (rather than one #edgeLayers) purely
-   so each group's own solve settings can sit in the panel directly under the
-   rows they affect: Contour cleanup + Max surface hops between the Contour
+   layers are split across three hosts so each group's own solve settings can
+   sit in the panel directly under the rows they affect: Contour Cleanup + Max hops between the Contour
    rows and the Crease rows, Crease angle after the Crease rows. Order within
    this list still decides row order inside each host, and the hosts appear in
    index.html in the same order as here. */

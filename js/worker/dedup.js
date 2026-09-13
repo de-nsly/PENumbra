@@ -332,18 +332,9 @@ const exactDupPairKey = (x0,y0,x1,y1) => {
   return ka<kb ? ka+'|'+kb : kb+'|'+ka;
 };
 
-/* runIds/seqs (Phase 3a — see PHASE3a-chain-identity.md): optional parallel
-   identity arrays, one entry per input segment, carried by the Contour
-   layers (sv/sh) only — every other caller omits them and gets the
-   original plain-array return, untouched. When supplied, this function
-   returns { arr, runIds, seqs } instead of a bare array: a merge here is
-   genuine double ink between two chains (or two pieces of the same chain),
-   so the survivor inherits the runId/seq of whichever contributing span
-   was longest — ties and single-run merges naturally keep that run's own
-   id, since nothing with greater length ever displaces it. */
-export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL, runIds=null, seqs=null){
+export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
   const n0 = arr.length/4;
-  if (n0 < 2) return runIds ? { arr, runIds, seqs } : arr;
+  if (n0 < 2) return arr;
   // Exact-duplicate fast path — see EXACT_DUP_EPS above. Collapses literal
   // (within float noise) duplicates to one copy each, unconditionally,
   // before the tolerance-based clustering below — the two mechanisms
@@ -362,29 +353,18 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL, 
   }
   if (keepIdx.length < n0){
     const reduced = [];
-    const reducedRunIds = runIds ? [] : null;
-    const reducedSeqs = seqs ? [] : null;
-    for (const i of keepIdx){
-      reduced.push(arr[i*4],arr[i*4+1],arr[i*4+2],arr[i*4+3]);
-      if (runIds){ reducedRunIds.push(runIds[i]); reducedSeqs.push(seqs[i]); }
-    }
+    for (const i of keepIdx) reduced.push(arr[i*4],arr[i*4+1],arr[i*4+2],arr[i*4+3]);
     arr = reduced;
-    if (runIds){ runIds = reducedRunIds; seqs = reducedSeqs; }
   }
   const n = arr.length/4;
-  if (n < 2) return runIds ? { arr, runIds, seqs } : arr;
+  if (n < 2) return arr;
   const { clusters } = clusterCollinear(arr, offTol, gapTol);
   const out = [];
-  const outRunIds = runIds ? [] : null;
-  const outSeqs = seqs ? [] : null;
   for (const L of clusters){
     if (L.idxs.length < 2){
       const i = L.idxs[0];
       const x0=arr[i*4],y0=arr[i*4+1],x1=arr[i*4+2],y1=arr[i*4+3];
-      if (Math.hypot(x1-x0,y1-y0) > MIN_SEG){
-        out.push(x0,y0,x1,y1);
-        if (runIds){ outRunIds.push(runIds[i]); outSeqs.push(seqs[i]); }
-      }
+      if (Math.hypot(x1-x0,y1-y0) > MIN_SEG) out.push(x0,y0,x1,y1);
       continue;
     }
     // union along the line direction (tx,ty) = (-ny,nx)
@@ -401,7 +381,7 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL, 
       // input segment's direction exactly, never a drifted stand-in.
       const lo = t0r<=t1r ? {t:t0r,x:x0,y:y0} : {t:t1r,x:x1,y:y1};
       const hi = t0r<=t1r ? {t:t1r,x:x1,y:y1} : {t:t0r,x:x0,y:y0};
-      spans.push([lo,hi,i]);
+      spans.push([lo,hi]);
     }
     spans.sort((a,b)=>a[0].t-b[0].t);
     /* Sweep left-to-right maintaining one "backbone" run — either a single
@@ -425,53 +405,30 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL, 
        genuinely different, merely-nearby-in-tolerance span into a single
        new interior point — the one case that produced the zig-zag: two
        close-but-distinct lines whose interleaved pieces used to get
-       stitched together using whichever endpoint happened to be extremal.
-       ownerRunId/ownerSeq/ownerLen (only tracked when runIds is supplied)
-       ride alongside the backbone, always holding the identity of whichever
-       contributing span is currently longest — reset outright whenever the
-       backbone itself resets (trim/gap), only displaced by a strictly
-       longer newcomer when bridged or subsumed. */
+       stitched together using whichever endpoint happened to be extremal. */
     let bs = spans[0][0], be = spans[0][1];
-    let ownerRunId = runIds ? runIds[spans[0][2]] : undefined;
-    let ownerSeq = runIds ? seqs[spans[0][2]] : undefined;
-    let ownerLen = be.t - bs.t;
-    const pushBackbone = () => {
-      if (be.t - bs.t > MIN_SEG){
-        out.push(bs.x, bs.y, be.x, be.y);
-        if (runIds){ outRunIds.push(ownerRunId); outSeqs.push(ownerSeq); }
-      }
-    };
     for (let k=1; k<spans.length; k++){
-      const ns = spans[k][0], ne = spans[k][1], srcI = spans[k][2];
-      const nsLen = ne.t - ns.t;
+      const ns = spans[k][0], ne = spans[k][1];
       if (ne.t <= be.t){
-        if (runIds && nsLen > ownerLen){ ownerRunId=runIds[srcI]; ownerSeq=seqs[srcI]; ownerLen=nsLen; }
         continue;                                  // fully redundant — drop
       }
       if (ns.t <= be.t){
         // overlaps and extends further: keep backbone whole, trim next's
         // own head at t=be.t using ONLY next's two endpoints
-        pushBackbone();
+        if (be.t - bs.t > MIN_SEG) out.push(bs.x, bs.y, be.x, be.y);
         const frac = (be.t - ns.t) / Math.max(1e-9, ne.t - ns.t);
         bs = { t: be.t, x: ns.x + (ne.x-ns.x)*frac, y: ns.y + (ne.y-ns.y)*frac };
         be = ne;
-        ownerRunId = runIds ? runIds[srcI] : undefined;
-        ownerSeq = runIds ? seqs[srcI] : undefined;
-        ownerLen = be.t - bs.t;
       } else if (ns.t <= be.t + gapTol){
         be = ne;                                    // real gap, but bridgeable
-        if (runIds && nsLen > ownerLen){ ownerRunId=runIds[srcI]; ownerSeq=seqs[srcI]; ownerLen=nsLen; }
       } else {
-        pushBackbone();
+        if (be.t - bs.t > MIN_SEG) out.push(bs.x, bs.y, be.x, be.y);
         bs = ns; be = ne;
-        ownerRunId = runIds ? runIds[srcI] : undefined;
-        ownerSeq = runIds ? seqs[srcI] : undefined;
-        ownerLen = be.t - bs.t;
       }
     }
-    pushBackbone();
+    if (be.t - bs.t > MIN_SEG) out.push(bs.x, bs.y, be.x, be.y);
   }
-  return runIds ? { arr: out, runIds: outRunIds, seqs: outSeqs } : out;
+  return out;
 }
 
 /* Remove, from `loArr`, any portion that lies on the same infinite line AND
@@ -482,15 +439,14 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL, 
    A lo segment can emerge as zero, one, or several pieces (if hi coverage
    has a gap inside it, both remaining ends survive as separate segments).
    Segments with no collinear match in hiArr pass through unchanged. */
-/* runIds/seqs (Phase 3a — see PHASE3a-chain-identity.md): optional parallel
-   identity arrays, one entry per input lo segment, carried by the Contour
-   layers (sv/sh) only. subtractCovered only ever trims or removes — it
-   never merges two lo segments together — so every surviving piece simply
-   copies its source lo segment's runId/seq verbatim; a split just yields
-   two pieces sharing that same pair, which chainByRun's endpoint-adjacency
-   walk (js/svg-export.js) resolves correctly on its own. When supplied,
-   returns { arr, runIds, seqs } instead of a bare array; omitted entirely
-   for every other caller, which gets the original plain-array return. */
+/* runIds/seqs: optional parallel identity arrays, one entry per input lo
+   segment, carried by the Contour layers (sv/sh) only. subtractCovered only
+   ever trims or removes — it never merges two lo segments together — so
+   every surviving piece simply copies its source lo segment's runId/seq
+   verbatim; a split just yields two pieces sharing that same pair, which
+   chainByRun's endpoint-adjacency walk (js/svg-export.js) resolves correctly
+   on its own. When supplied, returns { arr, runIds, seqs } instead of a bare
+   array; every other caller omits them and gets the plain-array return. */
 export function subtractCovered(loArr, hiArr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL, runIds=null, seqs=null){
   const hn0 = hiArr.length/4;
   if (!hn0 || !loArr.length) return runIds ? { arr: loArr, runIds, seqs } : loArr;
@@ -595,9 +551,9 @@ export function subtractCovered(loArr, hiArr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP
    Deliberately NOT built on dedupCollinear or subtractCovered, both of which
    were tried and measured first:
      - dedupCollinear CLUSTERS and MERGES collinear strands into a new
-       backbone, blind to depth and run identity, and provably corrupts
-       self-crossing Contour (see the Step 7 note at its call site in
-       solver.js — a torus knot went from 81 paths to 22).
+       backbone, blind to depth and run identity, and corrupts self-crossing
+       Contour (see the intra-layer dedup pass in solver.js for why sv/sh
+       are excluded from it).
      - subtractCovered only ever trims, but it subtracts against a MERGED
        backbone of every higher-priority run at once, so unrelated runs that
        merely pass near each other compound into coverage that was never
@@ -659,9 +615,7 @@ export function dedupCrossRunCoincident(arr, runIds, seqs, offTol=DEDUP_OFF_TOL)
      y·Δdirection — a 646px lever arm turns 0.003 of direction into 2px of
      offset). It also has a seam at vertical, where canonicalizing into the
      right half-plane sends the same physical line to either end of the angle
-     range. Both failure modes silently drop candidates, and together they
-     were why an earlier version of this pass cleaned up the horizontal
-     coincidences in this scene and left nearly all the vertical ones.
+     range. Both failure modes silently drop candidates.
      Two segments that overlap on the page are, by definition, in the same
      neighbourhood of it — so proximity is the filter that cannot miss. */
   const CELL = Math.max(8, offTol * 8);
@@ -754,11 +708,9 @@ export function dedupCrossRunCoincident(arr, runIds, seqs, offTol=DEDUP_OFF_TOL)
         if (hi > lo + 1e-9) cover.push([lo, hi]);
       }
     }
-    let pieces = [];
+    const pieces = [];
     if (!cover.length){
-      // untouched: keep the ORIGINAL endpoints verbatim rather than
-      // rebuilding them from (start + direction * t), so a view with no
-      // coincidence at all is bit-exact, not merely visually identical
+      // untouched: the whole segment survives as one piece
       pieces.push(describe(arr[i*4], arr[i*4+1], arr[i*4+2], arr[i*4+3]));
     } else {
       cover.sort((p,q) => p[0]-q[0]);
@@ -769,13 +721,10 @@ export function dedupCrossRunCoincident(arr, runIds, seqs, offTol=DEDUP_OFF_TOL)
          sits at most offTol away, so the crumb's ink is still on the page.
          The cost is in the CHAINS: dropping the crumb cuts the run there, and
          a closed loop that loses a stretch to a coincident run opens up.
-         Measured in the worker over 14 views of the X-aligned pipe scene
-         (Contour + hidden Contour): residual double ink 23.3mm, against
-         159.9mm when such trims are abandoned instead and 910.2mm with no
-         pass at all. Real closed rings 10 vs 11 (one hidden-contour ring
-         opens, still fully drawn) and pen lifts 2356 vs 2368 — dropping the
-         crumb lets more duplicates go entirely, which saves more lifts than
-         the opened loop costs. No ink lost from the page either way. */
+         Measured against abandoning such trims instead (X-aligned pipe, 14
+         views): far less residual double ink (23mm vs 160mm) and fewer pen
+         lifts overall, at the price of one opened ring. No ink lost from the
+         page either way. */
       const keep = (s,e) => {
         if (e - s <= MIN_SEG) return;
         pieces.push(describe(a.x0 + a.ux*s, a.y0 + a.uy*s, a.x0 + a.ux*e, a.y0 + a.uy*e));
@@ -789,14 +738,14 @@ export function dedupCrossRunCoincident(arr, runIds, seqs, offTol=DEDUP_OFF_TOL)
       }
       if (cur < a.L) keep(cur, a.L);
     }
-    piecesAt[i] = pieces = pieces.filter(Boolean);
-    for (const p of pieces) addSurvivor(p, runIds[i]);
+    piecesAt[i] = pieces.filter(Boolean);
+    for (const p of piecesAt[i]) addSurvivor(p, runIds[i]);
   }
   // emit in the INPUT's own segment order — regrouping by run was measured to
   // perturb the cross-layer cascade downstream even where nothing was removed
   const outArr = [], outRunIds = [], outSeqs = [];
   for (let i=0;i<n;i++){
-    for (const p of piecesAt[i] || []){
+    for (const p of piecesAt[i]){
       outArr.push(p.x0, p.y0, p.x0 + p.ux*p.L, p.y0 + p.uy*p.L);
       outRunIds.push(runIds[i]); outSeqs.push(seqs[i]);
     }

@@ -71,14 +71,13 @@ app's built-in demo mesh as an independent second scene.
 | file | what it is |
 |---|---|
 | `app.mjs` | the main thread: `.pen` import → worker `load` → camera/settings → `generate` → result. `openScene()` / `HarnessApp`. |
-| `svg.mjs` | `onResult`'s per-layer path building (`layerPathD`) and a paper-space SVG writer. |
+| `svg.mjs` | `onResult`'s per-layer path building (`layerPathD`, calling the same builders `onResult` does) and a paper-space SVG writer. |
 | `raster.mjs` | tiny anti-aliased line rasterizer + PNG writer, so a run can be looked at. Debug aid only. |
 | `extract.mjs` | pulls named declarations out of the app's global-scope scripts and evaluates them in a sandbox. |
 | `run.mjs` | CLI. |
 | `contour-audit.mjs` | Contour-specific diagnostics (see below). |
 | `double-ink.mjs` | finds overlapping near-coincident ink within a layer. |
 | `sweep.mjs` | multi-view golden-output fingerprint + diff, and `--compare`. |
-| `dedup-experiment.mjs` | re-tests the `dedupCollinear`-on-Contour exclusion (see below). |
 | `vendor/three.min.js` | three.js r128, byte-identical to the CDN file `index.html` loads. |
 
 ## Two things the harness cannot reproduce
@@ -169,19 +168,3 @@ MIN_SEG decisions move under that rounding. Closed-subpath counts measured
 that way were badly wrong (206 → 129 post-hoc against 206 → 206 in the
 worker). Use `generate({ contourCoincidentDedup: false })` vs `generate()`.
 
-## dedup-experiment.mjs — re-testing the dedupCollinear exclusion
-
-`sv`/`sh` are excluded from `dedupCollinear` (solver.js Step 7 / Phase 3b) on
-a measurement taken when Contour was generated differently. This re-runs the
-question against the current pipeline **without touching the app**: the real
-`dedupCollinear` is imported and applied to the real worker's `sv`/`sh`
-output, the emitted path is rebuilt through the real chaining tail, and the
-result is compared against both the baseline and `dedupCrossRunCoincident`
-over 14 views. Applied at the end of the pipeline — the more favourable
-position — so a bad result here is not an artifact of placement.
-
-It splits lost coverage into `gap` (ink gone from the page) and `shift` (ink
-moved into a neighbouring cell, which is expected when a surviving strand
-replaces one up to `offTol` away), and reports subpath and closed-subpath
-counts, since the historical objection was about chain quality rather than
-ink. Run it before reconsidering the exclusion.

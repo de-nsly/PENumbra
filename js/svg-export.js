@@ -64,7 +64,7 @@ for (const L of LAYERS){
     // Fades the Lines-section sliders that belong to a layer group once that
     // group draws nothing (panel-controls.js, which loads after this file —
     // fine, since this only runs on a click, long after both are loaded).
-    if (typeof syncLineLayerUI === 'function') syncLineLayerUI();
+    syncLineLayerUI();
   });
   applyLayerStyle(L.key);
 }
@@ -563,6 +563,10 @@ function chainSegments(segs){
    catch only genuine (near-)exact collinearity from mesh topology, not a
    perceptual "close enough" judgment the way the dedup tolerances are. */
 const SIMPLIFY_COLLINEAR_TOL = 0.05;   // px, perpendicular deviation allowed
+// The pipeline's "not worth a separate pen mark" floor, in px — the same
+// value as the worker's MIN_SEG (js/worker/dedup.js), which this thread can't
+// import. Every main-thread tolerance defined as "MIN_SEG" derives from it.
+const MIN_SEG_PX = 0.3;
 /* How far past its own neighbors a point may stick out and still count as
    redundant. The perpendicular test below asks whether b sits on the a→c
    LINE; on its own it says nothing about whether b sits BETWEEN a and c. For
@@ -580,7 +584,7 @@ const SIMPLIFY_COLLINEAR_TOL = 0.05;   // px, perpendicular deviation allowed
    short to be a pen mark at all — fp noise between two independently-computed
    representations of the same point — still collapses exactly as it did
    before, and only excursions a plotter would actually draw are kept. */
-const SIMPLIFY_FOLDBACK_TOL = 0.3;   // px — MIN_SEG, the pipeline's "not worth a separate pen mark" floor
+const SIMPLIFY_FOLDBACK_TOL = MIN_SEG_PX;
 // A walk that dead-ends a hair's width from its own start point (confirmed
 // against real output: gaps on the order of 1e-5 units after unit
 // conversion — far below anything a plotter, or a person, could ever
@@ -834,9 +838,8 @@ function mergeSilhouetteClose(chains, tolMerge, protectedPoints){
   return result.concat(closedOut);
 }
 
-/* chainByRun — Contour (sv/sh) path assembly, Phase 3a (see
-   PHASE3a-chain-identity.md). Builds chains from the worker's own
-   runId/seq identity (js/worker/solver.js's flushRun) instead of
+/* chainByRun — Contour (sv/sh) path assembly. Builds chains from the
+   worker's own runId/seq identity (generate()'s Contour runs, solver.js 6.7) instead of
    chainSegments()'s global coordinate re-matching: segments sharing a
    runId are the SAME topological run the worker walked, in occlusion
    order; sorting by seq recovers it exactly, with no bucket/junction
@@ -882,13 +885,12 @@ function chainByRun(segs, runIds, seqs){
    looks within one runId's own segment list):
 
    (a) "sandwich" — a run that's (almost) entirely triangulation-diagonal
-       artifact (see PHASE3b-contour-run-identity.md) ends up with ALL its
-       own material dropped by Step 4/5 in the worker, so it never reaches
-       here at all — but it used to sit, in the worker's own chain-walk
-       order, between two OTHER runs (always the opposite state, by
-       construction) that are now left with nothing between them. The
-       worker posts every run's prevId/nextId (js/worker/solver.js's Step
-       2/3, counts.contourAdjacency) precisely so this can be recognized
+       artifact ends up with ALL its own material dropped by the worker's
+       Contour cleanup (solver.js 6.5/6.8), so it never reaches here at all
+       — but it used to sit, in the worker's own chain-walk order, between
+       two OTHER runs that are now left with nothing between them. The
+       worker posts every run's prevId/nextId (solver.js 6.7,
+       counts.contourAdjacency) precisely so this can be recognized
        here: an id present in that adjacency table but absent from this
        layer's own chains is exactly such a vanished run, and its
        prevId/nextId (walked past any number of ALSO-vanished neighbors,
@@ -901,14 +903,12 @@ function chainByRun(segs, runIds, seqs){
        arbitrary interior cut — see the check in the loop below for why
        that must not be bridged.
    (b) near-coincident endpoints — two runs whose emitted tips land within
-       MIN_SEG (0.3px, the pipeline's own "not worth a separate pen mark"
-       floor) of each other regardless of adjacency, most likely two
-       different siChains sharing one mesh vertex (pairJunctionArms only
-       pairs one straightest continuation per junction — see that phase
-       doc's own "open risk" note), or two independently-computed copies
-       of what's really the same point. Averaged to a shared midpoint
-       (mergeSilhouetteClose's own convention for exactly this) rather
-       than bridged — MIN_SEG is small enough that the averaging can never
+       MIN_SEG_PX of each other regardless of adjacency, most likely two
+       different chains sharing one mesh vertex (pairJunctionArms only
+       pairs one straightest continuation per junction), or two
+       independently-computed copies of what's really the same point.
+       Averaged to a shared midpoint (mergeSilhouetteClose's own convention
+       for exactly this) rather than bridged — MIN_SEG_PX is small enough that the averaging can never
        visibly displace real geometry, so this never needs to distinguish
        WHY the two tips are close, only that they are.
 
@@ -952,8 +952,9 @@ function mergeContourRunSplits(chains, adjacency){
   // checkbox (Contour hidden, say) is off; that says nothing about
   // whether real occlusion put a genuine gap there, and bridging across it
   // would replace a deliberate hidden-line break with a false straight
-  // line. Only a run Step 4/5 itself left with nothing (artifact,
-  // genuinely eliminated) is eligible to be walked past/bridged over.
+  // line. Only a run the worker's cleanup itself left with nothing
+  // (artifact, genuinely eliminated) is eligible to be walked past/bridged
+  // over.
   const adjById = new Map(adjacency.map(a => [a.id, a]));
   const hasContentIds = new Set(adjacency.filter(a => a.hasContent).map(a => a.id));
   const nearestSurviving = (startId, dir) => {
@@ -968,7 +969,7 @@ function mergeContourRunSplits(chains, adjacency){
     return null;
   };
   for (const a of adjacency){
-    if (a.hasContent) continue;   // only start from a run Step 4/5 left with nothing at all
+    if (a.hasContent) continue;   // only start from a run the cleanup left with nothing at all
     const prevSurv = nearestSurviving(a.prevId, 'prevId');
     const nextSurv = nearestSurviving(a.nextId, 'nextId');
     if (prevSurv == null || nextSurv == null || prevSurv === nextSurv) continue;
@@ -995,7 +996,7 @@ function mergeContourRunSplits(chains, adjacency){
     if (!paired.has(ta) && !paired.has(tb)) link(ta, tb);
   }
 
-  // (b) near-coincident tip pairs within MIN_SEG, across DIFFERENT run.ids
+  // (b) near-coincident tip pairs within MIN_SEG_PX, across DIFFERENT run.ids
   // only (same-run splits are already stitched by chainByRun's own touch
   // check). Unlike (a)'s deliberate bridge across real removed material,
   // a pair found here is treated as the SAME real point, just resolved to
@@ -1005,13 +1006,10 @@ function mergeContourRunSplits(chains, adjacency){
   // genuine touch, not a bridge. Candidates are collected and consumed
   // nearest-first (also mirroring mergeSilhouetteClose) so an ambiguous
   // 3-way near-coincidence resolves to its closest pairing rather than
-  // whichever one happened to be tested first.
-  // MIN_SEG (0.3px) is the pipeline's own "not worth a separate pen mark"
-  // floor (see dedup.js) — small enough that averaging two points within
-  // it can never visibly displace real geometry, regardless of whether
-  // the gap turns out to be occlusion noise, a crossing-split trim, or a
-  // shared/near-shared mesh vertex.
-  const MIN_SEG = 0.3;
+  // whichever one happened to be tested first. MIN_SEG_PX is small enough
+  // that averaging two points within it can never visibly displace real
+  // geometry, regardless of whether the gap turns out to be occlusion noise,
+  // a crossing-split trim, or a shared/near-shared mesh vertex.
   const tipPos = (ci,end) => end===1 ? open[ci].pts[open[ci].pts.length-1] : open[ci].pts[0];
   const setTip = (ci,end,pt) => { if (end===1) open[ci].pts[open[ci].pts.length-1] = pt.slice(); else open[ci].pts[0] = pt.slice(); };
   const proxCand = [];
@@ -1027,7 +1025,7 @@ function mergeContourRunSplits(chains, adjacency){
           if (paired.has(tb)) continue;
           const pb = tipPos(j,ej);
           const d = Math.hypot(pa[0]-pb[0], pa[1]-pb[1]);
-          if (d < MIN_SEG) proxCand.push({ ta, tb, d, ci:i, ei, cj:j, ej });
+          if (d < MIN_SEG_PX) proxCand.push({ ta, tb, d, ci:i, ei, cj:j, ej });
         }
       }
     }
@@ -1042,11 +1040,36 @@ function mergeContourRunSplits(chains, adjacency){
   }
 
   // Walk the pairing graph — same structure as mergeSilhouetteClose's own
-  // walk (open-chain pass, then closed-loop-only fallback), minus its
-  // proximity-merge midpoint averaging: every tip here is either an exact
-  // match or a deliberate worker-adjacency bridge, never nudged.
+  // walk (open-chain pass, then closed-loop-only fallback).
   function orientedPts(ci, exitEnd){ const p = open[ci].pts; return exitEnd===1 ? p.slice() : p.slice().reverse(); }
   const visited = new Uint8Array(N);
+  // Joins chain ci (leaving through its exitEnd tip) with every unvisited
+  // chain reachable along the pairing graph. Returns the joined points and
+  // the lowest contributing run.id.
+  const walkFrom = (ci, exitEnd) => {
+    let pts = orientedPts(ci, exitEnd);
+    let minRunId = open[ci].runId;
+    let curTip = tipKey(ci, exitEnd);
+    for (let guard=N+2; guard>0; guard--){
+      const partner = paired.get(curTip);
+      if (partner == null) break;
+      const nci = (partner/2)|0, nend = partner%2;
+      if (visited[nci]) break;
+      visited[nci] = 1;
+      if (open[nci].runId < minRunId) minRunId = open[nci].runId;
+      const nextExitEnd = nend===1 ? 0 : 1;
+      const nextPts = orientedPts(nci, nextExitEnd);
+      // A (b) pair's tips were overwritten to one shared midpoint above, so
+      // the neighbor's leading point is a duplicate and is dropped. An (a)
+      // sandwich pair is a genuine BRIDGE across a real gap — its two
+      // endpoints are deliberately different points, so the neighbor's
+      // leading point is kept and the bridge segment itself gets emitted.
+      const bridging = !eq(pts[pts.length-1], nextPts[0]);
+      pts = pts.concat(bridging ? nextPts : nextPts.slice(1));
+      curTip = tipKey(nci, nextExitEnd);
+    }
+    return { pts, minRunId };
+  };
   const result = [];
   for (let ci=0; ci<N; ci++){
     if (visited[ci]) continue;
@@ -1060,78 +1083,40 @@ function mergeContourRunSplits(chains, adjacency){
     }
     if (p0 != null && p1 != null) continue;   // interior of a longer run — reached from its own true end below
     visited[ci] = 1;
-    const exitEnd = p0 != null ? 0 : 1;
-    let pts = orientedPts(ci, exitEnd);
-    let minRunId = open[ci].runId;
-    let curTip = tipKey(ci, exitEnd);
-    for (let guard=N+2; guard>0; guard--){
-      const partner = paired.get(curTip);
-      if (partner == null) break;
-      const nci = (partner/2)|0, nend = partner%2;
-      if (visited[nci]) break;
-      visited[nci] = 1;
-      if (open[nci].runId < minRunId) minRunId = open[nci].runId;
-      const nextExitEnd = nend===1 ? 0 : 1;
-      const nextPts = orientedPts(nci, nextExitEnd);
-      // Unlike mergeSilhouetteClose (whose tips were already overwritten
-      // to a shared midpoint before this same walk runs, so its neighbor's
-      // leading point is always a guaranteed duplicate), a sandwich pair
-      // here is a genuine BRIDGE across a real gap — its two endpoints are
-      // deliberately different points. Only drop the neighbor's leading
-      // point when it's actually the same point (the bit-identical case);
-      // otherwise keep it, so the bridge segment itself gets emitted.
-      const bridging = !eq(pts[pts.length-1], nextPts[0]);
-      pts = pts.concat(bridging ? nextPts : nextPts.slice(1));
-      curTip = tipKey(nci, nextExitEnd);
-    }
+    const { pts, minRunId } = walkFrom(ci, p0 != null ? 0 : 1);
     result.push({ pts, closed:false, runId: minRunId });
   }
   for (let ci=0; ci<N; ci++){   // whatever's left must be pure cycles
     if (visited[ci]) continue;
     visited[ci] = 1;
-    let pts = orientedPts(ci, 1);
-    let minRunId = open[ci].runId;
-    let curTip = tipKey(ci, 1);
-    for (let guard=N+2; guard>0; guard--){
-      const partner = paired.get(curTip);
-      if (partner == null) break;
-      const nci = (partner/2)|0, nend = partner%2;
-      if (visited[nci]) break;
-      visited[nci] = 1;
-      if (open[nci].runId < minRunId) minRunId = open[nci].runId;
-      const nextExitEnd = nend===1 ? 0 : 1;
-      const nextPts = orientedPts(nci, nextExitEnd);
-      // Unlike mergeSilhouetteClose (whose tips were already overwritten
-      // to a shared midpoint before this same walk runs, so its neighbor's
-      // leading point is always a guaranteed duplicate), a sandwich pair
-      // here is a genuine BRIDGE across a real gap — its two endpoints are
-      // deliberately different points. Only drop the neighbor's leading
-      // point when it's actually the same point (the bit-identical case);
-      // otherwise keep it, so the bridge segment itself gets emitted.
-      const bridging = !eq(pts[pts.length-1], nextPts[0]);
-      pts = pts.concat(bridging ? nextPts : nextPts.slice(1));
-      curTip = tipKey(nci, nextExitEnd);
-    }
+    const { pts, minRunId } = walkFrom(ci, 1);
     result.push({ pts, closed:true, runId: minRunId });
   }
   return result.concat(closedOut);
 }
 
+/* Appends one polyline to the `d` token array as an SVG subpath (M/L, plus Z
+   when closed — `pts` never repeats the first point), and counts it into
+   `stats` when given. Every chained line layer's path is built through this. */
+function appendPolylineD(d, pts, closed, stats){
+  if (stats) accumulatePathStats(stats, pts, closed);
+  d.push('M', pts[0][0].toFixed(2), pts[0][1].toFixed(2));
+  for (let i=1;i<pts.length;i++) d.push('L', pts[i][0].toFixed(2), pts[i][1].toFixed(2));
+  if (closed) d.push('Z');
+}
+
+/* Silhouette / Silhouette individual (so/iv/ih) layer → path data string:
+   global coordinate chaining, then Silhouette's own tip cleanup
+   (trimTipFoldback + mergeSilhouetteClose, see silMergeOpts), then the
+   shared split-self-touching / collinear-simplify tail. */
 function buildChainedPathD(segs, stats, silMergeOpts){
   const d = [];
   let chains = chainSegments(segs);
-  if (silMergeOpts){
-    chains = trimTipFoldback(chains, silMergeOpts.foldbackAngleThreshDeg);
-    chains = mergeSilhouetteClose(chains, silMergeOpts.tolMerge, silMergeOpts.protectedPoints);
-  }
+  chains = trimTipFoldback(chains, silMergeOpts.foldbackAngleThreshDeg);
+  chains = mergeSilhouetteClose(chains, silMergeOpts.tolMerge, silMergeOpts.protectedPoints);
   for (const chain of chains)
-    for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed)){
-      const pts = simplifyCollinear(rawPts, closed);
-      if (stats) accumulatePathStats(stats, pts, closed);
-      d.push('M', pts[0][0].toFixed(2), pts[0][1].toFixed(2));
-      for (let i=1;i<pts.length;i++) d.push('L', pts[i][0].toFixed(2), pts[i][1].toFixed(2));
-      if (closed) d.push('Z');
-    }
+    for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
+      appendPolylineD(d, simplifyCollinear(rawPts, closed), closed, stats);
   return d.join(' ');
 }
 
@@ -1324,9 +1309,9 @@ function splitSelfTouching(pts, closed){
   return pieces;
 }
 
-/* Contour micro-geometry cleanup — the last two steps of the Contour branch
-   in onResult, run on finished pieces ({pts, closed}, after
-   splitSelfTouching and simplifyCollinear).
+/* Contour micro-geometry cleanup — the last two steps of appendContourPathD,
+   run on finished pieces ({pts, closed}, after splitSelfTouching and
+   simplifyCollinear).
 
    Where they come from: in an axis-aligned view many mesh edges run almost
    along the view direction (in the X-aligned pipe scene, 342 edges project
@@ -1342,7 +1327,7 @@ function splitSelfTouching(pts, closed){
    Both steps are bounded so they only ever remove ink that is still on the
    page, measured over 28 views of the pipe and demo scenes (0 gap cells).
    The unbounded versions of each were measured to delete real ink. */
-const CONTOUR_MICRO_TOL = 0.3;   // px — MIN_SEG, the pipeline's "not worth a separate pen mark" floor
+const CONTOUR_MICRO_TOL = MIN_SEG_PX;
 
 /* Trims a path-end vertex that folds straight back (turn > 150°) onto the
    segment before it. Unlike trimTipFoldback (Silhouette's version), the tip
@@ -1432,6 +1417,40 @@ function dropRedundantContourSlivers(pieces){
     }
     return false;
   });
+}
+
+/* Contour (sv/sh) layer → path tokens appended to `d`. Built straight from
+   the worker's own runId/seq chain identity (chainByRun), never from
+   coordinate re-matching. mergeContourRunSplits then re-joins any run that's
+   permanently split across a vanished-artifact run or a shared-vertex
+   coincidence — `adjacency` is the FULL table (both sv and sh), since a
+   vanished run's prevId/nextId can name runs of either state; entries that
+   aren't relevant to this layer are no-ops. Then the shared
+   split-self-touching / collinear-simplify tail, plus Contour's own
+   micro-geometry cleanup (trimContourFoldbacks, dropRedundantContourSlivers). */
+function appendContourPathD(d, segs, runIds, seqs, adjacency, stats){
+  const contourChains = mergeContourRunSplits(chainByRun(segs, runIds, seqs), adjacency);
+  let pieces = [];
+  for (const chain of contourChains)
+    for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
+      pieces.push({ pts: simplifyCollinear(rawPts, closed), closed });
+  pieces = dropRedundantContourSlivers(trimContourFoldbacks(pieces));
+  for (const { pts, closed } of pieces) appendPolylineD(d, pts, closed, stats);
+}
+
+/* Crease (cv/ch) layer → path tokens appended to `d`:
+   1) mergeAdjacentTouching — local, topology-trusting merge of array-adjacent
+      touching pieces
+   2) mergeCreaseScreenSpace — screen-space fallback that mops up whatever (1)
+      couldn't place, e.g. the extra arms pairJunctionArms left unpaired at a
+      3+-way junction (see its own comment for why)
+   3) splitSelfTouching safety net — see its own comment for the
+      Blender-import bug this specifically guards
+   then collinear simplify. */
+function appendCreasePathD(d, segs, stats){
+  for (const chain of mergeCreaseScreenSpace(mergeAdjacentTouching(segs)))
+    for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
+      appendPolylineD(d, simplifyCollinear(rawPts, closed), closed, stats);
 }
 
 const HATCH_ANGLE_OFFSET = { h1: 0, h2: 90, h3: 45 };
@@ -1902,9 +1921,8 @@ function onResult(m){
   // function's own comment for why neither one alone is safe/sufficient on
   // its own. Hatch is untouched — it already has its own, different
   // optimization (straight-line runs reduced to 2 points per carrier).
-  // sv/sh moved out to their own runId-based branch below (chainByRun,
-  // Phase 3a) — they no longer go through chainSegments()'s coordinate
-  // re-chaining at all.
+  // Contour (sv/sh) chains by the worker's run identity instead — see
+  // appendContourPathD.
   const CHAIN_LAYERS = { so:1, iv:1, ih:1 };
   const SEQ_CHAIN_LAYERS = { cv:1, ch:1 };
 
@@ -2030,62 +2048,23 @@ function onResult(m){
     g.setAttribute('stroke-linecap', 'round');
     g.setAttribute('stroke-linejoin', 'round');
     const d = [];
+    const stats = layerOn ? pathStats : null;
     if (L.key === 'sv' || L.key === 'sh'){
-      // Contour — built straight from the worker's own runId/seq chain
-      // identity (Phase 3a), never from coordinate re-matching. See
-      // chainByRun's own comment. mergeContourRunSplits then re-joins any
-      // run that's permanently split across a vanished-artifact run or a
-      // shared-vertex coincidence (see its own comment) — passed the FULL
-      // adjacency table (both sv and sh) since a vanished run's
-      // prevId/nextId always name the OPPOSITE state's runs; it silently
-      // no-ops for the state that isn't relevant here. Then the same tail as
-      // every other chained layer (split-self-touching safety net, collinear
-      // simplify), plus Contour's own micro-geometry cleanup — see
-      // trimContourFoldbacks / dropRedundantContourSlivers — then emit.
-      const contourChains = mergeContourRunSplits(
-        chainByRun(segs, m.runIds[L.key], m.seqs[L.key]),
-        m.counts && m.counts.contourAdjacency);
-      let pieces = [];
-      for (const chain of contourChains)
-        for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
-          pieces.push({ pts: simplifyCollinear(rawPts, closed), closed });
-      pieces = dropRedundantContourSlivers(trimContourFoldbacks(pieces));
-      for (const { pts, closed } of pieces){
-        if (layerOn) accumulatePathStats(pathStats, pts, closed);
-        d.push('M', pts[0][0].toFixed(2), pts[0][1].toFixed(2));
-        for (let i=1;i<pts.length;i++) d.push('L', pts[i][0].toFixed(2), pts[i][1].toFixed(2));
-        if (closed) d.push('Z');
-      }
+      appendContourPathD(d, segs, m.runIds[L.key], m.seqs[L.key],
+        m.counts && m.counts.contourAdjacency, stats);
     } else if (CHAIN_LAYERS[L.key]){
-      let silMergeOpts = null;
-      if (L.key === 'so' || L.key === 'iv' || L.key === 'ih'){
-        const layout = computePaperLayout();
-        const mmToPx = layout ? 1/Math.max(1e-6, layout.scale) : 1;
-        // Silhouette and Individual Silhouette get identical treatment here —
-        // no exceptions, every gap gets closed, same as so.
-        silMergeOpts = {
-          tolMerge: 0.25 * mmToPx,
-          foldbackAngleThreshDeg: 150,
-          protectedPoints: null,
-        };
-      }
-      d.push(buildChainedPathD(segs, layerOn ? pathStats : null, silMergeOpts));
+      const layout = computePaperLayout();
+      const mmToPx = layout ? 1/Math.max(1e-6, layout.scale) : 1;
+      // Silhouette and Individual Silhouette get identical treatment here —
+      // no exceptions, every gap gets closed.
+      const silMergeOpts = {
+        tolMerge: 0.25 * mmToPx,
+        foldbackAngleThreshDeg: 150,
+        protectedPoints: null,
+      };
+      d.push(buildChainedPathD(segs, stats, silMergeOpts));
     } else if (SEQ_CHAIN_LAYERS[L.key]){
-      // 1) local, topology-trusting merge of array-adjacent touching pieces
-      // 2) screen-space fallback that mops up whatever (1) couldn't place —
-      //    e.g. edges demoted from Silhouette to Crease by the Contour
-      //    Silhouette merge, which never entered the worker's topology graph
-      //    at all (see mergeCreaseScreenSpace's own comment for why)
-      // 3) split-self-touching safety net — see splitSelfTouching's own
-      //    comment for the Blender-import bug this specifically guards
-      for (const chain of mergeCreaseScreenSpace(mergeAdjacentTouching(segs)))
-        for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed)){
-          const pts = simplifyCollinear(rawPts, closed);
-          if (layerOn) accumulatePathStats(pathStats, pts, closed);
-          d.push('M', pts[0][0].toFixed(2), pts[0][1].toFixed(2));
-          for (let i=1;i<pts.length;i++) d.push('L', pts[i][0].toFixed(2), pts[i][1].toFixed(2));
-          if (closed) d.push('Z');
-        }
+      appendCreasePathD(d, segs, stats);
     } else {
       // one path per layer, one subpath per segment: subpaths stay separate
       // pen strokes for plotter software; nothing is joined or reordered.

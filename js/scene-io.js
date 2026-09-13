@@ -56,6 +56,38 @@ worker.onmessage = ev => {
    coordinates (viewBox matches the 3D viewport's own pixel dimensions),
    or aligned to the exact same paper transform a regular export uses, so
    it can be directly overlaid against one for comparison. */
+// Wraps one debug export's path data in an SVG for the given mode and
+// downloads it as <model><suffix>.svg ('raw') or <model><suffix>-paper.svg
+// ('paper'). Shared by the raw edges and raw contour edges exports.
+function downloadDebugEdgesSvg(dStr, m, mode, suffix){
+  let svgStr, filename;
+  if (mode === 'paper'){
+    const layout = computePaperLayout({ w: m.w, h: m.h });
+    // Coordinates sit inside a scaling <g>, same as a regular export — stroke-width
+    // needs the inverse of that scale to end up a consistent, visible mm width
+    // rather than shrinking along with everything else inside the transform.
+    const strokeW = (0.3 / Math.max(1e-6, layout.scale)).toFixed(3);
+    svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + layout.paperW.toFixed(2) + 'mm" height="' + layout.paperH.toFixed(2) + 'mm" ' +
+      'viewBox="0 0 ' + layout.paperW.toFixed(3) + ' ' + layout.paperH.toFixed(3) + '">' +
+      '<g transform="translate(' + layout.offX.toFixed(3) + ',' + layout.offY.toFixed(3) + ') scale(' + layout.scale.toFixed(6) + ')">' +
+      '<path d="' + dStr + '" fill="none" stroke="#000" stroke-width="' + strokeW + '"/>' +
+      '</g></svg>';
+    filename = modelName.replace(/\.(stl|obj)$/i, '') + suffix + '-paper.svg';
+  } else {
+    svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + m.w + ' ' + m.h + '">' +
+      '<path d="' + dStr + '" fill="none" stroke="#000" stroke-width="1"/>' +
+      '</svg>';
+    filename = modelName.replace(/\.(stl|obj)$/i, '') + suffix + '.svg';
+  }
+  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 let pendingDebugExportMode = null;   // 'raw' | 'paper' — set by whichever button was clicked
 function triggerDebugRawEdgesExport(mode){
   if (!modelMesh){ $('statusL').textContent = 'load a model first'; return; }
@@ -74,34 +106,7 @@ function handleDebugRawEdgesResult(m){
   for (let i=0; i<segs.length; i+=4){
     d.push('M', segs[i].toFixed(2), segs[i+1].toFixed(2), 'L', segs[i+2].toFixed(2), segs[i+3].toFixed(2));
   }
-  const dStr = d.join(' ');
-  let svgStr, filename;
-  if (mode === 'paper'){
-    const layout = computePaperLayout({ w: m.w, h: m.h });
-    // Coordinates sit inside a scaling <g>, same as a regular export — stroke-width
-    // needs the inverse of that scale to end up a consistent, visible mm width
-    // rather than shrinking along with everything else inside the transform.
-    const strokeW = (0.3 / Math.max(1e-6, layout.scale)).toFixed(3);
-    svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n' +
-      '<svg xmlns="http://www.w3.org/2000/svg" width="' + layout.paperW.toFixed(2) + 'mm" height="' + layout.paperH.toFixed(2) + 'mm" ' +
-      'viewBox="0 0 ' + layout.paperW.toFixed(3) + ' ' + layout.paperH.toFixed(3) + '">' +
-      '<g transform="translate(' + layout.offX.toFixed(3) + ',' + layout.offY.toFixed(3) + ') scale(' + layout.scale.toFixed(6) + ')">' +
-      '<path d="' + dStr + '" fill="none" stroke="#000" stroke-width="' + strokeW + '"/>' +
-      '</g></svg>';
-    filename = modelName.replace(/\.(stl|obj)$/i, '') + '-debug-raw-paper.svg';
-  } else {
-    svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n' +
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + m.w + ' ' + m.h + '">' +
-      '<path d="' + dStr + '" fill="none" stroke="#000" stroke-width="1"/>' +
-      '</svg>';
-    filename = modelName.replace(/\.(stl|obj)$/i, '') + '-debug-raw.svg';
-  }
-  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadDebugEdgesSvg(d.join(' '), m, mode, '-debug-raw');
   $('statusL').textContent = 'exported raw edges (' + (segs.length/4) + ' segments)';
 }
 $('debugRawEdgesRawBtn').addEventListener('click', () => triggerDebugRawEdgesExport('raw'));
@@ -110,12 +115,12 @@ $('debugRawEdgesPaperBtn').addEventListener('click', () => triggerDebugRawEdgesE
 /* ================= debug: raw contour edges export =================
    Same two-variant pattern as the raw edges export above, but the worker
    selects edges via generateRawContourEdges — the Contour layer's own
-   front/back topological test (isSilTopo in generate()), chained via the
-   same welded-vertex/junction-pairing walk as generate()'s siChains, with
-   no occlusion, backdrop test, or dedup — so this isolates whether an issue
-   is in that raw chain topology or later in the pipeline. m.chains is an
-   array of flat [x0,y0,x1,y1,...] polylines, one per chain (or per
-   camera-visible run within a chain — see generateRawContourEdges). */
+   front/back topological test (isSilTopo in generate()), chained with the
+   same buildEdgeChains walk generate() uses, with no occlusion, backdrop
+   test, or dedup — so this isolates whether an issue is in that raw chain
+   topology or later in the pipeline. m.chains is an array of flat
+   [x0,y0,x1,y1,...] polylines, one per chain (or per camera-visible run
+   within a chain — see generateRawContourEdges). */
 let pendingDebugContourExportMode = null;   // 'raw' | 'paper'
 function triggerDebugRawContourEdgesExport(mode){
   if (!modelMesh){ $('statusL').textContent = 'load a model first'; return; }
@@ -136,31 +141,7 @@ function handleDebugRawContourEdgesResult(m){
     for (let i=2; i<pts.length; i+=2) d.push('L', pts[i].toFixed(2), pts[i+1].toFixed(2));
     nSegs += pts.length/2 - 1;
   }
-  const dStr = d.join(' ');
-  let svgStr, filename;
-  if (mode === 'paper'){
-    const layout = computePaperLayout({ w: m.w, h: m.h });
-    const strokeW = (0.3 / Math.max(1e-6, layout.scale)).toFixed(3);
-    svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n' +
-      '<svg xmlns="http://www.w3.org/2000/svg" width="' + layout.paperW.toFixed(2) + 'mm" height="' + layout.paperH.toFixed(2) + 'mm" ' +
-      'viewBox="0 0 ' + layout.paperW.toFixed(3) + ' ' + layout.paperH.toFixed(3) + '">' +
-      '<g transform="translate(' + layout.offX.toFixed(3) + ',' + layout.offY.toFixed(3) + ') scale(' + layout.scale.toFixed(6) + ')">' +
-      '<path d="' + dStr + '" fill="none" stroke="#000" stroke-width="' + strokeW + '"/>' +
-      '</g></svg>';
-    filename = modelName.replace(/\.(stl|obj)$/i, '') + '-debug-raw-contour-paper.svg';
-  } else {
-    svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n' +
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + m.w + ' ' + m.h + '">' +
-      '<path d="' + dStr + '" fill="none" stroke="#000" stroke-width="1"/>' +
-      '</svg>';
-    filename = modelName.replace(/\.(stl|obj)$/i, '') + '-debug-raw-contour.svg';
-  }
-  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadDebugEdgesSvg(d.join(' '), m, mode, '-debug-raw-contour');
   $('statusL').textContent = 'exported raw contour edges (' + chains.length + ' chains, ' + nSegs + ' segments)';
 }
 $('debugRawContourEdgesRawBtn').addEventListener('click', () => triggerDebugRawContourEdgesExport('raw'));
@@ -377,7 +358,7 @@ function applyImportedScene(data){
   // Layer checkboxes were just set by assignment, which fires no change event,
   // so the sliders that fade with their own layer group need the same explicit
   // nudge the toggles above get.
-  if (typeof syncLineLayerUI === 'function') syncLineLayerUI();
+  syncLineLayerUI();
   const cs = data.camera || {};
   setProjMode(cs.ortho ? 'ortho' : 'persp');
   if (Number.isFinite(cs.theta))  orbit.theta  = cs.theta;
