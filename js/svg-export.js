@@ -1,6 +1,7 @@
 /* ================================================================
    svg-export.js — turning solved geometry into SVG
-   Layer color/width/dash styling, paper layout math shared by the
+   Layer pen/dash styling (colour + width come from the layer's pen,
+   see PEN_LIBRARY in main.js), paper layout math shared by the
    preview and the real export, renderPaper() (builds the on-screen
    SVG from the worker's result), the segment post-processing used
    by onResult (chaining/merging/splitting), and the final
@@ -35,6 +36,23 @@ function fmtWidth(n){ return (Math.round(n*100)/100).toString(); }
 function dashOptionsHtml(){
   return '<option value="solid">—</option>' + DASH_KEYS.map(k => '<option value="' + k + '">' + k + '</option>').join('');
 }
+// The pen counterpart of dashOptionsHtml, but (re)fills an existing <select>
+// in place rather than returning markup: pen names are user-typed, so they
+// go in via textContent, never through innerHTML. Every pen dropdown (layer
+// rows here, the Layout Override menu) carries the .penSelect class, which
+// is how pen-library.js finds them all again after an add/rename/delete.
+// Keeps the select's current pen when it still exists, else lands on
+// `fallbackId` (if that exists) or the first pen.
+function fillPenSelect(select, fallbackId){
+  const prev = select.value;
+  select.replaceChildren(...PEN_LIBRARY.map(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id; opt.textContent = p.name;
+    return opt;
+  }));
+  const has = id => PEN_LIBRARY.some(p => p.id === id);
+  select.value = has(prev) ? prev : has(fallbackId) ? fallbackId : PEN_LIBRARY[0].id;
+}
 const layerEls = {};
 for (const L of LAYERS){
   const row = document.createElement('div');
@@ -43,21 +61,16 @@ for (const L of LAYERS){
     '<input type="checkbox" ' + (L.on ? 'checked' : '') + ' aria-label="' + L.name + ' on">' +
     '<svg class="swatch" viewBox="0 0 50 14" aria-hidden="true"><path d="M3 7 L47 7" fill="none"/></svg>' +
     '<span class="nm' + (L.name.startsWith('·') ? ' hid' : '') + '">' + L.name + '</span>' +
-    '<input type="color" value="' + L.color + '" aria-label="' + L.name + ' color">' +
-    '<input type="number" value="' + fmtWidth(L.width) + '" min="0.1" max="6" step="0.05" aria-label="' + L.name + ' width">' +
+    '<select class="penSelect" aria-label="' + L.name + ' pen"></select>' +
     '<select aria-label="' + L.name + ' dash">' + dashOptionsHtml() + '</select>';
   $(L.host).appendChild(row);
-  const [chk, , , col, wid, dash] = row.children;
+  const [chk, , , pen, dash] = row.children;
   const sw = row.children[1].firstChild;
+  fillPenSelect(pen, L.pen);
   dash.value = L.dash;
-  layerEls[L.key] = { chk, col, wid, dash, sw };
+  layerEls[L.key] = { chk, pen, dash, sw };
   const restyle = () => applyLayerStyle(L.key);
-  col.addEventListener('input', restyle);
-  wid.addEventListener('input', restyle);
-  // 'change' (fires on blur/Enter, and on every spinner-arrow click) rather
-  // than 'input' (fires per keystroke) — reformatting mid-typing would fight
-  // the user for control of the field while they're still entering a value
-  wid.addEventListener('change', () => { wid.value = fmtWidth(+wid.value); });
+  pen.addEventListener('change', restyle);
   dash.addEventListener('change', () => { restyle(); refreshStatusR(); });
   chk.addEventListener('change', () => {
     L.solve ? markStale() : applyLayerStyle(L.key);
@@ -138,9 +151,12 @@ function addDashSlot(){
 }
 $('addDashBtn').addEventListener('click', addDashSlot);
 if (DASH_KEYS.length >= MAX_DASH_SLOTS) $('addDashBtn').disabled = true;   // defensive — e.g. a restored scene that already has all 9
+// color/width are resolved through the layer's pen (see PEN_LIBRARY in
+// main.js) — callers keep seeing the same flat shape they always did.
 function layerStyle(key){
   const el = layerEls[key];
-  return { on: el.chk.checked, color: el.col.value, width: +el.wid.value, dash: el.dash.value };
+  const pen = penById(el.pen.value);
+  return { on: el.chk.checked, color: pen.color, width: pen.width, dash: el.dash.value };
 }
 function applyLayerStyle(key){
   const s = layerStyle(key), el = layerEls[key];
@@ -151,7 +167,7 @@ function applyLayerStyle(key){
   const g = document.getElementById('g_' + key);
   if (g){
     g.setAttribute('stroke', s.color);
-    // s.width is a true mm value (see LAYERS defaults / the W[mm] label).
+    // s.width is a true mm value (the pen's W[mm] — see PEN_LIBRARY).
     // Path coordinates are in solver-px and rely on the ancestor
     // #paperContent transform (translate + scale, where scale = mm per
     // solver-px for the CURRENT paper/margins/model fit) to land at the

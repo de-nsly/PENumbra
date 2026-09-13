@@ -24,11 +24,12 @@ Files are plain global-scope scripts, not modules, and depend on load order:
 
 ```
 three.min.js (CDN)
-js/main.js          - must load first: defines $, LAYERS, DASH_RATIOS/scaledDash, boots the HLR worker
+js/main.js          - must load first: defines $, LAYERS, PEN_LIBRARY/penById, DASH_RATIOS/scaledDash, boots the HLR worker
 js/viewport3d.js     - three.js scene/camera/orbit controls, onLoaded()
 js/paper-preview.js  - pan/zoom for the on-screen paper pane
 js/svg-export.js     - layer styling, paper layout math, worker-result -> SVG, file export
 js/panel-controls.js - control panel wiring, gatherSettings(), staleness/auto-generate
+js/pen-library.js    - the Pen library tab, pen add/delete, matching incoming pens (needs panel-controls.js + svg-export.js)
 js/layout-canvas.js  - the Layout tab (needs panel-controls.js + svg-export.js)
 js/scene-io.js       - must load last: worker.onmessage dispatcher, file I/O, .pen scene save/load, boots the app
 ```
@@ -72,13 +73,20 @@ ink-avoidance against lower ones, and the array is walked in reverse when painti
 layer ends up on top. Every layer has `solve:true` — toggling any single layer can change what survives in
 every layer below it, so all layers re-run the pipeline on toggle, not just a display-only flag.
 
+**Pen library** (`PEN_LIBRARY` in `main.js`, UI in `pen-library.js`): an ordered list of `{id, name, color,
+width}` pens. Layers and Layout block overrides store only a pen id (plus their own dash) and resolve colour/
+width through `penById` on every render, so editing a pen restyles everything using it. The library is part of
+the scene (a `.pen` import replaces it); pre-pen-library scenes and clipboard pastes are matched into it by
+colour + width (`resolvePen`). "Pen" is overloaded: the `.pen` scene file, the Lines tab's historical
+`penTab`/`penModeBtn`/`data-mode="pen"` ids, and the library — library code uses `penLib*`/`PEN_LIBRARY`.
+
 **Layout tab vs. draw layers — a naming collision to watch for:** the Layout tab (`layout-canvas.js`)
 stacks frozen snapshots of past generations, called "blocks" internally but labeled "layers" in the UI.
 This is a *different* concept from the `LAYERS` edge/fill array above — don't conflate the two when reading
 or writing code that touches either.
 
 **Scene files (`.pen`):** `scene-io.js` handles save/load of the entire app state (model geometry, camera,
-every setting, layer styles) as a single JSON-ish `.pen` file, with the model embedded as base64.
+every setting, the pen library, layer pen/dash choices) as a single JSON-ish `.pen` file, with the model embedded as base64.
 
 ## Working in this codebase
 

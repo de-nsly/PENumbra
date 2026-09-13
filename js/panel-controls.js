@@ -609,7 +609,8 @@ document.addEventListener('keydown', e => {
    shows its tab and hides the other, and lights up the clicked side while
    the other stays muted — no sliding knob, unlike .pillToggle elsewhere. */
 const PANEL_MODES = [
-  { mode: 'pen',     tab: 'penTab',      btn: 'penModeBtn' },
+  { mode: 'pen',     tab: 'penTab',      btn: 'penModeBtn' },      // Lines/Shadows — "pen" predates the Pen library
+  { mode: 'penlib',  tab: 'penLibTab',   btn: 'penLibModeBtn' },   // Pen library (pen-library.js)
   { mode: 'texture', tab: 'textureTab',  btn: 'textureModeBtn' },
   { mode: 'page',    tab: 'pageTab',     btn: 'pageModeBtn' },
   { mode: 'cog',     tab: 'settingsTab', btn: 'cogModeBtn' },

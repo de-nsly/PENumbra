@@ -3,8 +3,8 @@
    main.js — shared app state & boot glue
    Declares the $ helper, the layer registry, and instantiates the
    HLR worker as a module worker from js/worker/solver.js.
-   Load this file FIRST — every other file assumes $, LAYERS, DASH_RATIOS/scaledDash
-   and 'worker' already exist as globals.
+   Load this file FIRST — every other file assumes $, LAYERS, PEN_LIBRARY/penById,
+   DASH_RATIOS/scaledDash and 'worker' already exist as globals.
    ================================================================ */
 const $ = id => document.getElementById(id);
 
@@ -29,22 +29,59 @@ const APP_VERSION = '0.8.5';
    sit in the panel directly under the rows they affect: Contour Cleanup + Max hops between the Contour
    rows and the Crease rows, Crease angle after the Crease rows. Order within
    this list still decides row order inside each host, and the hosts appear in
-   index.html in the same order as here. */
+   index.html in the same order as here.
+   pen → the DEFAULT pen id (see PEN_LIBRARY below) the row starts on. A
+   layer has no colour/width of its own any more, only a pen reference. */
 const LAYERS = [
-  { key:'so', name:'Silhouette',           on:false, solve:true,  color:'#000000', width:1.2, dash:'solid', host:'edgeLayersSil'  },
-  { key:'iv', name:'Silhouette individual', on:false, solve:true, color:'#14171c', width:0.8, dash:'solid', host:'edgeLayersSil'  },
-  { key:'ih', name:'· hidden',             on:false, solve:true,  color:'#9aa0a8', width:0.2, dash:'D1',    host:'edgeLayersSil'  },
-  { key:'sv', name:'Contour',              on:true,  solve:true,  color:'#14171c', width:0.8, dash:'solid', host:'edgeLayersContour' },
-  { key:'sh', name:'· hidden',             on:false, solve:true,  color:'#9aa0a8', width:0.2, dash:'D1',    host:'edgeLayersContour' },
-  { key:'cv', name:'Crease',               on:true,  solve:true,  color:'#14171c', width:0.35, dash:'solid', host:'edgeLayersCrease' },
-  { key:'ch', name:'· hidden',             on:false, solve:true,  color:'#9aa0a8', width:0.2, dash:'D1',    host:'edgeLayersCrease' },
-  { key:'h1', name:'Hatch',               on:true,  solve:true,  color:'#2c5aa8', width:0.2, dash:'solid', host:'hatchLayers' },
-  { key:'h2', name:'Crosshatch',          on:true,  solve:true,  color:'#2c5aa8', width:0.2, dash:'solid', host:'hatchLayers' },
-  { key:'h3', name:'Deep shadow',         on:false, solve:true,  color:'#2c5aa8', width:0.2, dash:'solid', host:'hatchLayers' },
-  { key:'cr', name:'Circles',             on:false, solve:true,  color:'#2c5aa8', width:0.2, dash:'solid', host:'hatchLayers' },
+  { key:'so', name:'Silhouette',           on:false, solve:true,  pen:'p1', dash:'solid', host:'edgeLayersSil'  },
+  { key:'iv', name:'Silhouette individual', on:false, solve:true, pen:'p2', dash:'solid', host:'edgeLayersSil'  },
+  { key:'ih', name:'· hidden',             on:false, solve:true,  pen:'p4', dash:'D1',    host:'edgeLayersSil'  },
+  { key:'sv', name:'Contour',              on:true,  solve:true,  pen:'p2', dash:'solid', host:'edgeLayersContour' },
+  { key:'sh', name:'· hidden',             on:false, solve:true,  pen:'p4', dash:'D1',    host:'edgeLayersContour' },
+  { key:'cv', name:'Crease',               on:true,  solve:true,  pen:'p3', dash:'solid', host:'edgeLayersCrease' },
+  { key:'ch', name:'· hidden',             on:false, solve:true,  pen:'p4', dash:'D1',    host:'edgeLayersCrease' },
+  { key:'h1', name:'Hatch',               on:true,  solve:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
+  { key:'h2', name:'Crosshatch',          on:true,  solve:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
+  { key:'h3', name:'Deep shadow',         on:false, solve:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
+  { key:'cr', name:'Circles',             on:false, solve:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
 ];
-// Dash/gap lengths are true mm values (same units as the layer W[mm]
-// field), independent of whatever layer/pen width happens to be using
+
+/* ================= pen library =================
+   Every stroke's colour and width come from a pen here — edge/fill layers
+   (LAYERS above) and a Layout block's Override menu both store only a pen
+   id and resolve it through penById on every render, so editing a pen
+   restyles everything using it. The UI (Pen library tab), add/delete and
+   the scene/clipboard matching live in pen-library.js.
+   id is a stable key, never reused (penIdCounter only climbs) and separate
+   from name, so renaming never breaks a reference; names needn't be unique.
+   width is a true mm value, same units as the dash lengths below.
+   The library belongs to the scene: a .pen import replaces it wholesale.
+   "Built-in" pens are only this starting set — once created they're
+   ordinary pens (editable, deletable). They mirror the per-layer colour/
+   width defaults the layers had before pens existed, so a fresh session
+   and a migrated old scene render exactly as they did.
+   NAMING: "pen" also means the .pen scene file and the Lines tab's own
+   penTab/penModeBtn/data-mode="pen" ids — library code uses the penLib
+   prefix and PEN_LIBRARY to stay distinguishable from both. */
+function defaultPens(){
+  return [
+    { id:'p1', name:'Black 1.2', color:'#000000', width:1.2  },
+    { id:'p2', name:'Ink 0.8',   color:'#14171c', width:0.8  },
+    { id:'p3', name:'Ink 0.35',  color:'#14171c', width:0.35 },
+    { id:'p4', name:'Grey 0.2',  color:'#9aa0a8', width:0.2  },
+    { id:'p5', name:'Blue 0.2',  color:'#2c5aa8', width:0.2  },
+  ];
+}
+const PEN_LIBRARY = defaultPens();   // mutated in place (like DASH_KEYS), never reassigned
+let penIdCounter = PEN_LIBRARY.length;
+// Never returns undefined: an unknown id (shouldn't happen — every delete/
+// import path reassigns references first) falls back to the first pen so a
+// render can't throw mid-way. The library always holds at least one pen.
+function penById(id){
+  return PEN_LIBRARY.find(p => p.id === id) || PEN_LIBRARY[0];
+}
+// Dash/gap lengths are true mm values (same units as a pen's width),
+// independent of whatever layer/pen width happens to be using
 // them — a 10mm dash is 10mm on the plotted page whether the pen is
 // 0.15mm or 1.2mm wide. Since path coordinates live in solver-px space and
 // only land at physical size once multiplied through the paper's own

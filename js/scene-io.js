@@ -3,8 +3,8 @@
    The worker message dispatcher (routes 'loaded' -> onLoaded in
    viewport3d.js, 'result' -> onResult in svg-export.js), STL/OBJ
    file loading (drag-drop + file picker + Z-up toggle), .pen scene
-   save/load (base64 model embedding + settings/layers/camera
-   round-trip), and the final boot call that builds the demo scene.
+   save/load (base64 model embedding + settings/layers/pens/camera
+   round-trip, migrating pre-pen-library scenes), and the final boot call that builds the demo scene.
    Load this file LAST — its last line kicks off the app.
    ================================================================ */
 worker.onmessage = ev => {
@@ -237,8 +237,8 @@ window.addEventListener('drop', e => {
    mesh — re-importing re-runs the same load path a fresh upload would, so
    any future change to that pipeline can't drift the two apart), every
    [data-regen] control plus the paper layout controls (which aren't
-   solve-affecting but are still part of "what I had"), the per-layer pen
-   styling, and the camera (orbit angles/distance/target + projection mode —
+   solve-affecting but are still part of "what I had"), the pen library and
+   each layer's pen/dash choice, and the camera (orbit angles/distance/target + projection mode —
    FOV rides along as an ordinary [data-regen] control already).
    A plain JSON container, base64 for the binary model bytes — simple, and
    the model is the only part large enough for that ~33% inflation to
@@ -277,7 +277,7 @@ $('exportSceneBtn').addEventListener('click', () => {
   const layers = {};
   for (const L of LAYERS){
     const els = layerEls[L.key];
-    layers[L.key] = { on: els.chk.checked, color: els.col.value, width: +els.wid.value, dash: els.dash.value };
+    layers[L.key] = { on: els.chk.checked, pen: els.pen.value, dash: els.dash.value };
   }
   const camState = {
     theta: orbit.theta, phi: orbit.phi, radius: orbit.radius,
@@ -298,6 +298,7 @@ $('exportSceneBtn').addEventListener('click', () => {
   const blocksOut = blocks.map(({ dom, ...rest }) => rest);
   const scene = { penumbraScene: 1, appVersion: APP_VERSION, savedAt: new Date().toISOString(),
     model: modelField, camera: camState, settings, layers,
+    pens: PEN_LIBRARY.map(p => ({ ...p })), penIdCounter,
     dashKeys: DASH_KEYS.slice(), savedViews, savedViewCounter, blocks: blocksOut, blockCounter };
   const blob = new Blob([JSON.stringify(scene)], { type: 'application/json' });
   const a = document.createElement('a');
@@ -345,13 +346,28 @@ function applyImportedScene(data){
   // normally reacts to toggling it needs an explicit nudge here too.
   if (typeof syncIndividualMode === 'function') syncIndividualMode();
   if (typeof updateTexLayerTabVisibility === 'function') updateTexLayerTabVisibility();
+  // The pen library belongs to the scene — replace it wholesale. Scenes saved
+  // before pens existed have no data.pens: setPenLibrary restarts from the
+  // built-in set, and each layer's own color/width is matched into it below.
+  setPenLibrary(data.pens, data.penIdCounter);
+  // Every layer's pen is resolved BEFORE the dropdowns are refilled: an old
+  // scene's color/width can append a pen (resolvePen), and a <select> can't
+  // take a value it has no <option> for yet.
+  const layerPens = {};
+  for (const L of LAYERS){
+    const st = (data.layers || {})[L.key];
+    if (!st) continue;
+    layerPens[L.key] = (typeof st.pen === 'string' && PEN_LIBRARY.some(p => p.id === st.pen))
+      ? st.pen
+      : resolvePen({ color: st.color, width: st.width }, penById(L.pen));
+  }
+  refreshPenSelects();
   for (const L of LAYERS) applyLayerStyle(L.key);
   for (const [key, st] of Object.entries(data.layers || {})){
     const els = layerEls[key];
     if (!els || !st) continue;
     els.chk.checked = !!st.on;
-    els.col.value = st.color;
-    els.wid.value = fmtWidth(+st.width);
+    els.pen.value = layerPens[key];
     els.dash.value = st.dash;
     applyLayerStyle(key);
   }
@@ -424,6 +440,19 @@ function applyImportedScene(data){
   // keeps every block's id actually unique against blockIdCounter's current
   // state instead of just against the other blocks in this one file.
   for (const b of blocks) b.id = ++blockIdCounter;
+  // Override entries from before pens existed are {color, width, dash};
+  // matched into the library the same way the layers above were. Newer ones
+  // already hold a pen id from this very scene's library.
+  for (const b of blocks){
+    const src = (b.overrideStyle && typeof b.overrideStyle === 'object') ? b.overrideStyle : {};
+    b.overrideStyle = {};
+    for (const key in src){
+      const ov = src[key];
+      if (!layerEls[key] || !ov || typeof ov !== 'object') continue;
+      b.overrideStyle[key] = { pen: resolveOverridePen(ov, key, null), dash: ov.dash };
+    }
+  }
+  syncPenLibraryUI();
   blockCounter = Number.isFinite(data.blockCounter) ? data.blockCounter : 0;
   renderBlocksList();
   if (activeTab === 'layout') renderLayoutCanvas();

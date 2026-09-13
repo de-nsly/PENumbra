@@ -324,7 +324,7 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
 #blocksList .savedView.svDragging{opacity:.4}
 #blocksList .svInsertLine{position:absolute;left:6px;right:6px;height:2px;background:var(--accent);border-radius:1px;pointer-events:none}
 .savedView .svName{font-size:var(--fs-control);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:text;width:fit-content;max-width:100%}
-.savedView .svName[contenteditable="true"]{outline:none;-webkit-user-select:text;user-select:text;overflow:visible}
+.savedView .svName[contenteditable="true"],.penLibRow .nm[contenteditable="true"]{outline:none;-webkit-user-select:text;user-select:text;overflow:visible}
 .svBtn.svDelete:hover{border-color:var(--warn);color:var(--warn)}
 .svBtn.svLockActive{color:var(--accent)}
 .svBtn svg{display:block}
@@ -406,21 +406,22 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
    Override only ever ADDS columns, never resizes the existing ones. */
 #layerContextMenuList .savedView{grid-template-columns:133px 22px}
 /* The spacer column (empty <span class="ctxSpacer">, inserted in the DOM
-   by openLayerContextMenu right after the eye button) shifts color/width/
-   dash rightward as a group, using space that would otherwise sit unused
+   by openLayerContextMenu right after the eye button) shifts pen/dash
+   rightward as a group, using space that would otherwise sit unused
    after the dash dropdown — same total menu width as before, just
    redistributed, and it doubles as a visual gap between the visibility
-   toggles and the rest of the per-layer settings. */
-#layerContextMenu.overrideActive #layerContextMenuList .savedView{grid-template-columns:133px 22px 10px 24px 56px 50px}
+   toggles and the rest of the per-layer settings. The pen column (85px) is
+   the old color (24px) + gap + width (56px) columns it replaced. */
+#layerContextMenu.overrideActive #layerContextMenuList .savedView{grid-template-columns:133px 22px 10px 85px 50px}
 #layerContextMenuList .svName{cursor:default}
 /* Native color-input rendering nests an inner swatch element with its own
    default padding/border regardless of the outer input's own padding:0 —
    left alone, that reads as a smaller box floating inside a larger one
    instead of filling the whole container edge to edge. Zeroed out once,
-   globally, for every input[type=color] in the app (layer rows, page
-   color, and the layout-block color-override menu all share this same
-   fix, on top of whatever border-radius each context sets on the input
-   itself — 4px is what all three currently use, so it's safe to match
+   globally, for every input[type=color] in the app (pen library rows and
+   page color both share this same fix, on top of whatever border-radius
+   each context sets on the input itself — 4px is what both currently
+   use, so it's safe to match
    here directly rather than juggling border-radius:inherit through a
    vendor shadow-pseudo-element's own inheritance chain). overflow:hidden
    on the wrapper is a defensive belt-and-braces clip, in case a given
@@ -429,9 +430,6 @@ input[type=color]{padding:0}
 input[type=color]::-webkit-color-swatch-wrapper{padding:0;border-radius:4px;overflow:hidden}
 input[type=color]::-webkit-color-swatch{border:none;border-radius:4px}
 input[type=color]::-moz-color-swatch{border:none;border-radius:4px}
-#layerContextMenuList input[type="color"]{width:100%;height:20px;padding:0;border:1px solid var(--line);border-radius:4px;background:none}
-#layerContextMenuList input[type="number"]{width:100%;height:20px;padding:0 3px;border:1px solid var(--line);border-radius:4px;
-  background:var(--panel2);color:var(--text);font-size:var(--fs-data)}
 #layerContextMenuList select{width:100%;height:20px;padding:0 2px;border:1px solid var(--line);border-radius:4px;
   background:var(--panel2);color:var(--text);font-size:var(--fs-data)}
 #layerContextOverrideRow{margin:6px 2px 2px;padding-top:6px}
@@ -643,7 +641,10 @@ input[type=number]{width:58px}
    boundaries included. */
 #layoutBlocksLayer.blendMultiplyLayout{isolation:isolate}
 #layoutBlocksLayer.blendMultiplyLayout .layoutLayerStroke{mix-blend-mode:multiply}
-.layer{display:grid;grid-template-columns:16px 50px 1fr 26px 56px 58px;align-items:center;
+/* Line layer rows: on | preview | name | pen | dash. The pen column (88px)
+   is exactly the old color (26px) + gap + width (56px) columns it replaced,
+   so names and the dash column didn't move. */
+.layer{display:grid;grid-template-columns:16px 50px 1fr 88px 58px;align-items:center;
   gap:6px;padding:5px 0;border-bottom:1px dashed var(--divider)}
 .layer .nm{font-size:var(--fs-control);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .layer .nm.hid{color:var(--muted);font-size:var(--fs-data);padding-left:8px}
@@ -651,10 +652,14 @@ input[type=number]{width:58px}
 .layer input[type=color]{width:24px;height:20px;border:1px solid var(--line);border-radius:4px;
   background:none;padding:0;cursor:pointer}
 .layer input[type=number]{width:56px;padding:3px 4px;font-size:var(--fs-data)}
-.layer select{width:58px;padding:3px 3px;font-size:var(--fs-data)}
+.layer select{width:100%;padding:3px 3px;font-size:var(--fs-data)}
+/* Pen library rows (and their header) share every .layer / .rowsHead style
+   above, only with their own columns: preview | name | color | width | delete. */
+.layer.penLibRow,.rowsHead.penLibRow{grid-template-columns:50px 1fr 26px 56px 24px}
+.penLibRow .nm{cursor:text}
 .swatch{width:50px;height:14px;background:var(--paper);border-radius:2px;display:block}
 #pageColor{width:56px;height:24px;border:1px solid var(--line);border-radius:4px;background:none;cursor:pointer}
-.rowsHead{display:grid;grid-template-columns:16px 50px 1fr 26px 56px 58px;gap:6px;
+.rowsHead{display:grid;grid-template-columns:16px 50px 1fr 88px 58px;gap:6px;
   font-family:var(--mono);font-size:var(--fs-caps);color:var(--muted);letter-spacing:var(--ls-caps);
   text-transform:uppercase;padding:2px 0}
 

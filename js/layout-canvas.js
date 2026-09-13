@@ -386,7 +386,7 @@ function freezeCurrentGeneration(){
     layerPaths,
     layerVisible,
     // override: true makes each layer in this block read its OWN
-    // color/width/dash from overrideStyle below instead of the live panel —
+    // pen/dash from overrideStyle below instead of the live panel —
     // set and edited via the right-click layer menu's "Override" checkbox,
     // never at creation time. overrideStyle starts empty and is populated
     // lazily, one layer at a time, the first time that specific layer is
@@ -567,14 +567,16 @@ function updateBlockStyle(block){
     // behavior exactly. width still divides by the block's own current
     // combinedScale either way — that's not a "setting", it's what keeps
     // the stroke at the correct physical size as the block gets resized on
-    // the layout sheet. dash is just a slot reference ("D3" etc.) in both
-    // cases, same as the ordinary live dropdown — scaledDash resolves it
-    // from the live DASH_RATIOS either way, so an overridden layer still
-    // follows that slot's own pattern if it's edited later, exactly like a
-    // synced layer would.
+    // the layout sheet. pen and dash are both just references (a pen id,
+    // a slot like "D3") in both cases, same as the ordinary live dropdowns —
+    // penById/scaledDash resolve them from the live PEN_LIBRARY/DASH_RATIOS
+    // either way, so an overridden layer still follows its pen's and its
+    // slot's own values if either is edited later, exactly like a synced
+    // layer would.
     const ov = block.override && block.overrideStyle ? block.overrideStyle[L.key] : null;
-    const color = ov ? ov.color : layerEls[L.key].col.value;
-    const widthMm = ov ? ov.width : +layerEls[L.key].wid.value;
+    const pen = penById(ov ? ov.pen : layerEls[L.key].pen.value);
+    const color = pen.color;
+    const widthMm = pen.width;
     const dashKey = ov ? ov.dash : layerEls[L.key].dash.value;
     const width = widthMm / combinedScale;
     // Dash/gap are true mm lengths, independent of pen width — scale by the
@@ -1795,9 +1797,9 @@ $('paperPane').addEventListener('pointercancel', endInteraction);
    The "Override" checkbox at the bottom (static — see index.html, not
    rebuilt every time this function runs, so its own listener stays a
    single, permanent one rather than accumulating a fresh copy on every
-   rebuild) switches the WHOLE block between reading color/width/dash live
-   from the panel (today's default, unchanged) and reading its own
-   independent per-layer values instead — editable right here, inline, once
+   rebuild) switches the WHOLE block between reading pen/dash live from the
+   panel (today's default, unchanged) and reading its own independent
+   per-layer pen/dash choice instead — editable right here, inline, once
    Override is checked. Those per-layer values (block.overrideStyle) are
    populated lazily, one layer at a time, the first time that layer is shown
    with Override on for this block — not all at once, and not re-snapshotted
@@ -1823,16 +1825,15 @@ function openLayerContextMenu(block, clientX, clientY){
     if (block.override){
       if (!block.overrideStyle[L.key]){
         const els = layerEls[L.key];
-        block.overrideStyle[L.key] = { color: els.col.value, width: +els.wid.value, dash: els.dash.value };
+        block.overrideStyle[L.key] = { pen: els.pen.value, dash: els.dash.value };
       }
-      const st = block.overrideStyle[L.key];
       html +=
         // Empty spacer — occupies the extra grid column between the eye
         // toggle and these settings (see .overrideActive CSS), visually
         // separating "visibility" from "the rest of the per-layer style".
         '<span class="ctxSpacer" aria-hidden="true"></span>' +
-        '<input type="color" value="' + st.color + '" aria-label="' + L.name + ' override color">' +
-        '<input type="number" value="' + fmtWidth(st.width) + '" min="0.1" max="6" step="0.05" aria-label="' + L.name + ' override width">' +
+        // Options filled below via fillPenSelect (pen names are user text).
+        '<select class="penSelect" aria-label="' + L.name + ' override pen"></select>' +
         '<select aria-label="' + L.name + ' override dash">' + dashOptionsHtml() + '</select>';
     }
     // Assigned ONCE, in full, before any listener gets attached below — an
@@ -1851,11 +1852,10 @@ function openLayerContextMenu(block, clientX, clientY){
     });
     if (block.override){
       const st = block.overrideStyle[L.key];
-      const colorInput = row.children[3], widthInput = row.children[4], dashSelect = row.children[5];
+      const penSelect = row.children[3], dashSelect = row.children[4];
+      fillPenSelect(penSelect, st.pen);
       dashSelect.value = st.dash;
-      colorInput.addEventListener('input', () => { st.color = colorInput.value; updateBlockStyle(block); });
-      widthInput.addEventListener('input', () => { st.width = Math.max(0.1, +widthInput.value || 0.1); updateBlockStyle(block); });
-      widthInput.addEventListener('change', () => { widthInput.value = fmtWidth(+widthInput.value); });
+      penSelect.addEventListener('change', () => { st.pen = penSelect.value; updateBlockStyle(block); });
       dashSelect.addEventListener('change', () => { st.dash = dashSelect.value; updateBlockStyle(block); refreshStatusR(); });
     }
     list.appendChild(row);
@@ -2022,10 +2022,21 @@ const isFiniteNum = v => typeof v === 'number' && Number.isFinite(v);
 // scene-io.js's export path), so there's no second serialization format to
 // keep in step with the first. `id` rides along and is ignored on the way
 // back in, same as .pen import already does.
+// `pens` carries the definition of every pen the copied blocks' overrides
+// point at: the paste target may be another document with a different pen
+// library, where those ids mean something else or nothing — see
+// resolveOverridePen (pen-library.js) for how they're matched back in.
 function blocksToClipboardText(list){
+  const penIds = new Set();
+  for (const b of list){
+    for (const key in b.overrideStyle){
+      if (b.overrideStyle[key]) penIds.add(b.overrideStyle[key].pen);
+    }
+  }
   return JSON.stringify({
     penumbraClipboard: CLIPBOARD_FORMAT,
     blocks: list.map(({ dom, ...rest }) => rest),
+    pens: PEN_LIBRARY.filter(p => penIds.has(p.id)),
   });
 }
 // Rebuilds one block from a clipboard record, or returns null if the record
@@ -2033,8 +2044,8 @@ function blocksToClipboardText(list){
 // leave an undrawable or unclickable block on the page is rejected outright)
 // while the rest is merely coerced — the realistic case to defend against is
 // "the clipboard holds unrelated text", not a hand-crafted payload, and .pen
-// import trusts its own input entirely.
-function clipboardRecordToBlock(rec){
+// import trusts its own input entirely. srcPens is the payload's own `pens`.
+function clipboardRecordToBlock(rec, srcPens){
   if (!rec || typeof rec !== 'object') return null;
   // Geometry: at least one real path, under a layer key THIS build knows.
   const src = rec.layerPaths;
@@ -2058,10 +2069,10 @@ function clipboardRecordToBlock(rec){
   for (const key in layerPaths){
     const ov = srcOv[key];
     if (!ov || typeof ov !== 'object') continue;
-    const els = layerEls[key];
     overrideStyle[key] = {
-      color: typeof ov.color === 'string' ? ov.color : els.col.value,
-      width: isFiniteNum(ov.width) ? Math.min(6, Math.max(0.1, ov.width)) : +els.wid.value,
+      // Matched into THIS library (may append a pen) — also reads a
+      // pre-pen-library payload's own color/width.
+      pen: resolveOverridePen(ov, key, srcPens),
       // A dash slot from a session that had added more of them (DASH_KEYS is
       // growable — see main.js) may not exist here. scaledDash already reads
       // an unknown key as solid, but the Override menu's <select> would sit
@@ -2100,7 +2111,7 @@ function blocksFromClipboardText(text){
   if (!data || data.penumbraClipboard !== CLIPBOARD_FORMAT || !Array.isArray(data.blocks)) return [];
   const out = [];
   for (const rec of data.blocks){
-    const b = clipboardRecordToBlock(rec);
+    const b = clipboardRecordToBlock(rec, data.pens);
     if (b) out.push(b);
   }
   return out;
@@ -2129,6 +2140,7 @@ document.addEventListener('paste', e => {
   const pasted = blocksFromClipboardText(e.clipboardData.getData('text/plain'));
   if (!pasted.length) return;
   e.preventDefault();
+  syncPenLibraryUI();   // matching the pasted overrides' pens may have appended some
   // Placed verbatim — same position, rotation, scale and overrides as when
   // copied, with no offset nudge. Pasting into the source document lands the
   // copy exactly on top of the original; addBlocks selects it, which is what
