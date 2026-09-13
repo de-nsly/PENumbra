@@ -616,7 +616,6 @@ export function subtractCovered(loArr, hiArr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP
    stroke keeps all its ink and shorter coincident runs yield. Since every
    strand involved is visible Contour, which one survives is a plotter-economy
    question, not a correctness one — the drawn page looks the same either way. */
-const COINCIDENT_SIN_MAX = 0.01;    // |sin| between directions — ~0.57°, matches the audit's parallel test
 export function dedupCrossRunCoincident(arr, runIds, seqs, offTol=DEDUP_OFF_TOL){
   const n = arr.length/4;
   if (n < 2) return { arr, runIds, seqs };
@@ -713,12 +712,26 @@ export function dedupCrossRunCoincident(arr, runIds, seqs, offTol=DEDUP_OFF_TOL)
         seen.add(entry);
         const { s: q, run } = entry;
         if (run === runIds[i]) continue;                   // a run never duplicates itself
-        if (Math.abs(a.ux*q.uy - a.uy*q.ux) > COINCIDENT_SIN_MAX) continue;         // not parallel
-        // both of q's endpoints must sit ON a's line, not merely near it
+        /* Coincidence = the SHORTER segment lies within offTol of the LONGER
+           one's line (both of its endpoints). No direction comparison: a short
+           segment's direction is mostly positional noise — on a 0.5px micro-run
+           lying right on top of a long run, 0.015px of offset already tilts it
+           1.7°, which a parallel test rejects, leaving a sub-pen-mark sliver
+           drawn over real ink. And the band test alone is enough: a segment
+           whose endpoints both sit inside the other's offTol band is parallel
+           to it to within 2·offTol over its own length, or it is too short for
+           the difference to be visible. */
         const qx1 = q.x0 + q.ux*q.L, qy1 = q.y0 + q.uy*q.L;
-        const d0 = Math.abs((q.x0-a.x0)*nx + (q.y0-a.y0)*ny);
-        const d1 = Math.abs((qx1  -a.x0)*nx + (qy1  -a.y0)*ny);
-        if (d0 > offTol || d1 > offTol) continue;
+        if (q.L >= a.L){
+          const qnx = -q.uy, qny = q.ux;
+          const e0 = Math.abs((a.x0-q.x0)*qnx + (a.y0-q.y0)*qny);
+          const e1 = Math.abs((a.x0+a.ux*a.L-q.x0)*qnx + (a.y0+a.uy*a.L-q.y0)*qny);
+          if (e0 > offTol || e1 > offTol) continue;
+        } else {
+          const d0 = Math.abs((q.x0-a.x0)*nx + (q.y0-a.y0)*ny);
+          const d1 = Math.abs((qx1  -a.x0)*nx + (qy1  -a.y0)*ny);
+          if (d0 > offTol || d1 > offTol) continue;
+        }
         const t0 = (q.x0-a.x0)*a.ux + (q.y0-a.y0)*a.uy;
         const t1 = (qx1  -a.x0)*a.ux + (qy1  -a.y0)*a.uy;
         let lo = Math.max(0, Math.min(t0,t1)), hi = Math.min(a.L, Math.max(t0,t1));

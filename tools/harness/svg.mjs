@@ -28,12 +28,14 @@ const PURE = [
   'accumulatePathStats', 'chainSegments', 'trimTipFoldback', 'mergeSilhouetteClose',
   'buildChainedPathD', 'chainByRun', 'mergeContourRunSplits',
   'mergeAdjacentTouching', 'mergeCreaseScreenSpace', 'splitSelfTouching',
+  'CONTOUR_MICRO_TOL', 'trimContourFoldbacks', 'dropRedundantContourSlivers',
 ];
 const exported = evalWithEnv(extractFrom(path.join(REPO, 'js', 'svg-export.js'), PURE), {}, PURE);
 export const {
   chainByRun, mergeContourRunSplits, splitSelfTouching, simplifyCollinear,
   chainSegments, mergeAdjacentTouching, mergeCreaseScreenSpace, buildChainedPathD,
   SIMPLIFY_COLLINEAR_TOL, SIMPLIFY_FOLDBACK_TOL, trimTipFoldback,
+  trimContourFoldbacks, dropRedundantContourSlivers,
 } = exported;
 
 const CHAIN_LAYERS = { so:1, iv:1, ih:1 };
@@ -60,9 +62,12 @@ export function layerPathD(m, key, { mmToPx = 1, mode = 'chained' } = {}){
     const chains = mergeContourRunSplits(
       chainByRun(segs, m.runIds[key], m.seqs[key]),
       m.counts && m.counts.contourAdjacency);
+    let pieces = [];
     for (const chain of chains)
       for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
-        emit(simplifyCollinear(rawPts, closed), closed);
+        pieces.push({ pts: simplifyCollinear(rawPts, closed), closed });
+    for (const { pts, closed } of dropRedundantContourSlivers(trimContourFoldbacks(pieces)))
+      emit(pts, closed);
   } else if (CHAIN_LAYERS[key]){
     d.push(buildChainedPathD(segs, null, {
       tolMerge: 0.25 * mmToPx, foldbackAngleThreshDeg: 150, protectedPoints: null }));

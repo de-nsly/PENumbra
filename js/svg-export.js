@@ -1324,6 +1324,116 @@ function splitSelfTouching(pts, closed){
   return pieces;
 }
 
+/* Contour micro-geometry cleanup — the last two steps of the Contour branch
+   in onResult, run on finished pieces ({pts, closed}, after
+   splitSelfTouching and simplifyCollinear).
+
+   Where they come from: in an axis-aligned view many mesh edges run almost
+   along the view direction (in the X-aligned pipe scene, 342 edges project
+   to under 0.2px). At a tube end the silhouette genuinely travels along such
+   an edge and back, so the worker's Contour carries a ~0.17px out-and-back
+   stub at the junction where several runs meet. Chaining then turns each
+   stub into one of: a whole run that is just the stub (emitted as a
+   2-point closed "loop" the pen draws out and back), a single sub-MIN_SEG
+   segment standing alone, a stub glued to the start or end of a real stroke
+   (a near-180° fold), or — once two runs tracing the same stub are merged —
+   a micro-loop that splitSelfTouching cuts out as its own closed piece.
+
+   Both steps are bounded so they only ever remove ink that is still on the
+   page, measured over 28 views of the pipe and demo scenes (0 gap cells).
+   The unbounded versions of each were measured to delete real ink. */
+const CONTOUR_MICRO_TOL = 0.3;   // px — MIN_SEG, the pipeline's "not worth a separate pen mark" floor
+
+/* Trims a path-end vertex that folds straight back (turn > 150°) onto the
+   segment before it. Unlike trimTipFoldback (Silhouette's version), the tip
+   must also lie within CONTOUR_MICRO_TOL of that segment's LINE, not just
+   inside its span: without the distance check a genuine short edge meeting a
+   long one at a shallow angle reads as a fold too, and gets cut (measured —
+   a real 7px edge at 9° on the pipe, 107 cells of real ink on the demo mesh).
+   Runs after simplifyCollinear on purpose: before it, the previous segment
+   is usually a micro-segment shorter than the stub folding back over it, so
+   the tip doesn't land inside its span and nothing is caught. */
+function trimContourFoldbacks(pieces){
+  const cosThresh = Math.cos(150 * Math.PI/180);
+  return pieces.map(piece => {
+    if (piece.closed || piece.pts.length < 3) return piece;
+    let pts = piece.pts;
+    const fix = fromEnd => {
+      for (let guard=3; guard>0 && pts.length>=3; guard--){
+        const n = pts.length;
+        const [cx,cy] = fromEnd ? pts[n-3] : pts[2];
+        const [ax,ay] = fromEnd ? pts[n-2] : pts[1];
+        const [bx,by] = fromEnd ? pts[n-1] : pts[0];
+        const d1x=ax-cx, d1y=ay-cy, l1=Math.hypot(d1x,d1y);
+        const d2x=bx-ax, d2y=by-ay, l2=Math.hypot(d2x,d2y);
+        if (l1 < 1e-9 || l2 < 1e-9) break;
+        if ((d1x*d2x + d1y*d2y)/(l1*l2) > cosThresh) break;                        // not a fold-back
+        const t = ((bx-cx)*d1x + (by-cy)*d1y)/(l1*l1);
+        if (t < 0 || t > 1) break;                                                   // doesn't land on the segment
+        if (Math.abs((bx-cx)*d1y - (by-cy)*d1x)/l1 > CONTOUR_MICRO_TOL) break;       // doesn't retrace it
+        pts = fromEnd ? pts.slice(0, n-1) : pts.slice(1);
+      }
+    };
+    fix(true); fix(false);
+    return { pts, closed:false };
+  });
+}
+
+/* Drops pieces smaller than CONTOUR_MICRO_TOL across — but only when the
+   rest of the layer already puts ink within CONTOUR_MICRO_TOL of every point
+   of them, so nothing leaves the page. A micro-piece that is the only ink at
+   its spot is kept: along hidden-contour curves some of them are exactly
+   that, and dropping every tiny piece unconditionally was measured to punch
+   holes there. Checked against the non-tiny pieces only, so two slivers can
+   never vouch for each other and both disappear. */
+function dropRedundantContourSlivers(pieces){
+  const extentOf = pts => {
+    let x0=Infinity, y0=Infinity, x1=-Infinity, y1=-Infinity;
+    for (const [x,y] of pts){ if (x<x0) x0=x; if (x>x1) x1=x; if (y<y0) y0=y; if (y>y1) y1=y; }
+    return Math.hypot(x1-x0, y1-y0);
+  };
+  const tiny = pieces.map(p => extentOf(p.pts) < CONTOUR_MICRO_TOL);
+  if (!tiny.some(Boolean)) return pieces;
+  const G = 2, grid = new Map(), segs = [];
+  pieces.forEach((p, pi) => {
+    if (tiny[pi]) return;
+    const q = p.closed ? [...p.pts, p.pts[0]] : p.pts;
+    for (let i=0;i+1<q.length;i++){
+      const s = segs.length;
+      segs.push(q[i][0], q[i][1], q[i+1][0], q[i+1][1]);
+      const xa=Math.min(q[i][0],q[i+1][0]), xb=Math.max(q[i][0],q[i+1][0]);
+      const ya=Math.min(q[i][1],q[i+1][1]), yb=Math.max(q[i][1],q[i+1][1]);
+      for (let gx=Math.floor(xa/G)-1; gx<=Math.floor(xb/G)+1; gx++)
+        for (let gy=Math.floor(ya/G)-1; gy<=Math.floor(yb/G)+1; gy++){
+          const k = gx + ',' + gy;
+          let list = grid.get(k);
+          if (!list){ list = []; grid.set(k, list); }
+          list.push(s);
+        }
+    }
+  });
+  const covered = (x, y) => {
+    const list = grid.get(Math.floor(x/G) + ',' + Math.floor(y/G));
+    if (!list) return false;
+    for (const s of list){
+      const dx=segs[s+2]-segs[s], dy=segs[s+3]-segs[s+1], L2=dx*dx+dy*dy;
+      let t = L2 > 1e-12 ? ((x-segs[s])*dx + (y-segs[s+1])*dy)/L2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      if (Math.hypot(x-(segs[s]+t*dx), y-(segs[s+1]+t*dy)) <= CONTOUR_MICRO_TOL) return true;
+    }
+    return false;
+  };
+  return pieces.filter((p, pi) => {
+    if (!tiny[pi]) return true;
+    const q = p.closed ? [...p.pts, p.pts[0]] : p.pts;
+    for (let i=0;i<q.length;i++){
+      if (!covered(q[i][0], q[i][1])) return true;
+      if (i+1 < q.length && !covered((q[i][0]+q[i+1][0])/2, (q[i][1]+q[i+1][1])/2)) return true;
+    }
+    return false;
+  });
+}
+
 const HATCH_ANGLE_OFFSET = { h1: 0, h2: 90, h3: 45 };
 // Smooth 2D value noise: hash the 4 surrounding integer-grid corners
 // pseudo-randomly, then smoothstep-interpolate between them. Continuous
@@ -1928,20 +2038,24 @@ function onResult(m){
       // shared-vertex coincidence (see its own comment) — passed the FULL
       // adjacency table (both sv and sh) since a vanished run's
       // prevId/nextId always name the OPPOSITE state's runs; it silently
-      // no-ops for the state that isn't relevant here. Tail is the same as
-      // every other chained layer: split-self-touching safety net,
-      // collinear simplify, path emit, stats.
+      // no-ops for the state that isn't relevant here. Then the same tail as
+      // every other chained layer (split-self-touching safety net, collinear
+      // simplify), plus Contour's own micro-geometry cleanup — see
+      // trimContourFoldbacks / dropRedundantContourSlivers — then emit.
       const contourChains = mergeContourRunSplits(
         chainByRun(segs, m.runIds[L.key], m.seqs[L.key]),
         m.counts && m.counts.contourAdjacency);
+      let pieces = [];
       for (const chain of contourChains)
-        for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed)){
-          const pts = simplifyCollinear(rawPts, closed);
-          if (layerOn) accumulatePathStats(pathStats, pts, closed);
-          d.push('M', pts[0][0].toFixed(2), pts[0][1].toFixed(2));
-          for (let i=1;i<pts.length;i++) d.push('L', pts[i][0].toFixed(2), pts[i][1].toFixed(2));
-          if (closed) d.push('Z');
-        }
+        for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
+          pieces.push({ pts: simplifyCollinear(rawPts, closed), closed });
+      pieces = dropRedundantContourSlivers(trimContourFoldbacks(pieces));
+      for (const { pts, closed } of pieces){
+        if (layerOn) accumulatePathStats(pathStats, pts, closed);
+        d.push('M', pts[0][0].toFixed(2), pts[0][1].toFixed(2));
+        for (let i=1;i<pts.length;i++) d.push('L', pts[i][0].toFixed(2), pts[i][1].toFixed(2));
+        if (closed) d.push('Z');
+      }
     } else if (CHAIN_LAYERS[L.key]){
       let silMergeOpts = null;
       if (L.key === 'so' || L.key === 'iv' || L.key === 'ih'){
