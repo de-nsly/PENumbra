@@ -156,8 +156,8 @@ main{display:grid;grid-template-columns:1fr 1fr 322px;min-height:0;position:rela
   #panel{grid-column:1 / -1;max-height:38vh}
   #panelResizeHandle{display:none}
 }
-/* Positioned relative to <main> (not #panel, which has overflow-y:auto) —
-   inside #panel it would scroll away with the settings list whenever it's
+/* Positioned relative to <main> (not #panel, whose #panelScroll has
+   overflow-y:auto) — inside #panel it would scroll away with the settings list whenever it's
    taller than the viewport. `right` is kept in sync with the panel's
    current width by the drag script (offset by half its own width, so the
    handle is centered ON the boundary line rather than sitting flush
@@ -513,7 +513,17 @@ input[type=color]::-moz-color-swatch{border:none;border-radius:4px}
 body.dragging #paperTabs{display:none}
 
 /* ---------- control panel ---------- */
-#panel{background:var(--panel3);overflow-y:auto;padding-bottom:24px;position:relative;z-index:4}
+/* #panel itself never scrolls: #panelHead (the mode tabs, plus the hatching
+   tab's sub-tabs while that tab is active) stays pinned at the top and only
+   #panelScroll (every tab's content) scrolls, so its scrollbar starts below
+   the tabs instead of running alongside them. min-height:0 on both is what
+   lets the flex child shrink below its content and actually overflow.
+   #panelHead's bottom padding keeps scrolled content from running right up
+   against the last row of tabs. */
+#panel{background:var(--panel3);position:relative;z-index:4;
+  display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#panelHead{flex:none;padding-bottom:8px}
+#panelScroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding-bottom:24px}
 /* Pen/Texture/Page/Cog settings-mode toggle + the Texture-tab sub-tab rows:
    a pill-shaped bar of equal buttons. The accent fill is a single pill that
    slides to the active button — shared with .projRow, see the block below. */
@@ -596,7 +606,7 @@ select,input[type=number]{background:var(--panel2);border:1px solid var(--line);
   border-radius:5px;padding:4px 6px;font-family:var(--mono);font-size:var(--fs-data)}
 input[type=number]{width:58px}
 
-/* Dash section (cog tab) — two user-editable 6-value patterns */
+/* Dash section (Pen library tab) — two user-editable 6-value patterns */
 .dashGroup{margin:10px 0}
 .dashGroupLabel{display:flex;align-items:center;justify-content:space-between;
   font-size:var(--fs-control);color:var(--text);margin-bottom:6px}

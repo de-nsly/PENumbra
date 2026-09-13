@@ -82,7 +82,7 @@ for (const L of LAYERS){
   applyLayerStyle(L.key);
 }
 
-/* ================= Dash section (cog tab) =================
+/* ================= Dash section (Pen library tab) =================
    D1/D2 are user-editable 6-value patterns (dash,gap,dash,gap,dash,gap),
    each value a multiple of whatever layer's own line width is using it —
    see scaledDash/trimTrailingZeroPairs in main.js. Editing a field here

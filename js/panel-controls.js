@@ -621,6 +621,10 @@ function setPanelMode(mode){
     $(m.btn).classList.toggle('active', m.mode === mode);
     $(m.btn).setAttribute('aria-selected', String(m.mode === mode));
   }
+  // The hatching tab's sub-tabs sit in the pinned #panelHead, outside
+  // #textureTab itself, so they need their own show/hide (the pill inside
+  // re-measures itself on reveal via its ResizeObserver).
+  $('texSubTabsHead').style.display = mode === 'texture' ? '' : 'none';
   positionSegPill($('panelModeToggle'));
 }
 for (const m of PANEL_MODES) $(m.btn).addEventListener('click', () => setPanelMode(m.mode));

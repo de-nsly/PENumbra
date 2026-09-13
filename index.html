@@ -177,6 +177,7 @@
 
   <div id="panelResizeHandle" title="Drag to resize"></div>
   <aside id="panel">
+    <div id="panelHead">
     <div class="modeToggle" id="panelModeToggle" role="tablist">
       <button type="button" class="modeToggleBtn active" id="penModeBtn" data-mode="pen" role="tab" aria-selected="true" aria-label="Lines settings">
         <svg viewBox="0 0 32 32" width="24" height="24" fill="currentColor" aria-hidden="true" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
@@ -210,6 +211,25 @@
         </svg>
       </button>
     </div>
+    <!-- The hatching tab's own sub-tabs live up here in the pinned header rather
+         than inside #textureTab, so they don't scroll either; setPanelMode
+         (panel-controls.js) shows this wrapper only while that tab is active. -->
+    <div id="texSubTabsHead" style="display:none">
+      <div class="modeToggle textureSubTabs" id="texTopTabsNormal">
+        <button class="modeToggleBtn texTopTabBtn active" data-textop="general" type="button">General</button>
+        <button class="modeToggleBtn texTopTabBtn" data-textop="texture" type="button">Texture</button>
+      </div>
+      <div class="modeToggle textureSubTabs" id="texTopTabsIndividual" style="display:none">
+        <button class="modeToggleBtn texTopTabBtn" data-textop="general" type="button">G</button>
+        <button class="modeToggleBtn texTopTabBtn" data-textop="h1" type="button">H1</button>
+        <button class="modeToggleBtn texTopTabBtn" data-textop="h2" type="button">H2</button>
+        <button class="modeToggleBtn texTopTabBtn" data-textop="h3" type="button">H3</button>
+        <button class="modeToggleBtn texTopTabBtn" data-textop="cr" type="button">C</button>
+      </div>
+    </div>
+    </div>
+    <!-- Only this part scrolls — everything in #panelHead above stays pinned (see styles.css) -->
+    <div id="panelScroll">
     <div id="pageTab" style="display:none">
       <h2>Page Settings</h2>
       <div class="sec">
@@ -290,18 +310,6 @@
       </div>
     </div>
     <div id="textureTab" style="display:none">
-      <div class="modeToggle textureSubTabs" id="texTopTabsNormal">
-        <button class="modeToggleBtn texTopTabBtn active" data-textop="general" type="button">General</button>
-        <button class="modeToggleBtn texTopTabBtn" data-textop="texture" type="button">Texture</button>
-      </div>
-      <div class="modeToggle textureSubTabs" id="texTopTabsIndividual" style="display:none">
-        <button class="modeToggleBtn texTopTabBtn" data-textop="general" type="button">G</button>
-        <button class="modeToggleBtn texTopTabBtn" data-textop="h1" type="button">H1</button>
-        <button class="modeToggleBtn texTopTabBtn" data-textop="h2" type="button">H2</button>
-        <button class="modeToggleBtn texTopTabBtn" data-textop="h3" type="button">H3</button>
-        <button class="modeToggleBtn texTopTabBtn" data-textop="cr" type="button">C</button>
-      </div>
-
       <div id="texSubGeneral">
         <h2>Hatching</h2>
         <div class="sec">
@@ -528,31 +536,6 @@
           Assume watertight (cull back-face occluders)</label>
       </div>
 
-      <h2>Dash [mm]</h2>
-      <div class="sec">
-        <div id="dashGroupsContainer">
-          <div class="dashGroup">
-            <div class="dashGroupLabel">
-              <span>Dash 1</span>
-              <svg class="dashPreview" id="dashPreviewD1" viewBox="0 0 180 10" aria-hidden="true"><line x1="2" y1="5" x2="178" y2="5"/></svg>
-            </div>
-            <div class="dashFieldsRow" id="dashFieldsD1"></div>
-          </div>
-          <div class="dashGroup">
-            <div class="dashGroupLabel">
-              <span>Dash 2</span>
-              <svg class="dashPreview" id="dashPreviewD2" viewBox="0 0 180 10" aria-hidden="true"><line x1="2" y1="5" x2="178" y2="5"/></svg>
-            </div>
-            <div class="dashFieldsRow" id="dashFieldsD2"></div>
-          </div>
-        </div>
-        <button type="button" class="btn" id="addDashBtn" style="width:100%;margin-top:8px"
-          title="Add another dash style (up to 9 total)" aria-label="Add another dash style">+ Add dash style</button>
-        <label class="chk" style="margin-top:10px" title="Split dashes into segments on export">
-          <input type="checkbox" id="splitDashBtn" checked>
-          Split dashes</label>
-      </div>
-
       <h2>Dedup</h2>
       <div class="sec">
         <p class="hint">
@@ -680,9 +663,35 @@
         <div class="rowsHead penLibRow"><span></span><span>name</span><span></span><span>w [mm]</span><span></span></div>
         <!-- rows built from PEN_LIBRARY (main.js) by renderPenLibrary in pen-library.js -->
         <div id="penLibList"></div>
-        <button type="button" class="btn" id="addPenBtn" style="width:100%;margin-top:8px"
+        <button type="button" class="btn" id="addPenBtn" style="width:100%;margin:8px 0"
           title="Add a new pen (starts as a copy of the last one)" aria-label="Add a new pen">+ Add pen</button>
       </div>
+
+      <h2>Dash [mm]</h2>
+      <div class="sec">
+        <label class="chk" title="Split dashes into segments on export">
+          <input type="checkbox" id="splitDashBtn" checked>
+          Split dashes into segments on export</label>
+        <div id="dashGroupsContainer">
+          <div class="dashGroup">
+            <div class="dashGroupLabel">
+              <span>Dash 1</span>
+              <svg class="dashPreview" id="dashPreviewD1" viewBox="0 0 180 10" aria-hidden="true"><line x1="2" y1="5" x2="178" y2="5"/></svg>
+            </div>
+            <div class="dashFieldsRow" id="dashFieldsD1"></div>
+          </div>
+          <div class="dashGroup">
+            <div class="dashGroupLabel">
+              <span>Dash 2</span>
+              <svg class="dashPreview" id="dashPreviewD2" viewBox="0 0 180 10" aria-hidden="true"><line x1="2" y1="5" x2="178" y2="5"/></svg>
+            </div>
+            <div class="dashFieldsRow" id="dashFieldsD2"></div>
+          </div>
+        </div>
+        <button type="button" class="btn" id="addDashBtn" style="width:100%;margin:8px 0"
+          title="Add another dash style (up to 9 total)" aria-label="Add another dash style">+ Add dash style</button>
+      </div>
+    </div>
     </div>
   </aside>
 </main>
