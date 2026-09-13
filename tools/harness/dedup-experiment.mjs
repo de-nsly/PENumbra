@@ -39,7 +39,7 @@
    ================================================================ */
 import { openScene, DEFAULT_VIEWPORT } from './app.mjs';
 import { layerPathD, pathDToSegs } from './svg.mjs';
-import { dedupCollinear, dedupCrossRunCoincident } from '../../js/worker/dedup.js';
+import { dedupCollinear } from '../../js/worker/dedup.js';
 import { findDoubleInk } from './double-ink.mjs';
 
 const argv = process.argv.slice(2);
@@ -189,20 +189,32 @@ for (const [name, th, ph, pole, ortho] of VIEWS){
   const tol = tolerances(app.lastCam);
   const mmPerPx = app.computePaperLayout({ w: m.w, h: m.h }).scale;
 
-  const variants = { baseline: null };
-  variants.dedupCollinear = Object.fromEntries(KEYS.map(k => [k,
-    m.groups[k].length
-      ? dedupCollinear(Array.from(m.groups[k]), tol.off, tol.gap, Array.from(m.runIds[k]), Array.from(m.seqs[k]))
-      : { arr: [], runIds: [], seqs: [] }]));
-  variants.crossRunOnly = Object.fromEntries(KEYS.map(k => [k,
-    m.groups[k].length
-      ? dedupCrossRunCoincident(Array.from(m.groups[k]), Array.from(m.runIds[k]), Array.from(m.seqs[k]), tol.off)
-      : { arr: [], runIds: [], seqs: [] }]));
+  /* Each variant is { m, override }: the solve whose posted groups it starts
+     from, and optionally replacement sv/sh groups applied on top.
+     crossRunOnly is the REAL worker solve with the pass on (its default) — not
+     the function re-run here on the posted output. Re-running it post-hoc
+     looked equivalent (the pass is the last thing generate() does) but
+     measurably is not: posted groups are Float32Array, and the pass's
+     EXACT_DUP_EPS snap and sub-MIN_SEG remainder decisions shift under that
+     rounding. Chain-topology counts came out badly wrong that way (closed
+     subpaths 206 -> 129 post-hoc vs 206 -> 206 in the worker).
+     dedupCollinear has no in-worker switch, so it can only be run post-hoc —
+     treat its counts as approximate; its conclusion held by wide margins. */
+  const mOn = app.generate();
+  const variants = {
+    baseline: { m, override: null },
+    dedupCollinear: { m, override: Object.fromEntries(KEYS.map(k => [k,
+      m.groups[k].length
+        ? dedupCollinear(Array.from(m.groups[k]), tol.off, tol.gap, Array.from(m.runIds[k]), Array.from(m.seqs[k]))
+        : { arr: [], runIds: [], seqs: [] }])) },
+    crossRunOnly: { m: mOn, override: null },
+  };
 
   const base = emit(m, null);
   const baseCells = cellsOf(base.segs);
-  for (const [label, ov] of Object.entries(variants)){
-    const r = ov ? emit(m, ov) : base;
+  for (const [label, { m: vm, override: ov }] of Object.entries(variants)){
+    const isBase = label === 'baseline';
+    const r = isBase ? base : emit(vm, ov);
     const cells = cellsOf(r.segs);
     const { shift, gap } = lostBreakdown(baseCells, cells);
     let gained = 0;
@@ -211,10 +223,9 @@ for (const [name, th, ph, pole, ortho] of VIEWS){
     for (const k of KEYS){
       const g = r.groups[k];
       if (!g || !g.length) continue;
-      for (const p of findDoubleInk(g, r.groups === base.groups ? m.runIds[k] : (ov ? ov[k].runIds : m.runIds[k])))
-        dbl += p.overlap;
+      for (const p of findDoubleInk(g, ov ? ov[k].runIds : vm.runIds[k])) dbl += p.overlap;
     }
-    const moved = ov ? maxDisplacement(base.segs, r.segs) : 0;
+    const moved = isBase ? 0 : maxDisplacement(base.segs, r.segs);
     const segs = KEYS.reduce((t,k) => t + (r.groups[k] ? r.groups[k].length/4 : 0), 0);
     console.log(name.padEnd(13) + label.padEnd(14) + String(segs).padStart(5) +
       (dbl*mmPerPx).toFixed(2).padStart(12) + String(gap).padStart(7) + String(shift).padStart(7) +

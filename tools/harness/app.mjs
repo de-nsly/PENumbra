@@ -28,7 +28,7 @@
    ================================================================ */
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { extractFrom, evalWithEnv } from './extract.mjs';
 
@@ -44,10 +44,13 @@ const THREE = require(path.join(HERE, 'vendor', 'three.min.js'));
    invertPageBounds pins vp to 798x947); override with --vp WxH. */
 export const DEFAULT_VIEWPORT = { w: 798, h: 947 };
 
-/* Shared-worker bookkeeping — see boot() below. */
-let workerDispatch = null;   // the worker's own self.onmessage, installed once
+/* Shared-worker bookkeeping — see boot() below. One entry per worker
+   directory: the real js/worker by default, or a patched copy passed as
+   openScene(pen, { workerDir }) to prototype a worker change without editing
+   the app. Each directory is its own module graph, so each has its own mesh
+   state and its own resident-mesh owner. */
+const workers = new Map();   // entry-module URL -> { dispatch, meshOwner }
 let activeApp = null;        // whose post() is in flight (routes replies back)
-let meshOwner = null;        // whose model is currently loaded in the worker
 
 /* ---------- minimal DOM stand-in ----------
    Just enough of an "element" for the extracted app code, which only ever
@@ -95,27 +98,36 @@ export class HarnessApp {
      mesh's current owner is tracked and re-posted whenever a different app
      wants to solve (see _ensureMesh). Two scenes can therefore be compared
      in one process, just not solved simultaneously. */
-  async boot(){
-    if (!workerDispatch){
-      globalThis.self = {
-        postMessage(msg){
-          if (!activeApp) return;
-          activeApp.messages.push(msg);
-          activeApp._onWorkerMessage(msg);
-        },
-        onmessage: null,
-      };
-      await import(new URL('../../js/worker/solver.js', import.meta.url).href);
+  async boot(workerDir){
+    const entry = workerDir
+      ? pathToFileURL(path.join(path.resolve(workerDir), 'solver.js')).href
+      : new URL('../../js/worker/solver.js', import.meta.url).href;
+    let w = workers.get(entry);
+    if (!w){
+      if (!globalThis.self || !globalThis.self.postMessage){
+        globalThis.self = {
+          postMessage(msg){
+            if (!activeApp) return;
+            activeApp.messages.push(msg);
+            activeApp._onWorkerMessage(msg);
+          },
+          onmessage: null,
+        };
+      }
+      globalThis.self.onmessage = null;
+      await import(entry);
       if (typeof globalThis.self.onmessage !== 'function')
-        throw new Error('worker did not install its onmessage dispatcher');
-      workerDispatch = globalThis.self.onmessage;
+        throw new Error('worker did not install its onmessage dispatcher: ' + entry);
+      w = { dispatch: globalThis.self.onmessage, meshOwner: null };
+      workers.set(entry, w);
     }
-    this.post = m => { activeApp = this; workerDispatch({ data: m }); };
+    this.worker = w;
+    this.post = m => { activeApp = this; w.dispatch({ data: m }); };
   }
   // Re-loads this app's model into the shared worker if another app's is
   // currently resident. No-op in the common single-scene case.
   _ensureMesh(){
-    if (meshOwner === this) return;
+    if (this.worker.meshOwner === this) return;
     if (!this._loadMsg) throw new Error('no model loaded — call loadScene() first');
     this.post(this._loadMsg());
   }
@@ -132,7 +144,7 @@ export class HarnessApp {
   // viewport3d.js onLoaded(), minus everything that only exists to draw
   _onLoaded(m){
     this.loaded = m;
-    meshOwner = this;
+    this.worker.meshOwner = this;
     this.modelCenter = new THREE.Vector3(m.center[0], m.center[1], m.center[2]);
     this.modelRadius = m.radius;
     this.perspCam.near = this.orthoCam.near = Math.max(this.modelRadius * 0.01, 1e-4);
@@ -320,9 +332,9 @@ export class HarnessApp {
   }
 }
 
-export async function openScene(penPath, opts){
+export async function openScene(penPath, opts = {}){
   const app = new HarnessApp();
-  await app.boot();
+  await app.boot(opts.workerDir);
   await app.loadScene(penPath, opts);
   return app;
 }

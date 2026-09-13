@@ -3045,9 +3045,10 @@ function generate(cam, S, shadingBuffer){
      nothing redraws. Everything it sees here is final ink, so removing a
      duplicate can no longer interact with a later subtraction.
      Always on. It is a deliberate, measured departure from Phase 3b's "never
-     touch sv/sh intra-layer" rule: on the X-aligned pipe scene it removed 91%
-     of the doubled Contour ink over 14 views with no ink lost from the page
-     and no closed loops opened, and it is an exact no-op in views without
+     touch sv/sh intra-layer" rule: on the X-aligned pipe scene it removed 97%
+     of the doubled Contour ink over 14 views with no ink lost from the page,
+     one closed ring opened and pen lifts up about 1% (see the remainder note
+     in dedupCrossRunCoincident), and it is an exact no-op in views without
      coincident projection. contourCoincidentDedup === false turns it off; no
      UI control sends that key — it exists only so the regression harness
      (tools/harness) can still A/B the pass. */

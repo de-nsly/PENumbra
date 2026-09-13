@@ -33,7 +33,7 @@ const exported = evalWithEnv(extractFrom(path.join(REPO, 'js', 'svg-export.js'),
 export const {
   chainByRun, mergeContourRunSplits, splitSelfTouching, simplifyCollinear,
   chainSegments, mergeAdjacentTouching, mergeCreaseScreenSpace, buildChainedPathD,
-  SIMPLIFY_COLLINEAR_TOL, SIMPLIFY_FOLDBACK_TOL,
+  SIMPLIFY_COLLINEAR_TOL, SIMPLIFY_FOLDBACK_TOL, trimTipFoldback,
 } = exported;
 
 const CHAIN_LAYERS = { so:1, iv:1, ih:1 };

@@ -749,23 +749,22 @@ export function dedupCrossRunCoincident(arr, runIds, seqs, offTol=DEDUP_OFF_TOL)
       pieces.push(describe(arr[i*4], arr[i*4+1], arr[i*4+2], arr[i*4+3]));
     } else {
       cover.sort((p,q) => p[0]-q[0]);
-      /* A trim that would leave a remainder too short to be its own pen mark
-         is abandoned outright, and the segment kept whole. The sliver itself
-         is not the real cost — it is what discarding it does to the CHAINS.
-         Two runs that coincide rarely have their segment boundaries in the
-         same places, so a trim usually ends a sub-MIN_SEG crumb short of the
-         segment's end; dropping that crumb cuts the run there, and if the run
-         was a closed loop the loop opens, costing a pen lift. Measured over
-         14 views: dropping crumbs takes the residual double ink from 85.7mm
-         down to 23.2mm but drops closed subpaths from 208 to 129, and the
-         single largest surviving duplicate (90.9px, axis-Y) is held by a
-         0.07px crumb guarding exactly such a loop. Keeping the guard trades
-         the last ~9% of duplicate ink for ~80 closed loops, which is the
-         better deal for a plotter. Neither setting loses any ink from the
-         page (0 gap cells either way). */
-      let stranded = false;
+      /* A remainder too short to be its own pen mark is dropped, the same way
+         subtractCovered drops one. Two runs that coincide rarely have their
+         segment boundaries in the same places, so a trim usually ends a
+         sub-MIN_SEG crumb short of the segment's end; the surviving strand
+         sits at most offTol away, so the crumb's ink is still on the page.
+         The cost is in the CHAINS: dropping the crumb cuts the run there, and
+         a closed loop that loses a stretch to a coincident run opens up.
+         Measured in the worker over 14 views of the X-aligned pipe scene
+         (Contour + hidden Contour): residual double ink 23.3mm, against
+         159.9mm when such trims are abandoned instead and 910.2mm with no
+         pass at all. Real closed rings 10 vs 11 (one hidden-contour ring
+         opens, still fully drawn) and pen lifts 2356 vs 2368 — dropping the
+         crumb lets more duplicates go entirely, which saves more lifts than
+         the opened loop costs. No ink lost from the page either way. */
       const keep = (s,e) => {
-        if (e - s <= MIN_SEG){ stranded = true; return; }
+        if (e - s <= MIN_SEG) return;
         pieces.push(describe(a.x0 + a.ux*s, a.y0 + a.uy*s, a.x0 + a.ux*e, a.y0 + a.uy*e));
       };
       let cur = 0;
@@ -776,7 +775,6 @@ export function dedupCrossRunCoincident(arr, runIds, seqs, offTol=DEDUP_OFF_TOL)
         if (cur >= a.L) break;
       }
       if (cur < a.L) keep(cur, a.L);
-      if (stranded) pieces = [describe(arr[i*4], arr[i*4+1], arr[i*4+2], arr[i*4+3])];
     }
     piecesAt[i] = pieces = pieces.filter(Boolean);
     for (const p of pieces) addSurvivor(p, runIds[i]);

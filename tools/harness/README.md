@@ -122,42 +122,52 @@ carries `contourCoincidentDedup: false`, which nothing in the app sends — it
 is there so the harness can still measure the pass against its absence:
 `--set contourCoincidentDedup=false` (or `--base …=false` in `--compare`).
 
-Measured on `pipe_X_aligned.pen`, Contour layer alone:
+Measured in the worker on `pipe_X_aligned.pen`, Contour layer alone:
 
 | view | doubled ink, off | on |
 |---|---|---|
-| scene / axis+X | 91.9mm | 2.9mm |
+| scene / axis+X | 91.9mm | 0.0mm |
 | axis-X | 39.2mm | 0.0mm |
-| axis+Z | 5.5mm | 0.4mm |
+| axis+Z | 5.5mm | 0.0mm |
 | axis+Y | 64.2mm | 0.6mm |
-| axis-Y | 203.8mm | 32.7mm |
+| axis-Y | 203.8mm | 0.0mm |
 | 1° off axis | 41.5mm | 0.0mm |
-| 5° off axis | 42.8mm | 1.2mm |
+| 5° off axis | 42.8mm | 0.6mm |
 | generic views | 0mm | 0mm |
 
-Over the 14 views of `dedup-experiment.mjs`: **910.2mm → 85.7mm**, with
-**0 gap cells**, subpaths 1371 → 1389 and closed subpaths 206 → **208**. So
-it removes 91% of the duplicate ink without losing any ink from the page and
-without costing pen lifts. Same check on the demo mesh: exact no-op.
+Over 14 views, Contour + hidden Contour:
 
-Two things were needed to get there, both of which had been silently capping
-the pass at about a third of that:
+| | doubled ink | real closed rings (>5px) | pen lifts | paths |
+|---|---|---|---|---|
+| pass off | 910.2mm | 11 | 2330 | 1371 |
+| pass on, trims that strand a crumb abandoned | 159.9mm | 11 | 2368 | 1393 |
+| **pass on (current)** | **23.3mm** | **10** | **2356** | **1384** |
+
+No ink is lost from the page in any of the 28 `--compare` views, on either
+the pipe or the demo mesh (where the pass is an exact no-op). The one ring
+that opens is still drawn in full, as an open stroke.
+
+Three things were needed, each of which had silently capped the pass:
 
 - **Candidate lookup must be spatial.** It originally bucketed on (quantized
   direction, perpendicular offset from the origin). That offset moves by
   `y · Δdirection`, so at a few hundred px out a direction difference of a
   thousandth shifts a strand several buckets away from its own twin; and the
-  angle has a seam at vertical, where canonicalizing sends the same line to
-  either end of the range. Near-horizontal coincidences were found, nearly
-  all near-vertical ones were not.
+  angle has a seam at vertical. Near-horizontal coincidences were found,
+  nearly all near-vertical ones were not.
 - **Interval ends need snapping at `EXACT_DUP_EPS`.** Two runs meeting at a
   shared mesh vertex compute it down different paths, so coverage can start
-  5e-5px short of a segment's end — and that crumb then trips the
-  stranded-sliver guard and abandons the whole trim.
+  5e-5px short of a segment's end.
+- **Sub-MIN_SEG remainders are dropped, not guarded.** Abandoning a trim
+  whenever it would strand a crumb kept 159.9mm of duplicates and — counter
+  to what that guard was meant to protect — cost more pen lifts, not fewer.
 
-The ~9% residual is deliberate: dropping sub-MIN_SEG remainders instead of
-abandoning the trim takes it to 23.2mm, but closed subpaths fall from 208 to
-129. See the guard's own comment in `dedupCrossRunCoincident`.
+**Measure topology in the worker, not post-hoc.** Re-running the pass on a
+posted result looks equivalent (it is the last thing `generate()` does) but
+isn't: posted groups are Float32Array, and the pass's epsilon snaps and
+MIN_SEG decisions move under that rounding. Closed-subpath counts measured
+that way were badly wrong (206 → 129 post-hoc against 206 → 206 in the
+worker). Use `generate({ contourCoincidentDedup: false })` vs `generate()`.
 
 ## dedup-experiment.mjs — re-testing the dedupCollinear exclusion
 
