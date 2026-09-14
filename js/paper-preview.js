@@ -1,12 +1,15 @@
 /* ================================================================
    paper-preview.js — the on-screen paper pane
-   Pan/zoom state for the paper sheet preview (pv/applyPv/resetPv),
-   the pointer handlers that let the user drag/zoom, and the reset
-   button (#reset2dBtn) that restores the default pan/zoom. Generalized
-   to work on whichever sheet is currently active — #sheet (Preview) or
-   #layoutSheet (Layout) — via activeSheetId, which layout-canvas.js's
-   tab-switch handler updates; only one sheet is ever visible/interactive
-   at a time, so a single shared pv state is enough, reset on tab switch.
+   Pan/zoom state for the paper sheet (pv/applyPv/resetPv), the pointer
+   handlers that drag/zoom it, the reset button (#reset2dBtn) and the
+   reset-fit that keeps the rulers in frame, the page rulers and size
+   label, the draggable Circles-centre gizmo, and the debug endpoint
+   markers — everything drawn into the screen-space overlay SVGs
+   (#previewOverlaySvg / #layoutOverlaySvg). Works on whichever sheet is
+   currently active — #sheet (Preview) or #layoutSheet (Layout) — via
+   activeSheetId, which layout-canvas.js's tab-switch handler updates;
+   only one sheet is ever visible at a time, so one shared pv state is
+   enough, reset on tab switch.
    Paper-layout math itself (computePaperLayout, baseSheetSize) lives in
    svg-export.js since computePaperLayout is shared with the actual SVG
    export; computeLayoutPaperDims (the Layout-tab equivalent, no solver

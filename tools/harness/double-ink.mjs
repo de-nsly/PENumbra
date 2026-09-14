@@ -14,7 +14,7 @@
    orthographic views and essentially absent in generic ones — so the
    sweep across views is the interesting output, not the single number.
 
-     node tools/harness/double-ink.mjs pen_files/pipe_X_aligned.pen
+     node tools/harness/double-ink.mjs pen_files/arches.pen
      node tools/harness/double-ink.mjs scene.pen --layer sh
      node tools/harness/double-ink.mjs scene.pen --views     # sweep the standard views
      node tools/harness/double-ink.mjs scene.pen --set contourCoincidentDedup=false   # without the dedup pass

@@ -1,10 +1,13 @@
 'use strict';
 /* ================================================================
    main.js — shared app state & boot glue
-   Declares the $ helper, the layer registry, and instantiates the
-   HLR worker as a module worker from js/worker/solver.js.
-   Load this file FIRST — every other file assumes $, LAYERS, PEN_LIBRARY/penById,
-   DASH_RATIOS/scaledDash and 'worker' already exist as globals.
+   Declares the $ helper, APP_VERSION, the layer registry (LAYERS), the
+   pen library (PEN_LIBRARY/penById), the dash patterns
+   (DASH_RATIOS/DASH_KEYS/scaledDash), two small shared widgets
+   (segmented-toggle pill positioning, middle-button double-click), the
+   per-layer texture-tab cloning, and instantiates the HLR worker as a
+   module worker from js/worker/solver.js.
+   Load this file FIRST — every other file assumes these globals exist.
    ================================================================ */
 const $ = id => document.getElementById(id);
 

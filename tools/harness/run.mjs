@@ -4,7 +4,7 @@
    Loads a .pen scene exactly as the browser app would, runs the real
    HLR worker, and writes per-layer SVGs on the scene's own paper.
 
-     node tools/harness/run.mjs pen_files/pipe_X_aligned.pen
+     node tools/harness/run.mjs pen_files/arches.pen
      node tools/harness/run.mjs scene.pen --layers sv,sh,so --out dir/
      node tools/harness/run.mjs scene.pen --raw          # no chaining
      node tools/harness/run.mjs scene.pen --vp 798x947   # viewport size

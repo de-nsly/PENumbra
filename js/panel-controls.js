@@ -281,10 +281,8 @@ function gatherSettings(){
       // shadows restores exactly what the user had.
       // softShadowsOn is sent explicitly (not inferred from thr===0) so the
       // worker can tell "soft shadows genuinely off" apart from "a
-      // threshold slider just happens to be low" — needed to automatically
-      // restore Cast-shadow-only hatching (see project notes) now that
-      // buffer mode tests one combined threshold instead of two independent
-      // axes the old analytic hybrid had.
+      // threshold slider just happens to be low" — see castOnly /
+      // SHADOW_ONLY_THR at the top of generate().
       crossThr: $('softShadows').checked ? +$('crossThr').value : 0,
       deepThr:  $('softShadows').checked ? +$('deepThr').value  : 0,
       hatchThr: $('softShadows').checked ? +$('hatchThr').value : 0,
@@ -489,9 +487,7 @@ function doGenerate(){
   // of the underlying buffer moves to the worker, which is fine since
   // captureShadingBuffer() always allocates a fresh Float32Array per call,
   // never reused elsewhere. Smooth Shading's Hatch and Circles (model-
-  // surface rings) density decisions are driven entirely by this captured
-  // buffer now — see project notes for the validation that preceded
-  // removing the old analytic Phong+shadow-map hybrid.
+  // surface rings) density decisions are driven entirely by this buffer.
   const transfer = [];
   let shadingBuffer = null;
   if ($('smoothShading').checked && typeof captureShadingBuffer === 'function'){
@@ -552,12 +548,11 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !aboutOverlay.hidden) closeAbout();
 });
 
-/* ================= pen/cog settings-mode toggle =================
-   Two tabs for the same right-hand panel: "pen" (everything line/hatch/
-   shadow related — the default) and "cog" (general settings — currently
-   just Assume watertight, more to come later). Clicking either button
-   shows its tab and hides the other, and lights up the clicked side while
-   the other stays muted — no sliding knob, unlike .pillToggle elsewhere. */
+/* ================= settings panel tabs =================
+   Five tabs for the same right-hand panel, one content div each; the
+   segmented toggle in #panelHead switches them. "pen" is the Lines tab's
+   historical id (it predates the Pen library — see the NAMING note on
+   PEN_LIBRARY in main.js). */
 const PANEL_MODES = [
   { mode: 'pen',     tab: 'penTab',      btn: 'penModeBtn' },      // Lines/Shadows — "pen" predates the Pen library
   { mode: 'penlib',  tab: 'penLibTab',   btn: 'penLibModeBtn' },   // Pen library (pen-library.js)
@@ -749,5 +744,3 @@ updateTexLayerTabVisibility();
   handle.addEventListener('pointerup', endDrag);
   handle.addEventListener('pointercancel', endDrag);
 })();
-
-/* ================= worker messages ================= */

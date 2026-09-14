@@ -14,15 +14,38 @@ pulled out of `js/panel-controls.js`, `js/viewport3d.js` and
 (see `extract.mjs`). Edit the app, the harness follows; rename one of those
 declarations and the harness fails loudly rather than testing a stale copy.
 
-Verified: for `pen_files/pipe_X_aligned.pen` the harness reproduces all
-three of the browser exports in `pen_files/` (`pipe-plot.svg`,
-`pipe-plot_sh.svg`, `pipe-plot_silhouette.svg`) **segment for segment**.
+Verified (2026-09) against a pipe-model scene: the harness reproduced all
+three browser exports (full plot, hidden Contour, Silhouette) **segment for
+segment**.
+
+`pen_files/` is a local, untracked folder for the `.pen` scenes referenced
+below; only fingerprints derived from them are committed.
+
+## Golden check (run this after any change meant to be output-neutral)
+
+```sh
+node tools/harness/verify-golden.mjs
+```
+
+Re-runs the sweep for the built-in demo mesh and `pen_files/arches.pen`
+(skipped if absent) and diffs against `golden/demo.json` / `golden/arches.json`,
+then rebuilds one all-layers combined SVG per scene and compares its SHA-256
+against `golden/combined-sha256.txt`. Must end with
+`RESULT: all golden outputs identical`.
+
+After an INTENDED output change, re-capture:
+
+```sh
+node tools/harness/sweep.mjs demo --out tools/harness/golden/demo.json
+node tools/harness/sweep.mjs pen_files/arches.pen --out tools/harness/golden/arches.json
+node tools/harness/verify-golden.mjs --recapture-hashes
+```
 
 ## Usage
 
 ```sh
 # solve a scene, write one SVG per enabled layer (same paper as the app)
-node tools/harness/run.mjs pen_files/pipe_X_aligned.pen --out /tmp/out
+node tools/harness/run.mjs pen_files/arches.pen --out /tmp/out
 
 # pick layers; --on/--off tick pen checkboxes before the solve, so the
 # cross-layer ink-avoidance cascade sees exactly that set
@@ -41,10 +64,10 @@ node tools/harness/double-ink.mjs scene.pen [--views] [--layer sh] [--set k=v]
 node tools/harness/sweep.mjs scene.pen --compare --base contourCoincidentDedup=false
 
 # regression sweep: capture a fingerprint, change something, compare
-node tools/harness/sweep.mjs pen_files/pipe_X_aligned.pen --out before.json
+node tools/harness/sweep.mjs pen_files/arches.pen --out before.json
 node tools/harness/sweep.mjs demo --out demo-before.json      # the built-in demo mesh
 #   …make the change…
-node tools/harness/sweep.mjs pen_files/pipe_X_aligned.pen --out after.json
+node tools/harness/sweep.mjs pen_files/arches.pen --out after.json
 node tools/harness/sweep.mjs --diff before.json after.json
 ```
 
@@ -78,15 +101,18 @@ app's built-in demo mesh as an independent second scene.
 | `contour-audit.mjs` | Contour-specific diagnostics (see below). |
 | `double-ink.mjs` | finds overlapping near-coincident ink within a layer. |
 | `sweep.mjs` | multi-view golden-output fingerprint + diff, and `--compare`. |
+| `verify-golden.mjs` | one-command check of every committed golden (see above). |
+| `golden/` | the committed fingerprints and combined-SVG hashes. |
 | `vendor/three.min.js` | three.js r128, byte-identical to the CDN file `index.html` loads. |
 
 ## Two things the harness cannot reproduce
 
 - **Viewport size.** The solver works in viewport pixels, and a `.pen` file
-  doesn't record how big the browser's 3D pane was. The default (798×947) is
-  recovered from the `invertPageBounds` recorded in the reference exports in
-  `pen_files/`; override with `--vp WxH`. Get this wrong and every coordinate
-  scales, so check `paper: … scale=…` in the run header against a real export.
+  doesn't record how big the browser's 3D pane was. The default (798×947) was
+  recovered from the `invertPageBounds` recorded in the browser exports the
+  harness was verified against; override with `--vp WxH`. Get this wrong and
+  every coordinate scales, so check `paper: … scale=…` in the run header
+  against a real export.
 - **The shading buffer.** `captureShadingBuffer()` is a WebGL readback, so
   `generate` is sent `shadingBuffer: null`. With Smooth shading on, the worker
   posts a (non-fatal) error and skips Hatch/Circles — the run header reports it

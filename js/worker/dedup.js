@@ -27,31 +27,17 @@ export const MIN_SEG = 0.3;        // min output segment length, px
    line: exact duplicates and partial overlaps collapse to one run; a real
    gap between two collinear segments still keeps them separate. */
 const DEDUP_ANG_BUCKETS = 720;              // 0.25° resolution
-// DEDUP_OFF_TOL/DEDUP_GAP_TOL used to be fixed pixel constants — but the
-// thing they're absorbing (small positional noise between independently-
-// computed copies of the same edge, e.g. a front-pass vs back-pass
-// silhouette/crease split) lives in WORLD space, not screen space. Under
-// orthographic projection especially, zooming in doesn't change that
-// world-space noise at all, but it directly multiplies how many screen
-// pixels it projects to — so a fixed pixel tolerance silently represents
-// less and less of the real noise the more the user zooms in, until it
-// stops absorbing it at all (see the zoom-dependent hidden-crease
-// investigation). generate() now computes the actual per-call values
-// (effOffTol/effGapTol below) from the mesh's own precision floor and the
-// CURRENT view's world-to-pixel scale, and passes them into dedupCollinear/
-// subtractCovered explicitly. These two constants remain only as the
-// default fallback for any future/test caller that doesn't supply values.
-const DEDUP_OFF_TOL = 0.15;                 // px, perpendicular-distance match (fallback default)
-const DEDUP_GAP_TOL = 0.3;                  // px, along-line — bridges touching pieces (fallback default)
-// NOTE: a length-adaptive angular tolerance (DEDUP_BASE_ANG_TOL/
-// DEDUP_MAX_ANG_TOL, plus a matching adaptive bucket-search window in both
-// functions below) previously lived here to fix short-segment matching
-// failures — but it also carried a real performance cost (widened bucket
-// search + O(k²) pairwise testing in dedupCollinear, more accumulated
-// per-lo-segment work in subtractCovered) that made generation noticeably
-// slower on models with lots of short segments. Reverted back to the fixed,
-// cheap ±1-bucket/fixed-dot-threshold matching below while we look for a
-// way to get both the correctness and the speed at the same time.
+// Fallback tolerances only. The noise these absorb (two independently
+// computed copies of the same edge disagreeing slightly) lives in WORLD
+// space, so a fixed pixel value covers less of it the further the view is
+// zoomed in; generate() (solver.js, step 1.2) derives the real per-call
+// values (effOffTol/effGapTol) from the mesh's precision floor and the
+// current view scale and passes them in explicitly.
+const DEDUP_OFF_TOL = 0.15;                 // px, perpendicular-distance match
+const DEDUP_GAP_TOL = 0.3;                  // px, along-line — bridges touching pieces
+// Direction matching is a fixed ±1-bucket / 0.999-dot test. A length-
+// adaptive angular tolerance was tried for short segments and rejected:
+// it made generation noticeably slower on models with many short edges.
 /* Given the unit "arm" directions of every crease edge incident to one
    junction vertex (each arm points AWAY from the vertex, along its edge),
    decide which pairs of edges should be treated as "the same curve

@@ -142,36 +142,25 @@ function generate(cam, S, shadingBuffer){
     flipBufferRowsY(shadingBuffer.pixels, W, H);
     shadingBuf = shadingBuffer;
   }
-  // Smooth Shading's Hatch and Circles (model-surface rings) density
-  // decisions are driven entirely by this captured buffer — the old
-  // analytic Phong+shadow-map hybrid for smooth mode has been fully
-  // removed after validation showed the buffer-driven approach was both
-  // correct (it fixed a real bug the old approach had — a coarse gate
-  // built on an imperfect shadow heuristic could silently exclude a
-  // genuinely shadowed region before the real test ever ran) and faster.
-  // Flat Shading is completely unaffected and never used any of this.
-  // Circles' ground-shadow ring mode is also unaffected — it never went
-  // through this either.
+  // Smooth Shading: Hatch and Circles (model-surface rings) density is
+  // driven entirely by this captured buffer, which already encodes
+  // max(0,N·L)·shadowFactor per pixel. Flat Shading uses the per-face
+  // `bright` scalar below instead and never touches the buffer; Circles'
+  // ground-ring set doesn't either.
   const smoothH = !!S.smoothShading;
   const useShadingBuf = smoothH && !!shadingBuf;
   if (smoothH && !shadingBuf){
-    // No fallback exists anymore — surfaced as an error rather than
-    // silently producing no hatching/circles at all with no explanation.
+    // There is no analytic fallback — surfaced as an error rather than
+    // silently producing no hatching/circles.
     post({ type:'error', msg:'Smooth Shading needs a captured shading buffer for Hatch/Circles, but none arrived this generate.' });
   }
-  // Automates a manual trick: with Soft shadows off, gatherSettings zeroes
-  // every hatch/circles threshold (hatchThr, crossThr, deepThr, circlesThr),
-  // which used to correctly disable just the ambient/gradient axis while
-  // the old analytic hybrid's separate cast-shadow override stayed
-  // independent of any threshold entirely. Now that one buffer sample
-  // tests a single combined threshold, a genuinely zero threshold would
-  // also silently disable Cast shadow's own hatching — so when Cast
-  // shadows is on and Soft shadows is genuinely off (the explicit flag,
-  // not inferred from thr===0, which would be ambiguous with a
-  // deliberately low slider value), every pass uses a small fixed
+  // Cast shadows on with Soft shadows off: gatherSettings zeroes every
+  // "below" threshold when Soft shadows is off, and in buffer mode a zero
+  // threshold would also disable Cast shadow's own hatching (one sample
+  // tests one combined threshold). So every pass uses this small fixed
   // threshold instead: only the darkest, truly-in-shadow areas qualify,
-  // with no visible gradient — the exact look achieved before by manually
-  // setting every "below" slider to 0.01, now automatic.
+  // with no visible gradient. Keyed on the explicit softShadowsOn flag, not
+  // on thr===0, which a deliberately low slider could also produce.
   const SHADOW_ONLY_THR = 0.01;
   const castOnly = !!(S.shadow && S.shadow.on) && !S.hatch.softShadowsOn;
   // depth key, affine in screen space, bigger = closer:
@@ -327,18 +316,10 @@ function generate(cam, S, shadingBuffer){
     const L = S.light;
     if (L[1] <= 1e-6) break gshadow;                     // light at/below horizon
     const bb = M.bbox;
-    // Ground level: the TRUE lowest point of the current (possibly rotated)
-    // geometry, not an approximation. An earlier version rotated the 8
-    // corners of the model's ORIGINAL, unrotated bbox and took the lowest —
-    // that's the wrong operation: rotating a loose axis-aligned box's
-    // corners gives the bounding box of the ROTATED BOX SHAPE, which is
-    // generically larger/looser than the actual rotated mesh's true
-    // footprint (the same reason AABBs get visibly "puffier" when rotated
-    // in most game engines) — so the computed ground level came out too
-    // low, leaving the model visibly floating above the catcher plane even
-    // at 0% offset. `pos` is already the rotated vertex data by this point
-    // (see the "0.5" step above), so the true minimum is just a direct
-    // scan — exact, and no rotation math needed here at all anymore.
+    // Ground level: the TRUE lowest vertex of the (already rotated — see
+    // step 0.5) geometry, scanned directly. Not the rotated bounding box,
+    // whose corners overshoot the real footprint. The viewport's catcher
+    // plane does the same scan (rotatedMeshMinY, viewport3d.js).
     let bbMinY = Infinity;
     for (let i=1; i<pos.length; i+=3) if (pos[i] < bbMinY) bbMinY = pos[i];
     const gy = bbMinY - (S.ground.off || 0) * M.radius;   // default: true rotated min-Y (Y-up)
@@ -2033,10 +2014,10 @@ function generate(cam, S, shadingBuffer){
         const hit = pickVisibleFace(px, py);
         if (!hit) return false;                                  // background — no surface to shadow
         if (smoothH){
-          // Smooth Shading: buffer-driven only (see project notes) — one
-          // direct sample already IS max(0,N·L)*shadowFactor as a single
-          // continuous value, so there's no separate override branch
-          // needed at all, unlike flat mode below.
+          // Smooth Shading: one buffer sample already IS
+          // max(0,N·L)*shadowFactor as a single continuous value, so
+          // there's no separate cast-shadow override branch, unlike flat
+          // mode below.
           if (!shadingBuf) return false;   // warned once already, above the face loop equivalent
           const bFp = Math.max(0, sampleShading(shadingBuf.pixels, shadingBuf.w, shadingBuf.h, px, py).brightness);
           let result = false;
@@ -2346,12 +2327,7 @@ function generate(cam, S, shadingBuffer){
         const a=tri[f*3], b=tri[f*3+1], c=tri[f*3+2];
         if (!ok[a]||!ok[b]||!ok[c]) continue;                    // skip near-clipped faces for hatch
         if (smoothH){
-          // ================= Smooth Shading: buffer-driven only =================
-          // See project notes — the old analytic Phong+shadow-map hybrid
-          // for smooth mode has been fully removed after validation showed
-          // the buffer-driven approach was both correct (it fixed a real
-          // bug the old approach had) and faster. Flat Shading (below) is
-          // completely unaffected and never used any of this.
+          // ================= Smooth Shading: buffer-driven =================
           if (!useShadingBuf) continue;   // no captured buffer this generate — warned once already, above
           // face plane in (x,y,1/z)
           const ax=sx[a],ay=sy[a],az=iz[a], bx=sx[b],by=sy[b],bz=iz[b], cx=sx[c],cy2=sy[c],cz=iz[c];

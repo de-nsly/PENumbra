@@ -448,8 +448,8 @@ function applyImportedScene(data){
 }
 
 let importingScene = false, pendingSceneRestore = null;
-// .pen files are opened through the main "Open STL / OBJ / PEN" button (handleFiles
-// routes by extension); there's no separate Import Scene button/input any more.
+// .pen files arrive through the same "Open STL / OBJ / PEN" button and
+// drag-drop as meshes — openDroppedFile routes by extension.
 async function importScene(file){
   $('statusL').textContent = 'importing ' + file.name + '…';
   let data;
@@ -473,10 +473,6 @@ async function importScene(file){
     worker.postMessage({ type:'load', name: data.model.name, buffer, zUp: zUpImport }, [buffer]);
   }
 }
-
-/* ================= SVG export =================
-   Always the full paper page — same computePaperLayout() the preview uses —
-   regardless of whatever pan/zoom window the user currently has on screen. */
 
 /* ================= boot: demo scene ================= */
 $('statusL').textContent = 'building demo scene…';

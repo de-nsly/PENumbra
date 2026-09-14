@@ -123,16 +123,17 @@ The floating panel here holds **Auto** (regenerate on change), **Generate →**,
 
 ### Settings panel (right)
 
-Four tabs, switched with the icon toggle at the top:
+Five tabs, switched with the icon toggle at the top:
 
 | Tab | Contents |
 |---|---|
-| **Pen** | Crease angle, the layer list (pen / colour / width / dash per layer), and all the shadow controls |
+| **Lines** | The layer list (on/off, pen and dash per layer), Contour cleanup, crease angle, and all the shadow controls |
+| **Pen library** | The pens (name, colour, width), the export mode, and the dash-pattern editor |
 | **Texture** | Hatching parameters, the circle-fill pattern, and the line-texture effects |
 | **Page** | Paper size, orientation, page colour, margins, guide grid |
-| **General** | Model options (e.g. *Assume watertight*), the dash-pattern editor, dedup tuning, and debug exports |
+| **General** | Model options (e.g. *Assume watertight*), dedup tuning, and debug exports |
 
-![Settings panel, Pen tab, showing the layer rows](docs/panel.png)
+![Settings panel, Lines tab, showing the layer rows](docs/panel.png)
 
 ---
 
@@ -189,9 +190,14 @@ default.
 
 ## Lines
 
-**Crease angle** (Pen tab) sets how sharp a fold between two faces has to be before it counts as a
+**Crease angle** (Lines tab) sets how sharp a fold between two faces has to be before it counts as a
 crease edge. Low values keep only genuinely hard edges; high values turn gentle curvature into creases
 too.
+
+**Contour cleanup** and **Max hops** (Lines tab) decide when a stretch of Contour line is a real fold and
+when it is a triangulation artifact: a stretch is removed only if the surface behind it is both
+depth-similar (Cleanup, a fraction of the model's size) and within Max hops triangle steps across the
+surface.
 
 **Dedup** (General tab) cleans up the raw solver output, where the same physical edge can be traced by
 two nearly-coincident segments, or a single edge can be broken by an occlusion gap:
@@ -220,7 +226,7 @@ tab) or by dragging the light gizmo in the 3D viewport.
 Other hatching controls: **Hatch angle**, **min / max spacing** (spacing scales with darkness between
 these), and **Hatch cap** (a safety limit on total hatch segments per generate).
 
-**Shadow options** (Pen tab):
+**Shadow options** (Lines tab):
 
 - **Soft shadows** — the object shading itself, sampled through the shadow map.
 - **Cast shadows** — shadows the object throws onto its own other parts.
@@ -319,17 +325,18 @@ front**, and set its opacity.
 
 ## Pens, colours & dashes
 
-Each row in the layer list (Pen tab) carries a **pen swatch**, **colour**, **stroke width in mm** and
-a **dash style**.
+The **Pen library** tab holds the pens: each has a name, a colour and a stroke width in mm. Every row in
+the layer list (Lines tab) picks one of these pens plus a **dash style**; editing a pen restyles every
+layer (and every Layout override) that uses it. The library is saved in the `.pen` scene.
 
-The **dash editor** (General tab) defines up to 9 named dash patterns. Dash and gap lengths are true
+The **dash editor** (Pen library tab) defines up to 9 named dash patterns. Dash and gap lengths are true
 millimetre values, independent of pen width — a 10 mm dash is 10 mm on the plotted page whether the pen
 is 0.15 mm or 1.2 mm. Each pattern has a live preview.
 
-- **Split dashes** (Pen tab) — on export, turn dashed strokes into real separate path segments rather
-  than relying on SVG `stroke-dasharray`, which many plotter toolchains ignore.
-- **Blend overlapping colours** — a preview-only multiply blend so you can see where inks would
-  overlap; it does not change the export.
+- **Split dashes** (Pen library tab) — on export, turn dashed strokes into real separate path segments
+  rather than relying on SVG `stroke-dasharray`, which many plotter toolchains ignore.
+- **Blend overlapping colours** (Lines tab) — a preview-only multiply blend so you can see where inks
+  would overlap; it does not change the export.
 
 ---
 
@@ -338,10 +345,15 @@ is 0.15 mm or 1.2 mm. Each pattern has a live preview.
 **Export SVG** produces a file with:
 
 - The **real page size** in millimetres, so it drops straight into a plotter workflow at 1:1.
-- One **group per layer**, in draw order, so you can assign a pen per group for multi-pen plotting.
+- With **Export one path per pen** on (Pen library tab, the default): one `<path>` per pen, named after
+  the pen (`pen05_Blue_0.2`), with everything that pen draws in plot order and dashes always split into
+  real segments. Importers that make one object per path (Blender's) then give you one object per pen.
+- With it off: one **group per layer**, in draw order, exactly as drawn on screen, so you can assign a
+  pen per group downstream.
 - **Chained paths** — adjacent open segments are joined into longer polylines to reduce pen lifts and
   travel.
-- Optional **real dashed segments** (see *Split dashes* above).
+- Optional **real dashed segments** (see *Split dashes* above) and **Trim to margins** (Page tab), which
+  clips every path to the margin rectangle on export.
 
 Hidden layers are exported too, if you leave them enabled — handy if you want them plotted in a lighter
 pen, or want to delete them downstream.
@@ -420,10 +432,18 @@ pipeline stages, the file map and the load-order rules.
 
 ## Contributing
 
-There's no build and no test suite. Edit a file, reload the page (served over HTTP), and exercise the
-change — load a model, toggle layers, Generate, export. Each source file has a header comment
-describing its responsibilities and its cross-file dependencies; read that before reordering the
-`<script>` tags.
+There's no build step. Edit a file, reload the page (served over HTTP), and exercise the change — load a
+model, toggle layers, Generate, export. Each source file has a header comment describing its
+responsibilities and its cross-file dependencies; read that before reordering the `<script>` tags.
+
+For anything that should not change the output, `tools/harness` runs the real solver headlessly in
+Node and compares against committed golden fingerprints:
+
+```sh
+node tools/harness/verify-golden.mjs
+```
+
+See `tools/harness/README.md` for the per-view sweep, contour audit and double-ink tools.
 
 ---
 

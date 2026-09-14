@@ -113,6 +113,10 @@ const orbit = {
 // tied to fov elsewhere (updateFrustum) — consistent with how this app
 // already treats fov as the shared "zoom/framing" parameter in both modes.
 function fovPanScale(){ return Math.tan(perspCam.fov * Math.PI / 360); }
+// Pan speeds, in orbit radii per screen px of drag / per arrow-key press,
+// both before the fovPanScale() correction. Tuned by feel.
+const PAN_DRAG_RATE = 0.00098484;
+const PAN_KEY_STEP  = 0.019818;
 let dragBtn = -1, lastX = 0, lastY = 0;
 renderer.domElement.addEventListener('pointerdown', e => {
   dragBtn = (e.button === 2 || e.shiftKey) ? 2 : 0;
@@ -132,9 +136,7 @@ renderer.domElement.addEventListener('pointermove', e => {
     orbit.theta -= dx * 0.006;
     orbit.phi = Math.min(Math.PI - poleEps, Math.max(poleEps, orbit.phi - dy * 0.006));
   } else {
-    // 0.00098484 = 0.00089531 * 1.1 — additional 10% bump on top of the
-    // previous 20% increase.
-    const k = orbit.radius * 0.00098484 * fovPanScale();
+    const k = orbit.radius * PAN_DRAG_RATE * fovPanScale();
     const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
     const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
     orbit.target.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
@@ -166,11 +168,7 @@ document.addEventListener('keydown', e => {
   const dir = ARROW_PAN_KEYS[e.key];
   if (!dir) return;
   e.preventDefault();
-  // 0.019818 anchors this to 85% of the old, FOV-independent step at
-  // FOV=130 — "almost right, make it a bit less" — with lower FOV values
-  // scaling down from there instead of staying constant (which is what
-  // made low-FOV arrow-key movement jump so much more before this).
-  const step = orbit.radius * 0.019818 * fovPanScale();
+  const step = orbit.radius * PAN_KEY_STEP * fovPanScale();
   const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
   const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
   orbit.target.addScaledVector(right, dir[0] * step).addScaledVector(up, dir[1] * step);
@@ -543,18 +541,11 @@ function syncShadowCasting(){
   if (modelMesh){ modelMesh.castShadow = anyShadow; modelMesh.receiveShadow = cast; }
 }
 // Ground level: the TRUE lowest point of the current (possibly rotated)
-// geometry, not an approximation. An earlier version rotated the 8 corners
-// of the model's ORIGINAL, unrotated bbox and took the lowest — that's the
-// wrong operation: rotating a loose axis-aligned box's corners gives the
-// bounding box of the ROTATED BOX SHAPE, which is generically larger/looser
-// than the actual rotated mesh's true footprint (the same reason AABBs get
-// visibly "puffier" when rotated in most game engines) — so the computed
-// ground level came out too low, leaving the model visibly floating above
-// the catcher plane even at 0% offset. This scans the mesh's actual
-// (local-space) vertex buffer directly and rotates each one — exact, no
-// bounding-box approximation involved. Mirrored in the worker (same fix,
-// same reasoning) so the exported SVG's ground-shadow hatching matches this
-// preview exactly.
+// geometry — every vertex rotated and scanned, not the rotated bounding
+// box (whose corners overshoot the real footprint and would leave the
+// model floating above the catcher plane). The worker does the same scan
+// on its rotated copy (generate() step 1.5), so the exported ground-shadow
+// hatching matches this preview exactly.
 function rotatedMeshMinY(geometry, center, rotMat4){
   const arr = geometry.attributes.position.array;
   const e = rotMat4.elements;                          // column-major
@@ -748,10 +739,9 @@ function clearActiveView(){
 }
 $('saveViewBtn').addEventListener('click', saveCurrentView);
 
-/* ================= layer UI ================= */
-
-/* -------- called from scene-io.js's worker.onmessage when the
-   worker reports a freshly parsed/loaded mesh -------- */
+/* ================= model loaded =================
+   Called from scene-io.js's worker.onmessage when the worker reports a
+   freshly parsed/loaded mesh. */
 let modelGeo = null, flatNormalAttr = null, smoothNormalAttr = null;
 function onLoaded(m){
   modelName = m.name;
@@ -858,11 +848,10 @@ function onLoaded(m){
   doGenerate();
 }
 
-// One global toggle, forward-looking: today it drives both the viewport's
-// display (swap geometry + flatShading, pure visual, instant) and the
-// solver's smooth shadow boundary for Circles (needs a regenerate to take
-// effect) — later, when hatch/crosshatch get the same smoothing, this same
-// toggle will drive that too, rather than adding a second one.
+// One toggle drives both the viewport's display (swap the normal
+// attribute, pure visual, instant) and the solver's shading source for
+// Hatch/Circles (the captured shading buffer instead of per-face
+// brightness — needs a regenerate to take effect).
 function applySmoothShadingToggle(){
   if (!modelMesh || !modelGeo || !flatNormalAttr || !smoothNormalAttr) return;
   const useSmooth = $('smoothShading').checked;
@@ -886,9 +875,8 @@ syncSmoothAngleVisibility();   // sets the initial visibility at load — no oth
 // Re-runs just the corner-normal fan grouping in the worker with a new
 // hard-edge threshold (see computeCornerNormals's own comment for why this
 // is cheap — no weld/adjacency/shell recompute needed) rather than a full
-// model reload. markStale() alongside it because the same normals also
-// feed the solver's Circle-shadow smoothing at generate() time, not just
-// this live viewport display — see applySmoothShadingToggle's own comment.
+// model reload. markStale() alongside it because the normals change the
+// shading buffer the next generate captures, not just the live display.
 function applySmoothAngleChange(){
   if (!modelMesh) return;
   worker.postMessage({ type:'recomputeSmoothAngle', hardEdgeDeg: +$('smoothAngleDeg').value });
@@ -898,8 +886,7 @@ $('smoothAngleDeg').addEventListener('input', applySmoothAngleChange);
 // Worker's reply to the message just above — swaps in the freshly computed
 // normals and, if Smooth Shading is currently the active display mode,
 // pushes the change to screen immediately rather than waiting on the next
-// regenerate (which markStale() above will still eventually trigger, for
-// the Circle-shadow side of this).
+// regenerate.
 function onSmoothAngleResult(m){
   if (!modelGeo) return;
   smoothNormalAttr = new THREE.BufferAttribute(m.cornerNormals, 3);

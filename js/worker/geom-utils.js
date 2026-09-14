@@ -75,14 +75,14 @@ export function buildSegGrid(flat){
   }};
 }
 
-/* ---------------- shadow infrastructure (stage 1) ----------------
+/* ---------------- light-space shadow map ----------------
    "Is this point blocked from the light" is the hidden-line solver's question
    aimed in a different direction: a directional light is an orthographic
    camera, so shadow testing = project the scene orthographically along the
    light direction and depth-compare against an occluder grid — the same
    machinery as camera-space occlusion, second instance, different axis.
-   Standalone + stateless on purpose: testable directly, and generate() only
-   pays for any of this when the shadow toggle is actually on (stage 2+). */
+   Standalone + stateless on purpose: generate() builds one per call, and
+   only when a shadow-consuming feature is on. */
 
 // orthonormal basis with w pointing toward the light; u,v span the light plane
 function makeLightBasis(L){
@@ -408,14 +408,11 @@ export function mergeRingPieces(pieces, tolPx){
 
 /* ================= Shading-buffer sampling =================
    Receiving side of the captured shading buffer (see captureShadingBuffer
-   in viewport3d.js). flipBufferRowsY and sampleShading are now real,
-   permanent infrastructure — Smooth Shading's Hatch and Circles (model-
-   surface rings) density decisions are driven entirely by sampleShading's
-   output (see generate() below and the buffer-driven code further down);
-   the old analytic Phong+shadow-map hybrid these replaced has been fully
-   removed after validation. testShadingSample (see the message dispatch)
-   remains as a standalone round-trip check of the transfer/flip/sampling
-   pipeline itself, independent of the real generation path. */
+   in viewport3d.js). With Smooth shading on, Hatch and Circles (model-
+   surface rings) density in generate() is driven entirely by
+   sampleShading's output. The worker's 'testShadingSample' message is a
+   standalone round-trip check of this transfer/flip/sampling path, used
+   by js/debug/shading-diagnostics.js. */
 // WebGL readback is bottom-up; everything else in this file uses top-down
 // screen coordinates (matching cam.w/cam.h — the same source
 // captureShadingBuffer sizes its render target from, so no rescaling is

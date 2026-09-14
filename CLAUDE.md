@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PENumbra is a browser-based hidden-line-removal (HLR) "plotter studio": load an STL/OBJ mesh, it computes
 silhouette/contour/crease edges and hatching, and exports pen-plotter-ready SVG laid out on a paper sheet.
-It is a single static page — no build step, no bundler, no package.json, no test suite. The HLR worker
+It is a single static page — no build step, no bundler, no package.json. The HLR worker
 (`js/worker/solver.js`) is booted as a module worker, which browsers refuse to load from a `file://` page,
 so `index.html` must be served over HTTP — e.g. `python3 -m http.server 8000` from the repo root, then open
 `http://localhost:8000/`.
@@ -15,8 +15,23 @@ The only external dependency is `three.js r128`, loaded from a CDN `<script>` ta
 for the live 3D viewport only — the HLR solver itself is dependency-free). Fonts are loaded from Google
 Fonts. Both require network access on first load.
 
-There is no lint/build/test command — verify changes by opening `index.html` in a browser and exercising
-the UI (load a model via drag-drop or the demo scene, toggle layers, Generate, export SVG).
+## Verifying changes
+
+There is no lint or build step. Two checks:
+
+1. **Golden output** (headless, node ≥ 18, no browser): `tools/harness` runs the real worker and the real
+   main-thread chaining code on a scene and compares against committed fingerprints.
+   ```
+   node tools/harness/verify-golden.mjs
+   ```
+   must end with `RESULT: all golden outputs identical`. It covers the built-in demo mesh and
+   `pen_files/arches.pen` (a local file, not in the repo; the run skips it when absent). Any refactor
+   that is meant to be output-neutral must pass this. `tools/harness/README.md` documents the other
+   tools (per-view sweeps, contour audit, double-ink search) and how to re-capture goldens after an
+   intended output change.
+2. **Browser**: open `index.html` served over HTTP and exercise the UI (load a model via drag-drop or the
+   demo scene, toggle layers, Generate, export SVG, Layout tab, save/load a `.pen`). The harness cannot
+   cover WebGL-dependent paths (the Smooth-shading buffer) or any UI.
 
 ## Script load order (index.html, bottom of file)
 
@@ -32,6 +47,7 @@ js/panel-controls.js - control panel wiring, gatherSettings(), staleness/auto-ge
 js/pen-library.js    - the Pen library tab, pen add/delete, matching incoming pens (needs panel-controls.js + svg-export.js)
 js/layout-canvas.js  - the Layout tab (needs panel-controls.js + svg-export.js)
 js/scene-io.js       - must load last: worker.onmessage dispatcher, file I/O, .pen scene save/load, boots the app
+js/debug/*.js        - console-only diagnostics, loaded by scene-io.js only when the URL has ?debug
 ```
 
 Each file's own header comment documents its responsibilities and cross-file dependencies in more detail
@@ -104,9 +120,11 @@ every setting, the pen library, layer pen/dash choices) as a single JSON-ish `.p
 - When a typed array needs to be reused by the sender after posting (e.g. the worker's own mesh buffers),
   it's copied via `.slice()` before being included in a transfer list — search for existing "copy, don't
   transfer" comments before changing a `postMessage` transfer list.
-- `svg-export.js`'s header comment flags itself as the most likely place to look for line-position/drift
-  bugs in exported SVGs (`chainSegments`, `mergeAdjacentTouching`, `mergeCreaseScreenSpace`,
-  `splitSelfTouching`), separate from the worker's own `worldOnFace`/`intersectSegs`.
+- Line-position bugs in exported SVGs have two homes: the main-thread chaining/merge passes in
+  `svg-export.js` (`chainSegments`, `mergeSilhouetteClose`, `mergeContourRunSplits`,
+  `mergeAdjacentTouching`, `mergeCreaseScreenSpace`, `splitSelfTouching`, `simplifyCollinear`) and the
+  worker's `worldOnFace`/`intersectSegs`/`subtractCovered`. `tools/harness/sweep.mjs --diff` tells the two
+  apart (`--raw` emits worker segments unchained).
 
 ## CSS styling conventions (`styles.css`)
 

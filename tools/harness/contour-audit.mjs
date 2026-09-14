@@ -22,7 +22,7 @@
       hidden layer, not leave a hole, so a hole here means ink was lost
       somewhere in the pipeline (worker or main thread).
 
-     node tools/harness/contour-audit.mjs pen_files/pipe_X_aligned.pen
+     node tools/harness/contour-audit.mjs pen_files/arches.pen
      node tools/harness/contour-audit.mjs scene.pen --hidden   # audit sv+sh together
      node tools/harness/contour-audit.mjs scene.pen --png out.png
    ================================================================ */

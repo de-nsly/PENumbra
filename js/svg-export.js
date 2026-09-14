@@ -19,11 +19,11 @@
    SIMULATED on screen by a page-coloured mask over the band outside
    the margins (buildTrimMaskGroup/syncPreviewTrimMask here, with
    syncLayoutTrimMask in layout-canvas.js as its Layout-tab twin).
-   NOTE: this is the most likely place to look for the line-shift
-   bug — worldOnFace()/intersectSegs() live in the worker, but the
-   chaining/dedup/clip steps below (chainSegments,
-   mergeAdjacentTouching, mergeCreaseScreenSpace, splitSelfTouching)
-   are the other classic source of segment-position drift.
+   If a line ends up in the wrong place on the page, the chaining and
+   merge passes below (chainSegments, mergeSilhouetteClose,
+   mergeContourRunSplits, mergeAdjacentTouching, mergeCreaseScreenSpace,
+   splitSelfTouching, simplifyCollinear) are the main-thread suspects;
+   worldOnFace()/intersectSegs()/subtractCovered are the worker's.
    ================================================================ */
 // Pen widths are mm values entered to plotter-nib precision (0.15, 0.25,
 // 0.35mm etc.) — display up to 2 decimals, trimming trailing zeros rather
@@ -88,8 +88,8 @@ for (const L of LAYERS){
 
 /* ================= Dash section (Pen library tab) =================
    D1/D2 are user-editable 6-value patterns (dash,gap,dash,gap,dash,gap),
-   each value a multiple of whatever layer's own line width is using it —
-   see scaledDash/dashPattern in main.js. Editing a field here
+   each value an absolute length in mm, independent of pen width — see
+   DASH_RATIOS/scaledDash/dashPattern in main.js. Editing a field here
    refreshes every layer currently on this pattern (any layer could be
    using it, not just one), the same reason a paper-size change already
    re-runs applyLayerStyle for the whole LAYERS list elsewhere. */
@@ -475,16 +475,13 @@ function syncMarginMode(){
 }
 $('marginIndependent').addEventListener('change', syncMarginMode);
 
-/* ================= 2D preview pan / zoom =================
-   The whole page grows/shrinks with zoom — like Illustrator — rather than a
-   fixed-size page with a camera cropping into it. The SVG's viewBox stays
-   fixed at the full page extent always; zoom instead resizes the sheet's
-   actual on-screen pixel box, which is a genuine layout resize (the browser
-   re-renders the vector content at the new resolution), not a CSS-transform
-   scale of a cached compositor bitmap — so it stays crisp. Pan is a plain
-   pixel offset via transform:translate, which is safe to do with CSS
-   transform since translation never resamples pixels, only repositions them. */
-
+/* ================= segment chaining =================
+   Chains touching 2-point segments into maximal polylines. A segment's own
+   endpoints already carry all the information needed — no extra data from
+   the solver required. Open chains (a curve broken by real occlusion, or a
+   boundary that's genuinely cut off) keep two distinct ends; closed chains
+   (loop back to their own start) get flagged so the caller can emit an
+   SVG "Z" instead of a duplicate closing point. */
 function chainSegments(segs){
   const key = (x,y) => Math.round(x*50) + '_' + Math.round(y*50);   // ~0.02px buckets
   const n = segs.length / 4;
@@ -2176,9 +2173,6 @@ function refreshStatusR(){
   }
 }
 
-/* ================= file loading ================= */
-
-/* -------- export the current paper page to a .svg file -------- */
 /* ================================================================
    Segment path model — the shared representation both export-time
    geometry passes (dash splitting and the margin trim) work on.
