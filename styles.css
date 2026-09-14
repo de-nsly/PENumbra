@@ -17,7 +17,7 @@
                      compact buttons (view grid, tabs, list-header buttons)
        --fs-data     mono readouts & inputs: stats, value fields, number/select
                      inputs, footer, floating text labels, hint paragraphs
-       --fs-caps     uppercase micro-labels (.vpLabel, .boxLabel, rows header…)
+       --fs-caps     uppercase micro-labels (.vpLabel, rows header, dash field labels…)
        --fs-caps-lg  the one louder uppercase label: #panel h2 section headers
      Weights in use: 400 / 600 / 700 only. */
   --fs-hero:24px; --fs-brand:15px; --fs-btn:13px; --fs-control:12px;
@@ -112,6 +112,8 @@ header{padding:0 16px}
 .addViewBtn:hover,.svBtn:hover,.vpBtn:hover{border-color:var(--accent);color:var(--accent)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .btn.primary:hover{filter:brightness(1.1);color:var(--accent-ink)}
+/* full-width button stacked in a settings section (Add pen, Add dash style, the debug exports) */
+.btn.btnBlock{display:block;width:100%;margin:8px 0}
 /* per-button size / shape (the rest comes from the two rules above) */
 .aboutBtn{width:26px;height:26px;border-radius:50%;font-size:var(--fs-btn);font-weight:600}
 .aboutClose{width:24px;height:24px;border-radius:50%;background:transparent;font-size:var(--fs-data)}
@@ -276,7 +278,7 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
 /* #addToLayoutFloat is only 224px wide, so its .ctl label column is tightened
    (same reasoning as the #camFloat/#rotateFloat overrides above). */
 #addToLayoutFloat .ctl{grid-template-columns:50px 1fr 34px}
-#addToLayoutSaveViewWrap{margin-top:10px}
+#addToLayoutSaveViewWrap,#zUpWrap{margin-top:10px}
 #layoutOverlayWrap{margin-top:6px}
 #addToLayoutSaveViewWrap,#layoutOverlayWrap{width:100%;justify-content:space-between}
 #layoutOverlayControls{margin-top:2px}
@@ -561,6 +563,7 @@ body.dragging #paperTabs{display:none}
 .hint{font-size:var(--fs-data);color:var(--muted);line-height:1.4;margin:0 0 10px}
 
 .ctl{display:grid;grid-template-columns:86px 1fr 44px;align-items:center;gap:8px;margin:7px 0}
+.ctl > select{grid-column:2/4}   /* a dropdown has no value readout, so it takes the readout column too */
 .ctl.ctlWideLabel{grid-template-columns:104px 1fr 44px}
 .ctl.ctlWideLabel label{white-space:nowrap}
 .vpLabel{font-family:var(--mono);font-size:var(--fs-caps);color:var(--muted);letter-spacing:var(--ls-caps);
@@ -594,6 +597,7 @@ input[type=checkbox]:checked{background:radial-gradient(circle, var(--accent) 4.
   font-size:var(--fs-control);cursor:pointer}
 .chk input{width:var(--check-size);height:var(--check-size)}
 .chk-sub{margin:0;color:var(--muted)}
+.chk-gap{margin-top:10px}   /* a checkbox that starts a new sub-group inside a section */
 .chkRow{display:flex;gap:8px;margin:7px 0}
 .chkRow .chk{flex:1;margin:0;min-width:0}
 .rowSplit{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}

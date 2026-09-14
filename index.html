@@ -76,7 +76,7 @@
           <input type="range" id="rotZ" min="-180" max="180" step="1" value="0" data-regen data-rot-axis="z">
           <span class="val" id="rotZVal">0°</span>
         </div>
-        <span class="switchWrap" id="zUpWrap" style="margin-top:8px"
+        <span class="switchWrap" id="zUpWrap"
           title="Treat loaded files as Z-up (CAD convention, e.g. Rhino STL) — rotates them upright on import">
           <span>Z-up</span>
           <button class="pillToggle" id="zUpBtn" role="switch" aria-checked="false" aria-label="Z-up import"></button>
@@ -235,7 +235,7 @@
       <div class="sec">
         <div class="ctl">
           <label for="paperSize">Paper</label>
-          <select id="paperSize" style="grid-column:2/4">
+          <select id="paperSize">
             <option value="A0">A0 · 1189 × 841</option>
             <option value="A1">A1 · 841 × 594</option>
             <option value="A2">A2 · 594 × 420</option>
@@ -247,7 +247,7 @@
         </div>
         <div class="ctl">
           <label for="orient">Orientation</label>
-          <select id="orient" style="grid-column:2/4">
+          <select id="orient">
             <option value="landscape">Landscape</option>
             <option value="portrait" selected>Portrait</option>
           </select>
@@ -256,7 +256,7 @@
           <input type="checkbox" id="rotateBlocksWithPage"> Rotate layers with page</label>
         <div class="ctl">
           <label for="pageColor">Page color</label>
-          <input type="color" id="pageColor" value="#fbf9f3" style="grid-column:2/3">
+          <input type="color" id="pageColor" value="#fbf9f3">
         </div>
       </div>
 
@@ -265,32 +265,32 @@
         <label class="chk"><input type="checkbox" id="marginIndependent"> Independent margins</label>
         <div class="ctl" id="marginSingleRow">
           <label for="marginMm">Margin</label>
-          <input type="number" id="marginMm" min="0" max="60" step="1" value="5" style="grid-column:2/3">
+          <input type="number" id="marginMm" min="0" max="60" step="1" value="5">
           <span class="val">mm</span>
         </div>
         <div id="marginIndependentRows" style="display:none">
           <div class="ctl">
             <label for="marginTopMm">Top</label>
-            <input type="number" id="marginTopMm" min="0" max="60" step="1" value="5" style="grid-column:2/3">
+            <input type="number" id="marginTopMm" min="0" max="60" step="1" value="5">
             <span class="val">mm</span>
           </div>
           <div class="ctl">
             <label for="marginBottomMm">Bottom</label>
-            <input type="number" id="marginBottomMm" min="0" max="60" step="1" value="5" style="grid-column:2/3">
+            <input type="number" id="marginBottomMm" min="0" max="60" step="1" value="5">
             <span class="val">mm</span>
           </div>
           <div class="ctl">
             <label for="marginLeftMm">Left</label>
-            <input type="number" id="marginLeftMm" min="0" max="60" step="1" value="5" style="grid-column:2/3">
+            <input type="number" id="marginLeftMm" min="0" max="60" step="1" value="5">
             <span class="val">mm</span>
           </div>
           <div class="ctl">
             <label for="marginRightMm">Right</label>
-            <input type="number" id="marginRightMm" min="0" max="60" step="1" value="5" style="grid-column:2/3">
+            <input type="number" id="marginRightMm" min="0" max="60" step="1" value="5">
             <span class="val">mm</span>
           </div>
         </div>
-        <label class="chk" style="margin-top:8px" title="On export, clip every path to the margins: a path fully outside is dropped, a path crossing a margin is cut at it, a path fully inside is untouched. Applies to both the Live preview and the Layout export. Nothing is trimmed while generating or arranging — only the exported file — but the area outside the margins is masked out on screen so you can see what will survive.">
+        <label class="chk chk-gap" title="On export, clip every path to the margins: a path fully outside is dropped, a path crossing a margin is cut at it, a path fully inside is untouched. Applies to both the Live preview and the Layout export. Nothing is trimmed while generating or arranging — only the exported file — but the area outside the margins is masked out on screen so you can see what will survive.">
           <input type="checkbox" id="trimToMargins" checked>
           Trim SVG export to margins</label>
       </div>
@@ -301,11 +301,11 @@
           <input type="checkbox" id="gridGuideEnabled"> Show guide grid</label>
         <div class="ctl">
           <label for="gridGuideX">Guides X</label>
-          <input type="number" id="gridGuideX" min="0" max="30" step="1" value="2" style="grid-column:2/3">
+          <input type="number" id="gridGuideX" min="0" max="30" step="1" value="2">
         </div>
         <div class="ctl">
           <label for="gridGuideY">Guides Y</label>
-          <input type="number" id="gridGuideY" min="0" max="30" step="1" value="2" style="grid-column:2/3">
+          <input type="number" id="gridGuideY" min="0" max="30" step="1" value="2">
         </div>
       </div>
     </div>
@@ -565,19 +565,19 @@
           removal, hatching, and every texture effect — for isolating
           whether an issue is in the raw mesh data or later in the pipeline.
         </p>
-        <button type="button" class="btn" id="debugRawEdgesRawBtn" style="width:100%;margin-bottom:8px">Export raw edges (screen px)</button>
-        <button type="button" class="btn" id="debugRawEdgesPaperBtn" style="width:100%;margin-bottom:8px">Export raw edges (paper-aligned)</button>
-        <p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.4">
+        <button type="button" class="btn btnBlock" id="debugRawEdgesRawBtn">Export raw edges (screen px)</button>
+        <button type="button" class="btn btnBlock" id="debugRawEdgesPaperBtn">Export raw edges (paper-aligned)</button>
+        <p class="hint">
           Exports Contour's raw edge chains (front/back facing test +
           junction-paired chain walk, no crease angle involved) as
           continuous polylines, completely bypassing occlusion and dedup —
           for isolating whether an issue is in the raw chain topology or
           later in the pipeline.
         </p>
-        <button type="button" class="btn" id="debugRawContourEdgesRawBtn" style="width:100%;margin-bottom:8px">Export raw contour edges (screen px)</button>
-        <button type="button" class="btn" id="debugRawContourEdgesPaperBtn" style="width:100%;margin-bottom:8px">Export raw contour edges (paper-aligned)</button>
-        <button type="button" class="btn" id="debugSoIvOverlayBtn" style="width:100%;margin-bottom:8px">Export Silhouette vs Individual (pre-dedup)</button>
-        <label class="chk" style="margin:10px 0 0"><input type="checkbox" id="debugShowPathEndpoints">
+        <button type="button" class="btn btnBlock" id="debugRawContourEdgesRawBtn">Export raw contour edges (screen px)</button>
+        <button type="button" class="btn btnBlock" id="debugRawContourEdgesPaperBtn">Export raw contour edges (paper-aligned)</button>
+        <button type="button" class="btn btnBlock" id="debugSoIvOverlayBtn">Export Silhouette vs Individual (pre-dedup)</button>
+        <label class="chk chk-gap"><input type="checkbox" id="debugShowPathEndpoints">
           Mark path endpoints (Silhouette / Individual / Contour)</label>
       </div>
     </div>
@@ -608,11 +608,11 @@
         <span class="val" id="creaseDegVal">1.0°</span>
       </div>
       <div id="hatchLayers"></div>
-      <label class="chk" style="margin-top:8px">
-            <input type="checkbox" id="texGizmoShow" checked>
-            Show circles center gizmo
-          </label>
-      <label class="chk" style="margin-top:8px; margin-bottom:8px">
+      <label class="chk chk-gap">
+        <input type="checkbox" id="texGizmoShow" checked>
+        Show circles center gizmo
+      </label>
+      <label class="chk">
         <input type="checkbox" id="blendMultiplyOn">
         Blend overlapping colors (preview only)
       </label>
@@ -641,7 +641,7 @@
         <input type="range" id="groundOff" min="0" max="100" step="1" value="0" data-regen>
         <span class="val" id="groundOffVal">0%</span>
       </div>
-      <label class="chk" style="margin-top:8px" title="Smooths both the 3D viewport display and the shadow-pattern boundary, for circles and for parallel hatching (all of Hatch/Crosshatch/Deep shadow).">
+      <label class="chk chk-gap" title="Smooths both the 3D viewport display and the shadow-pattern boundary, for circles and for parallel hatching (all of Hatch/Crosshatch/Deep shadow).">
         <input type="checkbox" id="smoothShading" data-regen>
         Smooth shading</label>
       <div class="ctl ctlDisabled" id="smoothAngleRow"
@@ -666,7 +666,7 @@
         <div class="rowsHead penLibRow"><span></span><span>name</span><span></span><span>w [mm]</span><span></span></div>
         <!-- rows built from PEN_LIBRARY (main.js) by renderPenLibrary in pen-library.js -->
         <div id="penLibList"></div>
-        <button type="button" class="btn" id="addPenBtn" style="width:100%;margin:8px 0"
+        <button type="button" class="btn btnBlock" id="addPenBtn"
           title="Add a new pen (starts as a copy of the last one)" aria-label="Add a new pen">+ Add pen</button>
       </div>
 
@@ -691,7 +691,7 @@
             <div class="dashFieldsRow" id="dashFieldsD2"></div>
           </div>
         </div>
-        <button type="button" class="btn" id="addDashBtn" style="width:100%;margin:8px 0"
+        <button type="button" class="btn btnBlock" id="addDashBtn"
           title="Add another dash style (up to 9 total)" aria-label="Add another dash style">+ Add dash style</button>
       </div>
     </div>
