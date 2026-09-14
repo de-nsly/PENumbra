@@ -2275,6 +2275,64 @@ function generate(cam, S, shadingBuffer){
     }
     let hatchTotal=0, capped=false;
     const lineVis = new Map();       // carrier index k → visible [a,b] intervals in carrier-t
+    /* Walks every carrier line of one pass family (fam: nx,ny,dx,dy,c0,t0e,
+       t1e) that crosses front face f: clips the carrier to the face's screen
+       triangle, occludes the clipped piece against the model, and hands each
+       camera-visible sub-span [ua,ub] (fractions of the clipped piece) to
+       onPiece(k, ivs, ta, tb, hx0,hy0,hx1,hy1, ua, ub). The callback decides
+       what to keep by pushing into ivs — this carrier's lineVis list — in the
+       carrier's own [t0e,t1e] parameterisation, i.e. ta+(tb-ta)*u. wantK(k),
+       when given, skips a carrier before any clipping. Shared by the Flat and
+       Smooth branches below, which differ only in that per-piece decision.
+       Returns true when the hatch cap was hit. */
+    const forEachCarrierOnFace = (f, fam, wantK, onPiece) => {
+      const { nx, ny, dx, dy, c0, t0e, t1e } = fam;
+      const a=tri[f*3], b=tri[f*3+1], c=tri[f*3+2];
+      // face plane in (x,y,1/z)
+      const ax=sx[a],ay=sy[a],az=iz[a], bx=sx[b],by=sy[b],bz=iz[b], cx=sx[c],cy2=sy[c],cz=iz[c];
+      const d1x=bx-ax,d1y=by-ay,d1z=bz-az, d2x=cx-ax,d2y=cy2-ay,d2z=cz-az;
+      const det=d1x*d2y-d1y*d2x;
+      if (Math.abs(det)<1e-9) return false;
+      const A=(d1z*d2y-d2z*d1y)/det, B=(d1x*d2z-d2x*d1z)/det, C=az-A*ax-B*ay;
+      const s=det>0?1:-1;
+      const cA=ax*nx+ay*ny, cB=bx*nx+by*ny, cC=cx*nx+cy2*ny;
+      const cMin=Math.min(cA,cB,cC), cMax=Math.max(cA,cB,cC);
+      let k=Math.ceil((cMin-c0)/minS);
+      const kEnd=Math.floor((cMax-c0)/minS);
+      for (; k<=kEnd; k++){
+        if (wantK && !wantK(k)) continue;
+        const cc=c0+k*minS;
+        const X0=nx*cc+dx*t0e, Y0=ny*cc+dy*t0e, X1=nx*cc+dx*t1e, Y1=ny*cc+dy*t1e;
+        let ta=0, tb=1, alive=true;
+        for (let e2=0;e2<3 && alive;e2++){
+          let px,py,qx,qy;
+          if (e2===0){px=ax;py=ay;qx=bx;qy=by;} else if (e2===1){px=bx;py=by;qx=cx;qy=cy2;} else {px=cx;py=cy2;qx=ax;qy=ay;}
+          const ex=qx-px, ey=qy-py;
+          const fa=s*(ex*(Y0-py)-ey*(X0-px));
+          const fb=s*(ex*(Y1-py)-ey*(X1-px));
+          if (fa<0&&fb<0){ alive=false; break; }
+          if (fa<0)      ta=Math.max(ta, fa/(fa-fb));
+          else if (fb<0) tb=Math.min(tb, fa/(fa-fb));
+        }
+        if (!alive || tb-ta<1e-5) continue;
+        const hx0=X0+(X1-X0)*ta, hy0=Y0+(Y1-Y0)*ta, hx1=X0+(X1-X0)*tb, hy1=Y0+(Y1-Y0)*tb;
+        const hz0=A*hx0+B*hy0+C, hz1=A*hx1+B*hy1+C;
+        const hid=occlude(hx0,hy0,hz0,hx1,hy1,hz1, f, -2);
+        let ivs = lineVis.get(k);
+        if (!ivs){ ivs=[]; lineVis.set(k, ivs); }
+        const visPieces = [];
+        let u=0;
+        for (let hi=0; hi<hid.length; hi+=2){
+          if (hid[hi]>u) visPieces.push(u, hid[hi]);
+          u=hid[hi+1];
+        }
+        if (u<1) visPieces.push(u, 1);
+        for (let vp=0; vp<visPieces.length; vp+=2) onPiece(k, ivs, ta, tb, hx0,hy0,hx1,hy1, visPieces[vp], visPieces[vp+1]);
+        hatchTotal++;
+        if (hatchTotal>HATCH_CAP*2){ capped=true; return true; }     // collection guard
+      }
+      return false;
+    };
     if (any) for (let pi=0; pi<passes.length && !capped; pi++){
       const pass=passes[pi], grp=groups[pass.key];
       const rad=pass.ang*Math.PI/180;
@@ -2303,6 +2361,7 @@ function generate(cam, S, shadingBuffer){
           if (tt<t0e)t0e=tt; if (tt>t1e)t1e=tt;
         }
       }
+      const fam = { nx, ny, dx, dy, c0, t0e, t1e };
       for (let f=0; f<nt && !capped; f++){
         if (!front[f]) continue;
         const a=tri[f*3], b=tri[f*3+1], c=tri[f*3+2];
@@ -2310,59 +2369,16 @@ function generate(cam, S, shadingBuffer){
         if (smoothH){
           // ================= Smooth Shading: buffer-driven =================
           if (!useShadingBuf) continue;   // no captured buffer this generate — warned once already, above
-          // face plane in (x,y,1/z)
-          const ax=sx[a],ay=sy[a],az=iz[a], bx=sx[b],by=sy[b],bz=iz[b], cx=sx[c],cy2=sy[c],cz=iz[c];
-          const d1x=bx-ax,d1y=by-ay,d1z=bz-az, d2x=cx-ax,d2y=cy2-ay,d2z=cz-az;
-          const det=d1x*d2y-d1y*d2x;
-          if (Math.abs(det)>=1e-9){
-            const A=(d1z*d2y-d2z*d1y)/det, B=(d1x*d2z-d2x*d1z)/det, C=az-A*ax-B*ay;
-            const s=det>0?1:-1;
-            const cA=ax*nx+ay*ny, cB=bx*nx+by*ny, cC=cx*nx+cy2*ny;
-            const cMin=Math.min(cA,cB,cC), cMax=Math.max(cA,cB,cC);
-            let k=Math.ceil((cMin-c0)/minS);
-            const kEnd=Math.floor((cMax-c0)/minS);
-            for (; k<=kEnd; k++){
-              const cc=c0+k*minS;
-              const X0=nx*cc+dx*t0e, Y0=ny*cc+dy*t0e, X1=nx*cc+dx*t1e, Y1=ny*cc+dy*t1e;
-              let ta=0, tb=1, alive=true;
-              for (let e2=0;e2<3 && alive;e2++){
-                let px,py,qx,qy;
-                if (e2===0){px=ax;py=ay;qx=bx;qy=by;} else if (e2===1){px=bx;py=by;qx=cx;qy=cy2;} else {px=cx;py=cy2;qx=ax;qy=ay;}
-                const ex=qx-px, ey=qy-py;
-                const fa=s*(ex*(Y0-py)-ey*(X0-px));
-                const fb=s*(ex*(Y1-py)-ey*(X1-px));
-                if (fa<0&&fb<0){ alive=false; break; }
-                if (fa<0)      ta=Math.max(ta, fa/(fa-fb));
-                else if (fb<0) tb=Math.min(tb, fa/(fa-fb));
-              }
-              if (!alive || tb-ta<1e-5) continue;
-              const hx0=X0+(X1-X0)*ta, hy0=Y0+(Y1-Y0)*ta, hx1=X0+(X1-X0)*tb, hy1=Y0+(Y1-Y0)*tb;
-              const hz0=A*hx0+B*hy0+C, hz1=A*hx1+B*hy1+C;
-              const hid=occlude(hx0,hy0,hz0,hx1,hy1,hz1, f, -2);
-              let ivs = lineVis.get(k);
-              if (!ivs){ ivs=[]; lineVis.set(k, ivs); }
-              const visPieces = [];
-              let u=0;
-              for (let hi=0; hi<hid.length; hi+=2){
-                if (hid[hi]>u) visPieces.push(u, hid[hi]);
-                u=hid[hi+1];
-              }
-              if (u<1) visPieces.push(u, 1);
-              // The buffer's own brightness already IS max(0,N·L)*
-              // shadowFactor as one continuous signal, so every camera-
-              // visible piece goes straight through bufferSplit's own
-              // bisection — no separate lit/shadow classification axis
-              // needed at all, unlike flat mode below.
-              for (let vp=0; vp<visPieces.length; vp+=2){
-                for (const [ok_, pa, pb] of bufferSplit(hx0,hy0,hx1,hy1, visPieces[vp], visPieces[vp+1], k, pass))
-                  if (ok_) ivs.push(ta+(tb-ta)*pa, ta+(tb-ta)*pb);
-              }
-              hatchTotal++;
-              if (hatchTotal>HATCH_CAP*2){ capped=true; break; }
-            }
-          }
+          // The buffer's own brightness already IS max(0,N·L)*shadowFactor
+          // as one continuous signal, so every camera-visible piece goes
+          // straight through bufferSplit's bisection — no separate lit/
+          // shadow classification axis, unlike flat mode below.
+          forEachCarrierOnFace(f, fam, null, (k, ivs, ta, tb, hx0,hy0,hx1,hy1, ua, ub) => {
+            for (const [ok_, pa, pb] of bufferSplit(hx0,hy0,hx1,hy1, ua, ub, k, pass))
+              if (ok_) ivs.push(ta+(tb-ta)*pa, ta+(tb-ta)*pb);
+          });
         } else {
-          // ================= Flat Shading: exact per-face scalar (unchanged) =================
+          // ================= Flat Shading: exact per-face scalar =================
           const bF = bright[f];
           const litFace = bF < pass.thr;
           // Under Invert shadows a face with neither normal brightness-hatch
@@ -2384,57 +2400,21 @@ function generate(cam, S, shadingBuffer){
           // shadowed is then pure wasted work — the answer (draw it,
           // densest) is already certain either way.
           const faceShadowRelevant = shadowOn && !(litFace && stepLit === 1);
-          // face plane in (x,y,1/z)
-          const ax=sx[a],ay=sy[a],az=iz[a], bx=sx[b],by=sy[b],bz=iz[b], cx=sx[c],cy2=sy[c],cz=iz[c];
-          const d1x=bx-ax,d1y=by-ay,d1z=bz-az, d2x=cx-ax,d2y=cy2-ay,d2z=cz-az;
-          const det=d1x*d2y-d1y*d2x;
-          if (Math.abs(det)>=1e-9){
-            const A=(d1z*d2y-d2z*d1y)/det, B=(d1x*d2z-d2x*d1z)/det, C=az-A*ax-B*ay;
-            const s=det>0?1:-1;
-            const cA=ax*nx+ay*ny, cB=bx*nx+by*ny, cC=cx*nx+cy2*ny;
-            const cMin=Math.min(cA,cB,cC), cMax=Math.max(cA,cB,cC);
-            let k=Math.ceil((cMin-c0)/minS);
-            const kEnd=Math.floor((cMax-c0)/minS);
-            for (; k<=kEnd; k++){
-              const litCandidate = litFace && (k % stepLit) === 0;
-              const shOK = faceShadowRelevant && (k % stepShadow) === 0;
-              // Same reasoning as the face-level shortcut above — a carrier
-              // line neither side would normally draw is exactly the one
-              // Invert shadows needs to draw in full, so don't skip it.
-              if (!meshInvertActive && !litCandidate && !shOK) continue;
-              const cc=c0+k*minS;
-              const X0=nx*cc+dx*t0e, Y0=ny*cc+dy*t0e, X1=nx*cc+dx*t1e, Y1=ny*cc+dy*t1e;
-              let ta=0, tb=1, alive=true;
-              for (let e2=0;e2<3 && alive;e2++){
-                let px,py,qx,qy;
-                if (e2===0){px=ax;py=ay;qx=bx;qy=by;} else if (e2===1){px=bx;py=by;qx=cx;qy=cy2;} else {px=cx;py=cy2;qx=ax;qy=ay;}
-                const ex=qx-px, ey=qy-py;
-                const fa=s*(ex*(Y0-py)-ey*(X0-px));
-                const fb=s*(ex*(Y1-py)-ey*(X1-px));
-                if (fa<0&&fb<0){ alive=false; break; }
-                if (fa<0)      ta=Math.max(ta, fa/(fa-fb));
-                else if (fb<0) tb=Math.min(tb, fa/(fa-fb));
-              }
-              if (!alive || tb-ta<1e-5) continue;
-              const hx0=X0+(X1-X0)*ta, hy0=Y0+(Y1-Y0)*ta, hx1=X0+(X1-X0)*tb, hy1=Y0+(Y1-Y0)*tb;
-              const hz0=A*hx0+B*hy0+C, hz1=A*hx1+B*hy1+C;
-              const hid=occlude(hx0,hy0,hz0,hx1,hy1,hz1, f, -2);
-              let ivs = lineVis.get(k);
-              if (!ivs){ ivs=[]; lineVis.set(k, ivs); }
-              const visPieces = [];
-              let u=0;
-              for (let hi=0; hi<hid.length; hi+=2){
-                if (hid[hi]>u) visPieces.push(u, hid[hi]);
-                u=hid[hi+1];
-              }
-              if (u<1) visPieces.push(u, 1);
+          const litCandidate = k => litFace && (k % stepLit) === 0;
+          const shOK = k => faceShadowRelevant && (k % stepShadow) === 0;
+          forEachCarrierOnFace(f, fam,
+            // Same reasoning as the face-level shortcut above — a carrier
+            // line neither side would normally draw is exactly the one
+            // Invert shadows needs to draw in full, so don't skip it.
+            k => meshInvertActive || litCandidate(k) || shOK(k),
+            (k, ivs, ta, tb, hx0,hy0,hx1,hy1, ua, ub) => {
               if (!faceShadowRelevant){
                 // Invert shadows: this carrier's draw/no-draw call doesn't
                 // vary with shadow at all here, so just negate the same
                 // whole-piece decision — see the shOK/litCandidate split
                 // below for the per-point case.
-                const draw = meshInvertActive ? !litCandidate : litCandidate;
-                if (draw) for (let vp=0; vp<visPieces.length; vp+=2) ivs.push(ta+(tb-ta)*visPieces[vp], ta+(tb-ta)*visPieces[vp+1]);
+                const draw = meshInvertActive ? !litCandidate(k) : litCandidate(k);
+                if (draw) ivs.push(ta+(tb-ta)*ua, ta+(tb-ta)*ub);
               } else {
                 // second classification axis: within each camera-visible
                 // piece, split by shadow state, then keep each run only if
@@ -2447,18 +2427,12 @@ function generate(cam, S, shadingBuffer){
                 // by breaking strokes. Invert shadows negates this same
                 // per-point eligibility rather than re-deriving anything —
                 // draw where it previously wouldn't, blank where it would.
-                for (let vp=0; vp<visPieces.length; vp+=2){
-                  const parts = shadowSplit(f, hx0,hy0,hx1,hy1, visPieces[vp], visPieces[vp+1]);
-                  for (const [inShadow, ua, ub] of parts){
-                    const draw = inShadow ? shOK : litCandidate;
-                    if (draw !== meshInvertActive) ivs.push(ta+(tb-ta)*ua, ta+(tb-ta)*ub);
-                  }
+                for (const [inShadow, pa, pb] of shadowSplit(f, hx0,hy0,hx1,hy1, ua, ub)){
+                  const draw = inShadow ? shOK(k) : litCandidate(k);
+                  if (draw !== meshInvertActive) ivs.push(ta+(tb-ta)*pa, ta+(tb-ta)*pb);
                 }
               }
-              hatchTotal++;
-              if (hatchTotal>HATCH_CAP*2){ capped=true; break; }     // collection guard
-            }
-          }
+            });
         }
         if ((f & 1023)===0) post({type:'progress', v: 0.5 + 0.5*(pi+f/nt)/passes.length});
       }
