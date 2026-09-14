@@ -10,6 +10,46 @@
    Load this file FIRST — every other file assumes these globals exist.
    ================================================================ */
 const $ = id => document.getElementById(id);
+// SVG element factory — the one place the namespace is spelled out.
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function svgEl(tag, attrs){
+  const el = document.createElementNS(SVG_NS, tag);
+  if (attrs) for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+/* Keyboard shortcuts keep out of the way of whatever the focused element
+   does with the same key — but "focused element" is TWO different
+   questions, and answering both with one predicate is what once made
+   Ctrl+C/V/A dead after so much as clicking a slider:
+     * isTextEntryTarget — somewhere text can be typed or selected (a name
+       field, a number box). Native Ctrl+A/C/V and Backspace belong to it.
+     * isFormControlTarget — the above PLUS sliders, checkboxes, colour
+       swatches and <select>, where an ARROW KEY (or a letter, for the H
+       panel toggle) adjusts the control. Wider on purpose: a focused slider
+       must keep its arrow keys, but it holds no text, so Ctrl+C there is
+       still ours to handle.
+   `input` with no type attribute defaults to text, hence the || 'text'. */
+const TEXT_ENTRY_INPUT_TYPES = new Set(['text','search','url','tel','email','password','number']);
+function isTextEntryTarget(){
+  const a = document.activeElement;
+  if (!a) return false;
+  if (a.isContentEditable || a.tagName === 'TEXTAREA') return true;
+  return a.tagName === 'INPUT' && TEXT_ENTRY_INPUT_TYPES.has((a.type || 'text').toLowerCase());
+}
+function isFormControlTarget(){
+  const a = document.activeElement;
+  if (!a) return false;
+  return !!a.isContentEditable || a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT';
+}
+// Hands the browser a file to save (scene export, SVG export, debug dumps).
+function downloadFile(name, text, mime){
+  const blob = new Blob([text], { type: mime });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
 // App version (shown in the About dialog footer). Bump on release.
 const APP_VERSION = '0.8.6';

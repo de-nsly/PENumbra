@@ -185,15 +185,13 @@ function applyLayerStyle(key){
     // current paper. (Deliberately NOT vector-effect:non-scaling-stroke —
     // that cancels the transform entirely, which also kills the zoom/pan
     // scaling that's supposed to stay intact.)
-    const layout = computePaperLayout();
-    const scale = layout ? layout.scale : 1;
-    const pxPerMm = 1 / Math.max(1e-6, scale);
-    const gWidth = s.width * pxPerMm;
+    const k = pxPerMm();
+    const gWidth = s.width * k;
     g.setAttribute('stroke-width', gWidth);
     // Dash/gap are true mm lengths (DASH_RATIOS), independent of pen width —
     // scale by the SAME mm->px factor as the width above, NOT by gWidth
     // itself, or a 10mm dash would come out as 10x-the-pen-width instead.
-    const dash = scaledDash(s.dash, pxPerMm);
+    const dash = scaledDash(s.dash, k);
     if (dash) g.setAttribute('stroke-dasharray', dash); else g.removeAttribute('stroke-dasharray');
     g.style.display = s.on ? '' : 'none';
   }
@@ -258,6 +256,14 @@ function computePaperLayout(dims){
   return { paperW, paperH, margin, scale,
     offX: margin.left + (availW-drawW)/2, offY: margin.top + (availH-drawH)/2, drawW, drawH };
 }
+// Local (solver-px) units per mm at the current paper layout — the factor
+// mm-authored values (pen widths, dash lengths, texture lengths) are
+// multiplied by to land in path-coordinate units. 1 before the first
+// generate, when there is no layout yet.
+function pxPerMm(){
+  const layout = computePaperLayout();
+  return layout ? 1 / Math.max(1e-6, layout.scale) : 1;
+}
 // Base "fit to pane" size in CSS px, before the current zoom factor is applied.
 // Explicit JS sizing rather than CSS aspect-ratio/flex-centering: those don't
 // reliably "contain" a box against an arbitrary pane size across engines.
@@ -280,7 +286,7 @@ function renderPaper(){
     'translate(' + layout.offX + ',' + layout.offY + ') scale(' + layout.scale + ')');
   let guide = document.getElementById('marginGuide');
   if (!guide){
-    guide = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    guide = svgEl('rect');
     guide.id = 'marginGuide';
     guide.setAttribute('class', 'pvMarginGuide');
     $('plot').insertBefore(guide, $('plot').firstChild);
@@ -295,7 +301,7 @@ function renderPaper(){
   // or export math, just drawn for eyeballing composition against the model.
   let gridGuides = document.getElementById('pvGridGuides');
   if (!gridGuides){
-    gridGuides = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    gridGuides = svgEl('g');
     gridGuides.id = 'pvGridGuides';
     $('plot').insertBefore(gridGuides, $('plot').firstChild);
   }
@@ -303,14 +309,14 @@ function renderPaper(){
   if (typeof gridGuidePositions === 'function'){
     const { xs, ys } = gridGuidePositions({ paperW: layout.paperW, paperH: layout.paperH, margin: layout.margin });
     for (const x of xs){
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      const line = svgEl('line');
       line.setAttribute('class', 'pvGridGuide');
       line.setAttribute('x1', x); line.setAttribute('x2', x);
       line.setAttribute('y1', 0); line.setAttribute('y2', layout.paperH);
       gridGuides.appendChild(line);
     }
     for (const y of ys){
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      const line = svgEl('line');
       line.setAttribute('class', 'pvGridGuide');
       line.setAttribute('y1', y); line.setAttribute('y2', y);
       line.setAttribute('x1', 0); line.setAttribute('x2', layout.paperW);
@@ -353,23 +359,22 @@ function renderPaper(){
    drawing would otherwise have half its stroke buried by the mask.
    ============================================================================ */
 function buildTrimMaskGroup(id, dims, guideClass){
-  const NS = 'http://www.w3.org/2000/svg';
   const x0 = dims.margin.left, y0 = dims.margin.top;
   const x1 = Math.max(x0, dims.paperW - dims.margin.right);
   const y1 = Math.max(y0, dims.paperH - dims.margin.bottom);
-  const g = document.createElementNS(NS, 'g');
+  const g = svgEl('g');
   g.id = id;
   g.setAttribute('class', 'trimMask');
   // Two rectangles in one path + fill-rule:evenodd — the page rect with the
   // margin rect punched out of it, i.e. a frame with a genuine hole rather
   // than four separate bars that could leave hairline seams at the corners.
-  const frame = document.createElementNS(NS, 'path');
+  const frame = svgEl('path');
   frame.setAttribute('class', 'trimMaskFrame');
   frame.setAttribute('d',
     'M 0 0 H ' + dims.paperW + ' V ' + dims.paperH + ' H 0 Z ' +
     'M ' + x0 + ' ' + y0 + ' H ' + x1 + ' V ' + y1 + ' H ' + x0 + ' Z');
   g.appendChild(frame);
-  const guide = document.createElementNS(NS, 'rect');
+  const guide = svgEl('rect');
   guide.setAttribute('class', guideClass);
   guide.setAttribute('x', x0); guide.setAttribute('y', y0);
   guide.setAttribute('width', x1 - x0); guide.setAttribute('height', y1 - y0);
@@ -1555,6 +1560,26 @@ function applyHatchGaps(polylines, minLenPx, maxGapPx){
   }
   return out;
 }
+// The Wobble and Gaps settings for one layer, in local px — read the same
+// way for the hatch layers and the Circles layer in onResult. Noise seeds
+// are drawn only when "Same noise field per layer" is on.
+function readWobbleParams(layerKey, mmToPx){
+  const isShared = $(texId('texWobbleShared', layerKey)).checked;
+  return {
+    spacingPx: (+$(texId('texWobbleSpacing', layerKey)).value || 1) * mmToPx,
+    ampPx: (+$(texId('texWobbleAmp', layerKey)).value || 0) * mmToPx,
+    variationAmount: +$(texId('texWobbleVariation', layerKey)).value || 0,
+    envScalePx: (+$(texId('texWobbleVarScale', layerKey)).value || 10) * mmToPx,
+    sharedSeed: isShared ? [Math.random()*10000, Math.random()*10000] : null,
+    sharedEnvSeed: isShared ? [Math.random()*10000, Math.random()*10000] : null,
+  };
+}
+function readGapParams(layerKey, mmToPx){
+  return {
+    minLenPx: (+$(texId('texGapsSpacing', layerKey)).value || 30) * mmToPx,
+    maxGapPx: (+$(texId('texGapsMax', layerKey)).value || 2) * mmToPx,
+  };
+}
 function applyHatchWobble(segs, spacingPx, ampPx, sharedSeed, variationAmount, envScalePx, sharedEnvSeed){
   const out = [];
   const freq = 1 / Math.max(1e-6, spacingPx*3);   // noise "grid cell" spans ~3 subdivision points
@@ -1903,7 +1928,7 @@ function onResult(m){
   // path data stays in solver-pixel units; a single wrapper <g> maps that
   // whole drawing onto the paper (translate + scale), so paper size/orientation/
   // margin changes are pure re-layout — no path data is ever touched or rebuilt.
-  const content = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  const content = svgEl('g');
   content.id = 'paperContent';
   content.classList.toggle('blendMultiply', $('blendMultiplyOn').checked);
   svg.appendChild(content);
@@ -1949,8 +1974,7 @@ function onResult(m){
     const lenBefore = pathStats.lenPx;
     if (L.key === 'cr'){
       if (!layerStyle('cr').on || !m.circlePatternSegs || !m.circlePatternSegs.length) continue;
-      const layout = computePaperLayout();
-      const mmToPx = layout ? 1/Math.max(1e-6, layout.scale) : 1;
+      const mmToPx = pxPerMm();
       let pieces = m.circlePatternSegs;
       if ($(texId('texTrimOn', 'cr')).checked){
         const trimPx = (+$(texId('texTrimValue', 'cr')).value || 0) * mmToPx;
@@ -1975,18 +1999,11 @@ function onResult(m){
         // Wobble displaces points along the arc, so the result is no longer
         // a circle — falls back to the original dense-polyline path, same
         // as before this feature existed.
-        const spacingPx = (+$(texId('texWobbleSpacing', 'cr')).value || 1) * mmToPx;
-        const ampPx = (+$(texId('texWobbleAmp', 'cr')).value || 0) * mmToPx;
-        const variationAmount = +$(texId('texWobbleVariation', 'cr')).value || 0;
-        const envScalePx = (+$(texId('texWobbleVarScale', 'cr')).value || 10) * mmToPx;
-        const isShared = $(texId('texWobbleShared', 'cr')).checked;
-        const sharedSeed = isShared ? [Math.random()*10000, Math.random()*10000] : null;
-        const sharedEnvSeed = isShared ? [Math.random()*10000, Math.random()*10000] : null;
-        let polylines = applyCircleWobble(pieces, spacingPx, ampPx, sharedSeed, variationAmount, envScalePx, sharedEnvSeed);
+        const wb = readWobbleParams('cr', mmToPx);
+        let polylines = applyCircleWobble(pieces, wb.spacingPx, wb.ampPx, wb.sharedSeed, wb.variationAmount, wb.envScalePx, wb.sharedEnvSeed);
         if ($(texId('texGapsOn', 'cr')).checked){
-          const minLenPx = (+$(texId('texGapsSpacing', 'cr')).value || 30) * mmToPx;
-          const maxGapPx = (+$(texId('texGapsMax', 'cr')).value || 2) * mmToPx;
-          polylines = applyHatchGaps(polylines, minLenPx, maxGapPx);
+          const gp = readGapParams('cr', mmToPx);
+          polylines = applyHatchGaps(polylines, gp.minLenPx, gp.maxGapPx);
         }
         for (const poly of polylines){
           const pts = []; for (let i=0;i<poly.length;i+=2) pts.push([poly[i],poly[i+1]]);
@@ -2001,9 +2018,8 @@ function onResult(m){
         // instead of a dense polyline.
         let gappedPieces = pieces;
         if ($(texId('texGapsOn', 'cr')).checked){
-          const minLenPx = (+$(texId('texGapsSpacing', 'cr')).value || 30) * mmToPx;
-          const maxGapPx = (+$(texId('texGapsMax', 'cr')).value || 2) * mmToPx;
-          gappedPieces = applyCircleGaps(pieces, minLenPx, maxGapPx);
+          const gp = readGapParams('cr', mmToPx);
+          gappedPieces = applyCircleGaps(pieces, gp.minLenPx, gp.maxGapPx);
         }
         for (const piece of gappedPieces){
           const segs = arcToBezierSegments(piece.cx, piece.cy, piece.radius, piece.u0, piece.u1);
@@ -2021,12 +2037,12 @@ function onResult(m){
           }
         }
       }
-      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      const g = svgEl('g');
       g.id = 'g_cr';
       g.setAttribute('fill', 'none');
       g.setAttribute('stroke-linecap', 'round');
       g.setAttribute('stroke-linejoin', 'round');
-      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      const p = svgEl('path');
       p.setAttribute('d', d.join(' '));
       g.appendChild(p);
       content.appendChild(g);
@@ -2044,7 +2060,7 @@ function onResult(m){
     // sums a block's layers that are currently layerVisible — so an off
     // layer's contribution is deliberately excluded from pathStats below.
     const layerOn = layerStyle(L.key).on;
-    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const g = svgEl('g');
     g.id = 'g_' + L.key;
     g.setAttribute('fill', 'none');
     g.setAttribute('stroke-linecap', 'round');
@@ -2055,8 +2071,7 @@ function onResult(m){
       appendContourPathD(d, segs, m.runIds[L.key], m.seqs[L.key],
         m.counts && m.counts.contourAdjacency, stats);
     } else if (CHAIN_LAYERS[L.key]){
-      const layout = computePaperLayout();
-      const mmToPx = layout ? 1/Math.max(1e-6, layout.scale) : 1;
+      const mmToPx = pxPerMm();
       // Silhouette and Individual Silhouette get identical treatment here —
       // no exceptions, every gap gets closed.
       const silMergeOpts = { tolMerge: 0.25 * mmToPx, foldbackAngleThreshDeg: 150 };
@@ -2070,8 +2085,7 @@ function onResult(m){
       let outCarrier = (m.hatchCarrier && m.hatchCarrier[L.key]) || null;
       let mmToPx = 1;
       if (HATCH_ANGLE_OFFSET[L.key] !== undefined){
-        const layout = computePaperLayout();
-        mmToPx = layout ? 1/Math.max(1e-6, layout.scale) : 1;
+        mmToPx = pxPerMm();
         if ($(texId('texTrimOn', L.key)).checked){
           const trimPx = (+$(texId('texTrimValue', L.key)).value || 0) * mmToPx;
           const r = applyHatchTrimExtend(outSegs, outCarrier, trimPx);
@@ -2089,14 +2103,8 @@ function onResult(m){
       // the d-string builder below can treat every case uniformly.
       let polylines;
       if ($(texId('texWobbleOn', L.key)).checked && HATCH_ANGLE_OFFSET[L.key] !== undefined){
-        const spacingPx = (+$(texId('texWobbleSpacing', L.key)).value || 1) * mmToPx;
-        const ampPx = (+$(texId('texWobbleAmp', L.key)).value || 0) * mmToPx;
-        const variationAmount = +$(texId('texWobbleVariation', L.key)).value || 0;
-        const envScalePx = (+$(texId('texWobbleVarScale', L.key)).value || 10) * mmToPx;
-        const isShared = $(texId('texWobbleShared', L.key)).checked;
-        const sharedSeed = isShared ? [Math.random()*10000, Math.random()*10000] : null;
-        const sharedEnvSeed = isShared ? [Math.random()*10000, Math.random()*10000] : null;
-        polylines = applyHatchWobble(outSegs, spacingPx, ampPx, sharedSeed, variationAmount, envScalePx, sharedEnvSeed);
+        const wb = readWobbleParams(L.key, mmToPx);
+        polylines = applyHatchWobble(outSegs, wb.spacingPx, wb.ampPx, wb.sharedSeed, wb.variationAmount, wb.envScalePx, wb.sharedEnvSeed);
       } else {
         polylines = [];
         for (let i = 0; i < outSegs.length; i += 4) polylines.push([outSegs[i], outSegs[i+1], outSegs[i+2], outSegs[i+3]]);
@@ -2108,9 +2116,8 @@ function onResult(m){
         polylines = applyHatchRegularWobble(polylines, familyAngleDeg, regAmpPx, regWavelengthPx);
       }
       if ($(texId('texGapsOn', L.key)).checked && HATCH_ANGLE_OFFSET[L.key] !== undefined){
-        const minLenPx = (+$(texId('texGapsSpacing', L.key)).value || 30) * mmToPx;
-        const maxGapPx = (+$(texId('texGapsMax', L.key)).value || 2) * mmToPx;
-        polylines = applyHatchGaps(polylines, minLenPx, maxGapPx);
+        const gp = readGapParams(L.key, mmToPx);
+        polylines = applyHatchGaps(polylines, gp.minLenPx, gp.maxGapPx);
       }
       for (const poly of polylines){
         const pts = []; for (let i=0;i<poly.length;i+=2) pts.push([poly[i],poly[i+1]]);
@@ -2120,7 +2127,7 @@ function onResult(m){
         for (let i = 2; i < poly.length; i += 2) d.push('L', poly[i].toFixed(2), poly[i+1].toFixed(2));
       }
     }
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const p = svgEl('path');
     p.setAttribute('d', d.join(' '));
     g.appendChild(p);
     content.appendChild(g);
@@ -2782,7 +2789,6 @@ function penExportId(pen){
   return 'pen' + n + '_' + pen.name.replace(/[^A-Za-z0-9_.-]/g, '_');
 }
 function buildPenPathsExport(isLayout, dims){
-  const SVG_NS_EXPORT = 'http://www.w3.org/2000/svg';
   // Every visible layer group, in paint order, with the pen it draws with.
   const sources = [];
   if (isLayout){
@@ -2838,8 +2844,8 @@ function buildPenPathsExport(isLayout, dims){
       }
     }
   }
-  const svg = document.createElementNS(SVG_NS_EXPORT, 'svg');
-  svg.setAttribute('xmlns', SVG_NS_EXPORT);
+  const svg = svgEl('svg');
+  svg.setAttribute('xmlns', SVG_NS);
   svg.setAttribute('width',  dims.paperW.toFixed(2) + 'mm');
   svg.setAttribute('height', dims.paperH.toFixed(2) + 'mm');
   svg.setAttribute('viewBox', '0 0 ' + dims.paperW.toFixed(3) + ' ' + dims.paperH.toFixed(3));
@@ -2847,7 +2853,7 @@ function buildPenPathsExport(isLayout, dims){
     const subpaths = byPen.get(pen);
     const d = subpaths ? emitPathD(subpaths, 3) : '';
     if (!d) continue;                          // this pen has no visible ink — no path at all
-    const path = document.createElementNS(SVG_NS_EXPORT, 'path');
+    const path = svgEl('path');
     path.setAttribute('id', penExportId(pen));
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', pen.color);
@@ -2940,12 +2946,7 @@ $('exportBtn').addEventListener('click', () => {
       : ('settings: ' + JSON.stringify(gatherSettings()))) + ' ');
   out.insertBefore(meta, out.firstChild);
 
-  const blob = new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n' + out.outerHTML],
-    { type: 'image/svg+xml' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = modelName.replace(/\.(stl|obj)$/i, '') + (isLayout ? '-layout.svg' : '-plot.svg');
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadFile(modelName.replace(/\.(stl|obj)$/i, '') + (isLayout ? '-layout.svg' : '-plot.svg'),
+    '<?xml version="1.0" encoding="UTF-8"?>\n' + out.outerHTML, 'image/svg+xml');
 });
 

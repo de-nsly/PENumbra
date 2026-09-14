@@ -262,7 +262,7 @@ function drawPathEndpointMarkers(){
     }
   }
   if (!d.length) return;
-  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  const p = svgEl('path');
   p.setAttribute('class', 'pathEndpointDot');
   p.setAttribute('d', d.join(' '));
   $('previewOverlaySvg').appendChild(p);
@@ -284,14 +284,13 @@ function updateTextureGizmo(){
   );
   if (!pos) return;
   const [gx, gy] = pos;
-  const SVG_NS_LOCAL = 'http://www.w3.org/2000/svg';
-  const c = document.createElementNS(SVG_NS_LOCAL, 'circle');
+  const c = svgEl('circle');
   c.setAttribute('class', 'textureGizmo');
   c.setAttribute('cx', gx); c.setAttribute('cy', gy); c.setAttribute('r', 9);
-  const cross1 = document.createElementNS(SVG_NS_LOCAL, 'line');
+  const cross1 = svgEl('line');
   cross1.setAttribute('class', 'textureGizmoCross');
   cross1.setAttribute('x1', gx-5); cross1.setAttribute('y1', gy); cross1.setAttribute('x2', gx+5); cross1.setAttribute('y2', gy);
-  const cross2 = document.createElementNS(SVG_NS_LOCAL, 'line');
+  const cross2 = svgEl('line');
   cross2.setAttribute('class', 'textureGizmoCross');
   cross2.setAttribute('x1', gx); cross2.setAttribute('y1', gy-5); cross2.setAttribute('x2', gx); cross2.setAttribute('y2', gy+5);
   ov.appendChild(c); ov.appendChild(cross1); ov.appendChild(cross2);
@@ -376,8 +375,7 @@ function updateRuler(layout){
   const toX = mmX => rect.left + mmX * scale;
   const toY = mmY => rect.top  + mmY * scale;
 
-  const SVG_NS_LOCAL = 'http://www.w3.org/2000/svg';
-  const g = document.createElementNS(SVG_NS_LOCAL, 'g');
+  const g = svgEl('g');
   g.setAttribute('class', 'pageRuler');
   const d = [];
   const addTick = (horiz, posMm, lenMm) => {
@@ -405,7 +403,7 @@ function updateRuler(layout){
   d.push('M' + toX(0).toFixed(1) + ',' + toY(-RULER_GAP_MM).toFixed(1) + 'L' + toX(layout.paperW).toFixed(1) + ',' + toY(-RULER_GAP_MM).toFixed(1));
   d.push('M' + toX(-RULER_GAP_MM).toFixed(1) + ',' + toY(0).toFixed(1) + 'L' + toX(-RULER_GAP_MM).toFixed(1) + ',' + toY(layout.paperH).toFixed(1));
 
-  const path = document.createElementNS(SVG_NS_LOCAL, 'path');
+  const path = svgEl('path');
   path.setAttribute('d', d.join(' '));
   path.setAttribute('fill', 'none');
   path.setAttribute('stroke', 'var(--muted)');
@@ -415,7 +413,7 @@ function updateRuler(layout){
 
   const fontPx = Math.max(1e-3, RULER_LABEL_FONT_MM * scale).toFixed(1);
   for (const L of labels){
-    const t = document.createElementNS(SVG_NS_LOCAL, 'text');
+    const t = svgEl('text');
     t.setAttribute('x', L.x.toFixed(1)); t.setAttribute('y', L.y.toFixed(1));
     t.setAttribute('text-anchor', L.anchor);
     t.setAttribute('dominant-baseline', 'middle');
@@ -432,7 +430,7 @@ function updateRuler(layout){
      redraw at the top of this function) so it can't end up stale if only
      one of the two ever needs to change — they don't currently have
      independent triggers, but there's no reason to couple them. */
-  const label = document.createElementNS(SVG_NS_LOCAL, 'text');
+  const label = svgEl('text');
   label.setAttribute('class', 'pageSizeLabel');
   label.setAttribute('x', toX(layout.paperW + PAGE_LABEL_GAP_MM).toFixed(1));
   label.setAttribute('y', toY(layout.paperH).toFixed(1));   // alphabetic baseline ~= visual bottom for plain size codes (no descenders)

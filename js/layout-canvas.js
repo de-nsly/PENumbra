@@ -29,7 +29,6 @@
    (which calls renderBlocksList/renderLayoutCanvas on scene import).
    ================================================================ */
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 
 let blocks = [];
 let blockCounter = 0;                 // names only ever climb, never renumbered (same policy as Saved Views)
@@ -156,18 +155,18 @@ function initLayoutPlot(){
   // blank space correctly deselects). This guarantees pointerdown/pointermove
   // fire predictably everywhere within the paper, not just where a block
   // happens to have actual painted geometry.
-  const hitBg = document.createElementNS(SVG_NS, 'rect');
+  const hitBg = svgEl('rect');
   hitBg.id = 'layoutHitBg';
   hitBg.setAttribute('fill', 'transparent');
   svg.appendChild(hitBg);
-  const guide = document.createElementNS(SVG_NS, 'rect');
+  const guide = svgEl('rect');
   guide.id = 'layoutMarginGuide';
   guide.setAttribute('class', 'layoutMarginGuide');
   svg.appendChild(guide);
-  const gridGuides = document.createElementNS(SVG_NS, 'g');
+  const gridGuides = svgEl('g');
   gridGuides.id = 'layoutGridGuides';
   svg.appendChild(gridGuides);
-  const blocksLayer = document.createElementNS(SVG_NS, 'g');
+  const blocksLayer = svgEl('g');
   blocksLayer.id = 'layoutBlocksLayer';
   svg.appendChild(blocksLayer);
   // "Trim SVG export to margins" mask — above the blocks (it has to cover
@@ -175,13 +174,13 @@ function initLayoutPlot(){
   // chrome, so snap/axis guides and anything drawn for a drag in progress
   // stay readable over it. Content is rebuilt by syncLayoutTrimMask; this
   // only reserves its place in the stacking order.
-  const trimMask = document.createElementNS(SVG_NS, 'g');
+  const trimMask = svgEl('g');
   trimMask.id = 'layoutTrimMaskSlot';
   svg.appendChild(trimMask);
-  const snapGuides = document.createElementNS(SVG_NS, 'g');
+  const snapGuides = svgEl('g');
   snapGuides.id = 'layoutSnapGuides';
   svg.appendChild(snapGuides);
-  const axisGuides = document.createElementNS(SVG_NS, 'g');
+  const axisGuides = svgEl('g');
   axisGuides.id = 'layoutAxisGuides';
   svg.appendChild(axisGuides);
 }
@@ -222,14 +221,14 @@ function syncLayoutGridGuides(dims){
   g.innerHTML = '';
   const { xs, ys } = gridGuidePositions(dims);
   for (const x of xs){
-    const line = document.createElementNS(SVG_NS, 'line');
+    const line = svgEl('line');
     line.setAttribute('class', 'layoutGridGuide');
     line.setAttribute('x1', x); line.setAttribute('x2', x);
     line.setAttribute('y1', 0); line.setAttribute('y2', dims.paperH);
     g.appendChild(line);
   }
   for (const y of ys){
-    const line = document.createElementNS(SVG_NS, 'line');
+    const line = svgEl('line');
     line.setAttribute('class', 'layoutGridGuide');
     line.setAttribute('y1', y); line.setAttribute('y2', y);
     line.setAttribute('x1', 0); line.setAttribute('x2', dims.paperW);
@@ -337,7 +336,7 @@ function freezeCurrentGeneration(){
   }
   if (!any){ $('statusL').textContent = 'no visible geometry to add'; return; }
 
-  const measureSvg = document.createElementNS(SVG_NS, 'svg');
+  const measureSvg = svgEl('svg');
   measureSvg.style.position = 'absolute'; measureSvg.style.width = '0'; measureSvg.style.height = '0';
   measureSvg.style.overflow = 'hidden'; measureSvg.setAttribute('aria-hidden', 'true');
   // measureOuter has NO transform of its own — getBBox() excludes the
@@ -348,11 +347,11 @@ function freezeCurrentGeneration(){
   // untransformed wrapper instead correctly includes measureG's transform,
   // since from the wrapper's point of view it's a DESCENDANT's transform,
   // which getBBox() does account for.
-  const measureOuter = document.createElementNS(SVG_NS, 'g');
-  const measureG = document.createElementNS(SVG_NS, 'g');
+  const measureOuter = svgEl('g');
+  const measureG = svgEl('g');
   measureG.setAttribute('transform', 'translate(' + layout.offX + ',' + layout.offY + ') scale(' + layout.scale + ')');
   for (const key in layerPaths){
-    const p = document.createElementNS(SVG_NS, 'path');
+    const p = svgEl('path');
     p.setAttribute('d', layerPaths[key]);
     measureG.appendChild(p);
   }
@@ -515,8 +514,8 @@ function createBlockDom(block){
     block.layerVisible = {};
     for (const key in block.layerPaths) block.layerVisible[key] = true;
   }
-  const outer = document.createElementNS(SVG_NS, 'g');
-  const inner = document.createElementNS(SVG_NS, 'g');
+  const outer = svgEl('g');
+  const inner = svgEl('g');
   inner.setAttribute('transform',
     'translate(' + block.freezeOffX + ',' + block.freezeOffY + ') scale(' + block.freezeScale + ')');
   outer.appendChild(inner);
@@ -531,12 +530,12 @@ function createBlockDom(block){
   for (const L of LAYERS.slice().reverse()){
     const d = block.layerPaths[L.key];
     if (!d) continue;
-    const g = document.createElementNS(SVG_NS, 'g');
+    const g = svgEl('g');
     g.setAttribute('fill', 'none');
     g.setAttribute('stroke-linecap', 'round');
     g.setAttribute('stroke-linejoin', 'round');
     g.classList.add('layoutLayerStroke');   // target for the shared, cross-block blend rule — see styles.css
-    const p = document.createElementNS(SVG_NS, 'path');
+    const p = svgEl('path');
     p.setAttribute('d', d);
     g.appendChild(p);
     inner.appendChild(g);
@@ -547,12 +546,16 @@ function createBlockDom(block){
   updateBlockTransform(block);
   updateBlockStyle(block);
 }
+// The block's placement as an SVG transform — world = (x,y) + R·S·(local −
+// center), see the transform-model comment above blockCenterLocal.
+function blockTransformAttr(block){
+  const [cx, cy] = blockCenterLocal(block);
+  return 'translate(' + block.x + ',' + block.y + ') rotate(' + block.rotationDeg + ') scale(' + block.scale + ') ' +
+    'translate(' + (-cx) + ',' + (-cy) + ')';
+}
 function updateBlockTransform(block){
   if (!block.dom) return;
-  const [cx, cy] = blockCenterLocal(block);
-  block.dom.outer.setAttribute('transform',
-    'translate(' + block.x + ',' + block.y + ') rotate(' + block.rotationDeg + ') scale(' + block.scale + ') ' +
-    'translate(' + (-cx) + ',' + (-cy) + ')');
+  block.dom.outer.setAttribute('transform', blockTransformAttr(block));
   block.dom.outer.style.display = block.visible ? '' : 'none';
 }
 function updateBlockStyle(block){
@@ -650,18 +653,14 @@ function renderPreviewLayoutOverlay(){
   const old = document.getElementById('previewLayoutOverlay');
   if (old) old.remove();
   if (!layoutOverlayOn || !blocks.length) return;
-  const g = document.createElementNS(SVG_NS, 'g');
+  const g = svgEl('g');
   g.id = 'previewLayoutOverlay';
   g.style.pointerEvents = 'none';
   g.style.opacity = String(layoutOverlayOpacity);
   for (const block of blocks){
     if (!block.dom) createBlockDom(block);   // e.g. a scene import that never visited the Layout tab
     else updateBlockStyle(block);
-    const [cx, cy] = blockCenterLocal(block);
-    const wrap = document.createElementNS(SVG_NS, 'g');
-    wrap.setAttribute('transform',
-      'translate(' + block.x + ',' + block.y + ') rotate(' + block.rotationDeg + ') scale(' + block.scale + ') ' +
-      'translate(' + (-cx) + ',' + (-cy) + ')');
+    const wrap = svgEl('g', { transform: blockTransformAttr(block) });
     wrap.style.display = block.visible ? '' : 'none';
     wrap.appendChild(block.dom.inner.cloneNode(true));
     g.appendChild(wrap);
@@ -972,12 +971,12 @@ function updateSelectionOverlay(){
     // exactly rather than showing a needlessly larger axis-aligned box.
     const block = active[0];
     const corners = blockCorners(block).map(([wx, wy]) => canvasMmToScreen(wx, wy));
-    const rectPath = document.createElementNS(SVG_NS, 'path');
+    const rectPath = svgEl('path');
     rectPath.setAttribute('class', 'layoutSelRect');
     rectPath.setAttribute('d', 'M' + corners.map(p => p[0] + ',' + p[1]).join('L') + 'Z');
     ov.appendChild(rectPath);
     for (const [cx, cy] of corners){
-      const sq = document.createElementNS(SVG_NS, 'rect');
+      const sq = svgEl('rect');
       sq.setAttribute('class', 'layoutSelHandle');
       sq.setAttribute('x', cx - HANDLE_PX/2); sq.setAttribute('y', cy - HANDLE_PX/2);
       sq.setAttribute('width', HANDLE_PX); sq.setAttribute('height', HANDLE_PX);
@@ -986,12 +985,12 @@ function updateSelectionOverlay(){
     }
     const [gwx, gwy, twx, twy] = rotateGizmoWorldPos(block);
     const [gx, gy] = canvasMmToScreen(gwx, gwy), [tx, ty] = canvasMmToScreen(twx, twy);
-    const connector = document.createElementNS(SVG_NS, 'line');
+    const connector = svgEl('line');
     connector.setAttribute('class', 'layoutRotateConnector');
     connector.setAttribute('x1', tx); connector.setAttribute('y1', ty);
     connector.setAttribute('x2', gx); connector.setAttribute('y2', gy);
     ov.appendChild(connector);
-    const gizmo = document.createElementNS(SVG_NS, 'circle');
+    const gizmo = svgEl('circle');
     gizmo.setAttribute('class', 'layoutRotateGizmo');
     gizmo.setAttribute('cx', gx); gizmo.setAttribute('cy', gy);
     gizmo.setAttribute('r', ROTATE_GIZMO_RADIUS_PX);
@@ -1005,14 +1004,14 @@ function updateSelectionOverlay(){
   // carrying the actual handles/gizmo.
   for (const b of active){
     const corners = blockCorners(b).map(([wx, wy]) => canvasMmToScreen(wx, wy));
-    const p = document.createElementNS(SVG_NS, 'path');
+    const p = svgEl('path');
     p.setAttribute('class', 'layoutSelRectMember');
     p.setAttribute('d', 'M' + corners.map(pt => pt[0] + ',' + pt[1]).join('L') + 'Z');
     ov.appendChild(p);
   }
   const frameWorld = selectionFrame.corners;
   const corners = frameWorld.map(([wx,wy]) => canvasMmToScreen(wx,wy));
-  const rectPath = document.createElementNS(SVG_NS, 'path');
+  const rectPath = svgEl('path');
   rectPath.setAttribute('class', 'layoutSelRect');
   rectPath.setAttribute('d', 'M' + corners.map(p => p[0] + ',' + p[1]).join('L') + 'Z');
   ov.appendChild(rectPath);
@@ -1022,7 +1021,7 @@ function updateSelectionOverlay(){
   // handles — not left axis-aligned once the frame itself is rotated.
   const frameAngleDeg = selectionFrameAngleDeg(selectionFrame);
   for (const [cx, cy] of corners){
-    const sq = document.createElementNS(SVG_NS, 'rect');
+    const sq = svgEl('rect');
     sq.setAttribute('class', 'layoutSelHandle');
     sq.setAttribute('x', cx - HANDLE_PX/2); sq.setAttribute('y', cy - HANDLE_PX/2);
     sq.setAttribute('width', HANDLE_PX); sq.setAttribute('height', HANDLE_PX);
@@ -1031,12 +1030,12 @@ function updateSelectionOverlay(){
   }
   const [gwx, gwy, twx, twy] = groupRotateGizmoWorldPos({ corners: frameWorld });
   const [gx, gy] = canvasMmToScreen(gwx, gwy), [tx, ty] = canvasMmToScreen(twx, twy);
-  const connector = document.createElementNS(SVG_NS, 'line');
+  const connector = svgEl('line');
   connector.setAttribute('class', 'layoutRotateConnector');
   connector.setAttribute('x1', tx); connector.setAttribute('y1', ty);
   connector.setAttribute('x2', gx); connector.setAttribute('y2', gy);
   ov.appendChild(connector);
-  const gizmo = document.createElementNS(SVG_NS, 'circle');
+  const gizmo = svgEl('circle');
   gizmo.setAttribute('class', 'layoutRotateGizmo');
   gizmo.setAttribute('cx', gx); gizmo.setAttribute('cy', gy);
   gizmo.setAttribute('r', ROTATE_GIZMO_RADIUS_PX);
@@ -1115,7 +1114,7 @@ function drawMarqueeRect(interaction){
   const rect = marqueeRectWorld(interaction);
   const corners = [[rect.x0,rect.y0],[rect.x1,rect.y0],[rect.x1,rect.y1],[rect.x0,rect.y1]]
     .map(([wx, wy]) => canvasMmToScreen(wx, wy));
-  const rectPath = document.createElementNS(SVG_NS, 'path');
+  const rectPath = svgEl('path');
   rectPath.setAttribute('class', 'layoutSelRect');   // same dashed/contrast-aware styling as the ordinary selection box
   rectPath.setAttribute('d', 'M' + corners.map(p => p[0] + ',' + p[1]).join('L') + 'Z');
   $('layoutOverlaySvg').appendChild(rectPath);
@@ -1279,14 +1278,14 @@ function drawSnapGuides(snap){
   const g = $('layoutSnapGuides');
   g.innerHTML = '';
   if (snap.guideX !== null){
-    const line = document.createElementNS(SVG_NS, 'line');
+    const line = svgEl('line');
     line.setAttribute('class', 'layoutSnapGuide');
     line.setAttribute('x1', snap.guideX); line.setAttribute('x2', snap.guideX);
     line.setAttribute('y1', snap.guideYRange[0]); line.setAttribute('y2', snap.guideYRange[1]);
     g.appendChild(line);
   }
   if (snap.guideY !== null){
-    const line = document.createElementNS(SVG_NS, 'line');
+    const line = svgEl('line');
     line.setAttribute('class', 'layoutSnapGuide');
     line.setAttribute('y1', snap.guideY); line.setAttribute('y2', snap.guideY);
     line.setAttribute('x1', snap.guideXRange[0]); line.setAttribute('x2', snap.guideXRange[1]);
@@ -1307,7 +1306,7 @@ function drawAxisLockGuide(axis, cx, cy){
   const g = $('layoutAxisGuides');
   g.innerHTML = '';
   const dims = computeLayoutPaperDims();
-  const line = document.createElementNS(SVG_NS, 'line');
+  const line = svgEl('line');
   line.setAttribute('class', 'layoutAxisLockGuide layoutAxisLockGuide-' + axis);
   if (axis === 'x'){
     line.setAttribute('x1', 0); line.setAttribute('x2', dims.paperW);
@@ -1901,31 +1900,10 @@ $('paperPane').addEventListener('contextmenu', e => {
 document.addEventListener('pointerdown', e => {
   if (contextMenuBlock && !$('layerContextMenu').contains(e.target)) closeLayerContextMenu();
 });
-/* Every shortcut below (and both clipboard handlers further down) has to
-   keep out of the way of whatever the focused element does with that same
-   key — but "focused element" is TWO different questions, and answering
-   both with one predicate is what made Ctrl+C/V/A dead after so much as
-   clicking a slider:
-     * isTextEntryTarget — somewhere text can be typed or selected (the
-       block name field, the Override menu's number boxes). Native Ctrl+A/
-       C/V and Backspace belong to it.
-     * isFormControlTarget — the above PLUS sliders, checkboxes, colour
-       swatches and <select>, where an ARROW KEY adjusts the control. Wider
-       on purpose: a focused slider must keep its arrow keys, but it holds
-       no text, so Ctrl+C there is still ours to handle.
-   `input` with no type attribute defaults to text, hence the || 'text'. */
-const TEXT_ENTRY_INPUT_TYPES = new Set(['text','search','url','tel','email','password','number']);
-function isTextEntryTarget(){
-  const a = document.activeElement;
-  if (!a) return false;
-  if (a.isContentEditable || a.tagName === 'TEXTAREA') return true;
-  return a.tagName === 'INPUT' && TEXT_ENTRY_INPUT_TYPES.has((a.type || 'text').toLowerCase());
-}
-function isFormControlTarget(){
-  const a = document.activeElement;
-  if (!a) return false;
-  return !!a.isContentEditable || a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT';
-}
+/* Every shortcut below (and both clipboard handlers further down) keeps out
+   of the way of whatever the focused element does with that same key — see
+   isTextEntryTarget / isFormControlTarget in main.js for the two different
+   questions that involves. */
 /* Restores the blur the browser would have done on its own. Clicking a
    slider or checkbox in a settings panel leaves it focused; this file's own
    pointerdown handlers then call preventDefault (to stop text selection and

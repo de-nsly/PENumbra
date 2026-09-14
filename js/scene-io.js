@@ -59,12 +59,7 @@ function downloadDebugEdgesSvg(dStr, m, mode, suffix){
       '</svg>';
     filename = modelName.replace(/\.(stl|obj)$/i, '') + suffix + '.svg';
   }
-  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadFile(filename, svgStr, 'image/svg+xml');
 }
 let pendingDebugExportMode = null;   // 'raw' | 'paper' — set by whichever button was clicked
 function triggerDebugRawEdgesExport(mode){
@@ -151,12 +146,7 @@ function exportSoIvOverlayNow(){
     '<path d="' + dFor(so) + '" fill="none" stroke="#000000" stroke-width="' + strokeW + '"/>' +
     '<path d="' + dFor(iv) + '" fill="none" stroke="#ff0000" stroke-width="' + strokeW + '" stroke-opacity="0.6"/>' +
     '</g></svg>';
-  const blob = new Blob([svgStr], { type: 'image/svg+xml' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = modelName.replace(/\.(stl|obj)$/i, '') + '-debug-so-vs-iv.svg';
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadFile(modelName.replace(/\.(stl|obj)$/i, '') + '-debug-so-vs-iv.svg', svgStr, 'image/svg+xml');
   $('statusL').textContent = 'exported so/iv overlay (so: ' + (so.length/4) + ' segs, iv: ' + (iv.length/4) + ' segs)';
 }
 let pendingSoIvExport = false;
@@ -282,14 +272,9 @@ $('exportSceneBtn').addEventListener('click', () => {
     model: modelField, camera: camState, settings, layers,
     pens: PEN_LIBRARY.map(p => ({ ...p })), penIdCounter,
     dashKeys: DASH_KEYS.slice(), savedViews, savedViewCounter, blocks: blocksOut, blockCounter };
-  const blob = new Blob([JSON.stringify(scene)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
   const base = (lastFileData ? lastFileData.name.replace(/\.(stl|obj)$/i, '') : modelName)
     .replace(/[^\w.-]+/g, '_');
-  a.download = base + '.pen';
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadFile(base + '.pen', JSON.stringify(scene), 'application/json');
   $('statusL').textContent = 'exported scene';
 });
 

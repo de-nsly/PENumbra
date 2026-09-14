@@ -522,8 +522,7 @@ let panelsHidden = false;
 document.addEventListener('keydown', e => {
   if (e.key !== 'h' && e.key !== 'H') return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const el = document.activeElement;
-  if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+  if (isFormControlTarget()) return;
   panelsHidden = !panelsHidden;
   $('camPanelStack').classList.toggle('panelsHidden', panelsHidden);
   $('paperPanelStack').classList.toggle('panelsHidden', panelsHidden);

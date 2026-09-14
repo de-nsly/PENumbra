@@ -216,26 +216,26 @@ const GIZMO_AXES = [   // theta/phi in degrees (internal orbit convention)
   { d:[0,0,-1], c:'#6fbf3f', l:'Y', theta:180, phi:90       },   // CAD +Y
   { d:[0,0, 1], c:'#6fbf3f', l:'',  theta:0,   phi:90       },   // CAD −Y
 ];
-const gizmoSvg = $('axisGizmo'), GNS = 'http://www.w3.org/2000/svg';
+const gizmoSvg = $('axisGizmo');
 const gizmoParts = GIZMO_AXES.map(ax => {
   const positive = ax.l !== '';
   let line = null;
   if (positive){                          // stem only on positive halves, like Blender
-    line = document.createElementNS(GNS, 'line');
+    line = svgEl('line');
     line.setAttribute('stroke', ax.c);
     line.setAttribute('stroke-width', '1.8');
     gizmoSvg.appendChild(line);
   }
-  const g = document.createElementNS(GNS, 'g');
+  const g = svgEl('g');
   g.setAttribute('class', 'ball');
-  const c = document.createElementNS(GNS, 'circle');
+  const c = svgEl('circle');
   c.setAttribute('r', positive ? 9 : 7);
   c.setAttribute('fill', ax.c);
   if (!positive){ c.setAttribute('fill-opacity', '0.25'); c.setAttribute('stroke', ax.c); c.setAttribute('stroke-width', '1.4'); }
   g.appendChild(c);
   let t = null;
   if (positive){
-    t = document.createElementNS(GNS, 'text');
+    t = svgEl('text');
     t.setAttribute('text-anchor', 'middle');
     t.setAttribute('dy', '3.4');
     t.setAttribute('fill', '#10141a');
@@ -380,27 +380,22 @@ function updateLightGizmo(){
 }
 let lgAzNeedle, lgAzSun, lgElFill, lgElSun;
 (function buildLightGizmo(){
-  const mk = (tag, attrs) => {
-    const el = document.createElementNS(GNS, tag);
-    for (const k in attrs) el.setAttribute(k, attrs[k]);
-    return el;
-  };
   const sun = cls => {
-    const g = mk('g', { class: cls });
-    g.appendChild(mk('circle', { r:8 }));
+    const g = svgEl('g', { class: cls });
+    g.appendChild(svgEl('circle', { r:8 }));
     return g;
   };
   // azimuth ring
-  lgSvg.appendChild(mk('text', { class:'lgLbl', x:LG.cx, y:25, 'text-anchor':'middle' })).textContent = 'Azimuth';
-  lgSvg.appendChild(mk('circle', { class:'lgRing', cx:LG.cx, cy:LG.cy, r:LG.r }));
-  lgAzNeedle = lgSvg.appendChild(mk('line', { class:'lgNeedle', x1:LG.cx, y1:LG.cy, x2:LG.cx, y2:LG.cy+LG.r }));
-  const lgAzHit = lgSvg.appendChild(mk('circle', { class:'lgHit', cx:LG.cx, cy:LG.cy, r:LG.r+9 }));
+  lgSvg.appendChild(svgEl('text', { class:'lgLbl', x:LG.cx, y:25, 'text-anchor':'middle' })).textContent = 'Azimuth';
+  lgSvg.appendChild(svgEl('circle', { class:'lgRing', cx:LG.cx, cy:LG.cy, r:LG.r }));
+  lgAzNeedle = lgSvg.appendChild(svgEl('line', { class:'lgNeedle', x1:LG.cx, y1:LG.cy, x2:LG.cx, y2:LG.cy+LG.r }));
+  const lgAzHit = lgSvg.appendChild(svgEl('circle', { class:'lgHit', cx:LG.cx, cy:LG.cy, r:LG.r+9 }));
   lgAzSun = lgSvg.appendChild(sun('lgSun'));
   // elevation gauge
-  lgSvg.appendChild(mk('text', { class:'lgLbl', x:LG.tx, y:25, 'text-anchor':'middle' })).textContent = 'Elev.';
-  lgSvg.appendChild(mk('line', { class:'lgTrackBg', x1:LG.tx, y1:LG.ty0, x2:LG.tx, y2:LG.ty1 }));
-  lgElFill = lgSvg.appendChild(mk('line', { class:'lgTrackFill', x1:LG.tx, y1:LG.ty1, x2:LG.tx, y2:LG.ty1 }));
-  const lgElHit = lgSvg.appendChild(mk('rect', { class:'lgHit', x:LG.tx-15, y:LG.ty0-12, width:30, height:LG.ty1-LG.ty0+24 }));
+  lgSvg.appendChild(svgEl('text', { class:'lgLbl', x:LG.tx, y:25, 'text-anchor':'middle' })).textContent = 'Elev.';
+  lgSvg.appendChild(svgEl('line', { class:'lgTrackBg', x1:LG.tx, y1:LG.ty0, x2:LG.tx, y2:LG.ty1 }));
+  lgElFill = lgSvg.appendChild(svgEl('line', { class:'lgTrackFill', x1:LG.tx, y1:LG.ty1, x2:LG.tx, y2:LG.ty1 }));
+  const lgElHit = lgSvg.appendChild(svgEl('rect', { class:'lgHit', x:LG.tx-15, y:LG.ty0-12, width:30, height:LG.ty1-LG.ty0+24 }));
   lgElSun = lgSvg.appendChild(sun('lgSun'));
 
   let azDrag = false, elDrag = false;
