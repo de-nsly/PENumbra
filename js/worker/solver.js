@@ -526,6 +526,32 @@ function generate(cam, S, shadingBuffer){
   const stamp=new Int32Array(nOcc).fill(-1);
   let gen=0;
 
+  /* Point-in-occluder test on occluder j's projected triangle. Returns the
+     triangle's signed doubled area d (nonzero) when (px,py) is inside or on
+     its edges, 0 when outside or degenerate — d is what callers need next
+     for the barycentric depth at the point. Shared by every per-point
+     lookup below (pickBackdropFaceWithDepth, coverPoint, pickVisibleFace). */
+  const occluderHitDet = (j, px, py) => {
+    const o=j*9;
+    const ax=ocp[o],ay=ocp[o+1], bx=ocp[o+3],by=ocp[o+4], cx=ocp[o+6],cy2=ocp[o+7];
+    const d=(bx-ax)*(cy2-ay)-(by-ay)*(cx-ax);
+    if (Math.abs(d)<1e-9) return 0;
+    const s2=d>0?1:-1;
+    if (s2*((bx-ax)*(py-ay)-(by-ay)*(px-ax)) < -1e-7) return 0;
+    if (s2*((cx-bx)*(py-by)-(cy2-by)*(px-bx)) < -1e-7) return 0;
+    if (s2*((ax-cx)*(py-cy2)-(ay-cy2)*(px-cx)) < -1e-7) return 0;
+    return d;
+  };
+  // Depth key (iz) of occluder j's plane at (px,py), given occluderHitDet's d.
+  const occluderDepthAt = (j, px, py, d) => {
+    const o=j*9;
+    const ax=ocp[o],ay=ocp[o+1],az=ocp[o+2], bx=ocp[o+3],by=ocp[o+4],bz=ocp[o+5], cx=ocp[o+6],cy2=ocp[o+7],cz=ocp[o+8];
+    const w0 = ((bx-px)*(cy2-py)-(by-py)*(cx-px)) / d;
+    const w1 = ((cx-px)*(ay-py)-(cy2-py)*(ax-px)) / d;
+    const w2 = 1 - w0 - w1;
+    return w0*az + w1*bz + w2*cz;
+  };
+
   /* 5 · segment occlusion: returns merged occluded t-intervals over [0,1] */
   const COMP = M.comp;
   const occIv=[];
@@ -979,18 +1005,9 @@ function generate(cam, S, shadingBuffer){
         const j=cellItems[li], f=ofc[j];
         if (!front[f]) continue;
         if (f===skipA || f===skipB) continue;
-        const o=j*9;
-        const ax=ocp[o],ay=ocp[o+1],az=ocp[o+2], bx=ocp[o+3],by=ocp[o+4],bz=ocp[o+5], cx=ocp[o+6],cy2=ocp[o+7],cz=ocp[o+8];
-        const d=(bx-ax)*(cy2-ay)-(by-ay)*(cx-ax);
-        if (Math.abs(d)<1e-9) continue;
-        const s2=d>0?1:-1;
-        if (s2*((bx-ax)*(py-ay)-(by-ay)*(px-ax)) < -1e-7) continue;
-        if (s2*((cx-bx)*(py-by)-(cy2-by)*(px-bx)) < -1e-7) continue;
-        if (s2*((ax-cx)*(py-cy2)-(ay-cy2)*(px-cx)) < -1e-7) continue;
-        const w0 = ((bx-px)*(cy2-py)-(by-py)*(cx-px)) / d;
-        const w1 = ((cx-px)*(ay-py)-(cy2-py)*(ax-px)) / d;
-        const w2 = 1 - w0 - w1;
-        const pointIz = w0*az + w1*bz + w2*cz;
+        const d = occluderHitDet(j, px, py);
+        if (!d) continue;
+        const pointIz = occluderDepthAt(j, px, py, d);
         if (pointIz > bestIz){ bestIz = pointIz; bestF = f; }
       }
       return { f: bestF, iz: bestIz };   // f=-1 = nothing behind (open background)
@@ -1856,42 +1873,25 @@ function generate(cam, S, shadingBuffer){
       const j=cellItems[li], f=ofc[j];
       if (!front[f]) continue;
       if (shell!==null && COMP[f]!==shell) continue;
-      const o=j*9;
-      const ax=ocp[o],ay=ocp[o+1],bx=ocp[o+3],by=ocp[o+4],cx=ocp[o+6],cy2=ocp[o+7];
-      const d=(bx-ax)*(cy2-ay)-(by-ay)*(cx-ax);
-      if (Math.abs(d)<1e-9) continue;
-      const s2=d>0?1:-1;
-      if (s2*((bx-ax)*(py-ay)-(by-ay)*(px-ax)) < -1e-7) continue;
-      if (s2*((cx-bx)*(py-by)-(cy2-by)*(px-bx)) < -1e-7) continue;
-      if (s2*((ax-cx)*(py-cy2)-(ay-cy2)*(px-cx)) < -1e-7) continue;
-      return true;
+      if (occluderHitDet(j, px, py)) return true;
     }
     return false;
   };
   const pickVisibleFace = (px, py) => {
     const ci = cellY(py)*gw + cellX(px);
-    let bestF = -1, bestIz = -Infinity, bestW0 = 0, bestW1 = 0, bestW2 = 0;
+    let bestF = -1, bestIz = -Infinity;
     for (let li=cellStart[ci]; li<cellStart[ci+1]; li++){
       const j=cellItems[li], f=ofc[j];
       if (!front[f]) continue;
-      const o=j*9;
-      const ax=ocp[o],ay=ocp[o+1],az=ocp[o+2], bx=ocp[o+3],by=ocp[o+4],bz=ocp[o+5], cx=ocp[o+6],cy2=ocp[o+7],cz=ocp[o+8];
-      const d=(bx-ax)*(cy2-ay)-(by-ay)*(cx-ax);
-      if (Math.abs(d)<1e-9) continue;
-      const s2=d>0?1:-1;
-      if (s2*((bx-ax)*(py-ay)-(by-ay)*(px-ax)) < -1e-7) continue;
-      if (s2*((cx-bx)*(py-by)-(cy2-by)*(px-bx)) < -1e-7) continue;
-      if (s2*((ax-cx)*(py-cy2)-(ay-cy2)*(px-cx)) < -1e-7) continue;
-      const w0 = ((bx-px)*(cy2-py)-(by-py)*(cx-px)) / d;
-      const w1 = ((cx-px)*(ay-py)-(cy2-py)*(ax-px)) / d;
-      const w2 = 1 - w0 - w1;
-      const pointIz = w0*az + w1*bz + w2*cz;
-      if (pointIz > bestIz){ bestIz = pointIz; bestF = f; bestW0 = w0; bestW1 = w1; bestW2 = w2; }
+      const d = occluderHitDet(j, px, py);
+      if (!d) continue;
+      const pointIz = occluderDepthAt(j, px, py, d);
+      if (pointIz > bestIz){ bestIz = pointIz; bestF = f; }
     }
     if (bestF < 0) return null;
     const w = worldOnFace(bestF, px, py, tri, pos, sx, sy, iz, ortho);
     if (!w) return null;
-    return { f: bestF, x: w[0], y: w[1], z: w[2], w0: bestW0, w1: bestW1, w2: bestW2 };
+    return { f: bestF, x: w[0], y: w[1], z: w[2] };
   };
 
   /* 7 · circles pattern — one unified layer (single checkbox), drawing
@@ -2166,6 +2166,43 @@ function generate(cam, S, shadingBuffer){
        more sparsely than the old floor to begin with.) */
     const SHADOW_STEP_PX = 2.0, CUT_PX = SHADOW_STEP_PX / 128;
     const SEED_PX = SHADOW_STEP_PX;
+    /* The refinement itself, shared by shadowSplit and bufferSplit below:
+       sample testAt(u) at SEED_PX pitch over [u0,u1] (pxPerU screen px per
+       unit of u), then bisect only between neighbours that disagree until
+       the crossing is located to within CUT_PX. Returns [state, ua, ub]
+       pieces with adjacent same-state pieces already coalesced. */
+    const refineSplits = (u0, u1, pxPerU, testAt) => {
+      const parts = [];
+      const recurse = (loU, loS, hiU, hiS) => {
+        if (loS === hiS){ parts.push([loS, loU, hiU]); return; }
+        if ((hiU-loU)*pxPerU <= CUT_PX){                  // converged — resolve the crossing here
+          const cut=(loU+hiU)/2;
+          parts.push([loS, loU, cut]); parts.push([hiS, cut, hiU]);
+          return;
+        }
+        const midU=(loU+hiU)/2, midS=testAt(midU);
+        recurse(loU, loS, midU, midS);
+        recurse(midU, midS, hiU, hiS);
+      };
+      const spanPix = pxPerU*(u1-u0);
+      const nSeed = Math.max(1, Math.ceil(spanPix / SEED_PX));
+      let prevU=u0, prevS=testAt(u0);
+      for (let i=1;i<=nSeed;i++){
+        const u = u0 + (u1-u0)*i/nSeed;
+        const s = testAt(u);
+        recurse(prevU, prevS, u, s);
+        prevU=u; prevS=s;
+      }
+      // coalesce adjacent same-state leaves — seed-cell boundaries where
+      // both sides happen to agree don't need to stay as separate pieces
+      const merged=[];
+      for (const p of parts){
+        const last = merged[merged.length-1];
+        if (last && last[0]===p[0] && Math.abs(last[2]-p[1])<1e-9) last[2]=p[2];
+        else merged.push(p.slice());
+      }
+      return merged;
+    };
     const shadowSplit = (f, x0,y0,x1,y1, u0,u1) => {
       const pxPerU = Math.hypot(x1-x0, y1-y0);
       const Px = u => x0+(x1-x0)*u, Py = u => y0+(y1-y0)*u;
@@ -2184,36 +2221,7 @@ function generate(cam, S, shadingBuffer){
       if (Math.max(uA,uB)<bu0 || Math.min(uA,uB)>bu1 || Math.max(vA,vB)<bv0 || Math.min(vA,vB)>bv1)
         return [[false, u0, u1]];
 
-      const parts = [];
-      const recurse = (loU, loS, hiU, hiS) => {
-        if (loS === hiS){ parts.push([loS, loU, hiU]); return; }
-        if ((hiU-loU)*pxPerU <= CUT_PX){                  // converged — resolve the crossing here
-          const cut=(loU+hiU)/2;
-          parts.push([loS, loU, cut]); parts.push([hiS, cut, hiU]);
-          return;
-        }
-        const midU=(loU+hiU)/2, midS=shadeAt(f, Px(midU), Py(midU));
-        recurse(loU, loS, midU, midS);
-        recurse(midU, midS, hiU, hiS);
-      };
-      const spanPix = pxPerU*(u1-u0);
-      const nSeed = Math.max(1, Math.ceil(spanPix / SEED_PX));
-      let prevU=u0, prevS=shadeAt(f, Px(u0), Py(u0));
-      for (let i=1;i<=nSeed;i++){
-        const u = u0 + (u1-u0)*i/nSeed;
-        const s = shadeAt(f, Px(u), Py(u));
-        recurse(prevU, prevS, u, s);
-        prevU=u; prevS=s;
-      }
-      // coalesce adjacent same-state leaves — seed-cell boundaries where
-      // both sides happen to agree don't need to stay as separate pieces
-      const merged=[];
-      for (const p of parts){
-        const last = merged[merged.length-1];
-        if (last && last[0]===p[0] && Math.abs(last[2]-p[1])<1e-9) last[2]=p[2];
-        else merged.push(p.slice());
-      }
-      return merged;
+      return refineSplits(u0, u1, pxPerU, u => shadeAt(f, Px(u), Py(u)));
     };
     // ================= Smooth Shading: buffer-driven Hatch density =================
     // Samples the captured shading buffer directly instead of an analytic
@@ -2245,34 +2253,7 @@ function generate(cam, S, shadingBuffer){
         }
         return meshInvertActive ? !result : result;
       };
-      const parts = [];
-      const recurse = (loU, loS, hiU, hiS) => {
-        if (loS === hiS){ parts.push([loS, loU, hiU]); return; }
-        if ((hiU-loU)*pxPerU <= CUT_PX){
-          const cut=(loU+hiU)/2;
-          parts.push([loS, loU, cut]); parts.push([hiS, cut, hiU]);
-          return;
-        }
-        const midU=(loU+hiU)/2, midS=testAt(midU);
-        recurse(loU, loS, midU, midS);
-        recurse(midU, midS, hiU, hiS);
-      };
-      const spanPix = pxPerU*(u1-u0);
-      const nSeed = Math.max(1, Math.ceil(spanPix / SEED_PX));
-      let prevU=u0, prevS=testAt(u0);
-      for (let i=1;i<=nSeed;i++){
-        const u = u0 + (u1-u0)*i/nSeed;
-        const s = testAt(u);
-        recurse(prevU, prevS, u, s);
-        prevU=u; prevS=s;
-      }
-      const merged=[];
-      for (const p of parts){
-        const last = merged[merged.length-1];
-        if (last && last[0]===p[0] && Math.abs(last[2]-p[1])<1e-9) last[2]=p[2];
-        else merged.push(p.slice());
-      }
-      return merged;
+      return refineSplits(u0, u1, pxPerU, testAt);
     };
     const passes=[];
     if (S.hatch.p1) passes.push({key:'h1', ang:S.hatch.ang,     thr: castOnly ? SHADOW_ONLY_THR : S.hatch.hatchThr});
