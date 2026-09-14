@@ -263,7 +263,7 @@ function base64ToArrayBuffer(b64){
 // mechanism (their own listener re-lays-out the page rather than staling it)
 function sceneSettingIds(){
   return [...document.querySelectorAll('[data-regen]')].map(el => el.id)
-    .concat(['paperSize', 'orient', 'marginMm', 'marginIndependent', 'marginTopMm', 'marginBottomMm', 'marginLeftMm', 'marginRightMm', 'trimToMargins', 'pageColor', 'gridGuideEnabled', 'gridGuideX', 'gridGuideY'])
+    .concat(['paperSize', 'orient', 'marginMm', 'marginIndependent', 'marginTopMm', 'marginBottomMm', 'marginLeftMm', 'marginRightMm', 'trimToMargins', 'pageColor', 'gridGuideEnabled', 'gridGuideX', 'gridGuideY', 'penPathsExport', 'splitDashBtn'])
     .concat(DASH_KEYS.flatMap(k => [0,1,2,3,4,5].map(i => 'dash' + k + '_' + i)));
 }
 
@@ -274,6 +274,9 @@ $('exportSceneBtn').addEventListener('click', () => {
     const el = document.getElementById(id);
     if (el) settings[id] = el.type === 'checkbox' ? el.checked : el.value;
   }
+  // While "Export one path per pen" is on, Split dashes is only shown ticked
+  // (see syncPenPathsExportUI) — save the user's own choice instead.
+  settings.splitDashBtn = splitDashChoice;
   const layers = {};
   for (const L of LAYERS){
     const els = layerEls[L.key];
@@ -332,6 +335,11 @@ function applyImportedScene(data){
     if (el.type === 'checkbox') el.checked = !!val; else el.value = val;
     if (el.dataset.regen !== undefined) refreshValLabel(el);
   }
+  // Both export checkboxes were just set directly (no change event): take the
+  // restored Split dashes value as the user's own choice, then re-apply the
+  // lock/forced tick if one-path-per-pen export is on.
+  splitDashChoice = $('splitDashBtn').checked;
+  syncPenPathsExportUI();
   // The loop above only set each dash-field input's raw value — DASH_RATIOS
   // itself and the derived preview/layer rendering need an explicit sync.
   for (const key of DASH_KEYS){

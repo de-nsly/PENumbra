@@ -660,6 +660,9 @@
           Editing a pen restyles everything using it. Double-click a name to
           rename it.
         </p>
+        <label class="chk" title="Export SVG writes one path per pen (named after the pen) instead of one group per layer — each pen imports as a single object and plots in one run. Dashes are always split into segments in this mode.">
+          <input type="checkbox" id="penPathsExport" checked>
+          Export one path per pen</label>
         <div class="rowsHead penLibRow"><span></span><span>name</span><span></span><span>w [mm]</span><span></span></div>
         <!-- rows built from PEN_LIBRARY (main.js) by renderPenLibrary in pen-library.js -->
         <div id="penLibList"></div>

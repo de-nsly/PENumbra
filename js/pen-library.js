@@ -6,7 +6,9 @@
    dropdown after an add/rename/delete, reassigning references off a
    deleted pen, and matching pen data that arrives from outside
    (resolvePen/resolveOverridePen/setPenLibrary: .pen scene import in
-   scene-io.js, clipboard paste in layout-canvas.js).
+   scene-io.js, clipboard paste in layout-canvas.js). Also the "Export one
+   path per pen" checkbox's tie to "Split dashes" (the export itself is
+   buildPenPathsExport in svg-export.js).
    Loads after svg-export.js (layerEls, fillPenSelect, applyLayerStyle,
    fmtWidth) and panel-controls.js (makeNameEditable). `blocks` and the
    Layout context menu belong to layout-canvas.js, which loads later —
@@ -190,5 +192,23 @@ function setPenLibrary(srcPens, srcCounter){
   const idNums = PEN_LIBRARY.map(p => { const m = /^p(\d+)$/.exec(p.id); return m ? +m[1] : 0; });
   penIdCounter = Math.max(Number.isFinite(srcCounter) ? srcCounter : 0, ...idNums);
 }
+
+/* ================= "Export one path per pen" =================
+   While on, Export SVG builds one path per pen (buildPenPathsExport in
+   svg-export.js), which always splits dashes — so "Split dashes" is shown
+   ticked and locked. The user's own choice is remembered separately in
+   splitDashChoice and put back when this is switched off; that remembered
+   value, not the forced tick, is also what a scene saves (scene-io.js). */
+let splitDashChoice = $('splitDashBtn').checked;
+$('splitDashBtn').addEventListener('change', () => { splitDashChoice = $('splitDashBtn').checked; });
+function syncPenPathsExportUI(){
+  const on = $('penPathsExport').checked;
+  const split = $('splitDashBtn');
+  split.checked = on ? true : splitDashChoice;
+  split.disabled = on;
+  split.closest('.chk').classList.toggle('ctlDisabled', on);
+}
+$('penPathsExport').addEventListener('change', syncPenPathsExportUI);
+syncPenPathsExportUI();
 
 renderPenLibrary();

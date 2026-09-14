@@ -80,6 +80,12 @@ the scene (a `.pen` import replaces it); pre-pen-library scenes and clipboard pa
 colour + width (`resolvePen`). "Pen" is overloaded: the `.pen` scene file, the Lines tab's historical
 `penTab`/`penModeBtn`/`data-mode="pen"` ids, and the library — library code uses `penLib*`/`PEN_LIBRARY`.
 
+**SVG export modes** (Export button, `svg-export.js`): with the Pen library tab's "Export one path per pen" on
+(default), `buildPenPathsExport` builds a fresh file with one `<path id="pen05_Blue_0.2">` per pen, dashes
+always split, margin-trimmed, then baked into page mm — Blender's SVG importer makes one curve object per
+path, named after its id. Off, the export is a cleaned-up clone of the on-screen SVG (one group per layer).
+Dash patterns everywhere go through `dashPattern` (`main.js`): a pair whose dash is 0 is dropped whole.
+
 **Layout tab vs. draw layers — a naming collision to watch for:** the Layout tab (`layout-canvas.js`)
 stacks frozen snapshots of past generations, called "blocks" internally but labeled "layers" in the UI.
 This is a *different* concept from the `LAYERS` edge/fill array above — don't conflate the two when reading

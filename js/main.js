@@ -100,25 +100,32 @@ const DASH_RATIOS = { solid: null, D1: [3.5, 2.5, 0, 0, 0, 0], D2: [0.5, 2.5, 0,
 // slot disappearing out from under a layer/scene that's already using it.
 const DASH_KEYS = ['D1', 'D2'];
 const MAX_DASH_SLOTS = 9;
-// Trims trailing (dash,gap) pairs that are both zero — a user who only
-// fills in the first pair and leaves the rest at 0 gets a plain 2-value
-// dasharray, not "3.5 2.5 0 0 0 0" (zero-length segments render oddly in
-// most SVG engines). Always keeps at least the first pair.
-function trimTrailingZeroPairs(arr){
-  let end = arr.length;
-  while (end >= 4 && arr[end-1] === 0 && arr[end-2] === 0) end -= 2;
-  return arr.slice(0, end);
+// The pattern a dash slot actually draws, in mm: its (dash, gap) pairs with
+// every pair whose DASH is 0 dropped whole, gap included — a 0 in a dash
+// field means "unused slot", never a dot of ink (a zero-length dash would
+// otherwise render as a nib-sized dot under round linecaps on screen, and
+// the SVG importers the export feeds ignore it anyway). A very short dash
+// (0.1mm) is still a real dash. null = solid: 'solid' itself, an unknown
+// key, or a pattern with no dash left. The single source of truth for
+// scaledDash, dashOnFraction, the dash previews — and, through the
+// stroke-dasharray scaledDash writes, the export's dash split.
+function dashPattern(key){
+  const r = DASH_RATIOS[key];
+  if (!r) return null;
+  const out = [];
+  for (let i = 0; i + 1 < r.length; i += 2){
+    if (r[i] > 0) out.push(r[i], r[i+1]);
+  }
+  return out.length ? out : null;
 }
 // pxPerMm: how many of this context's local units correspond to 1mm — the
 // SAME factor that context divided a mm width by to get its own local-unit
 // stroke-width (i.e. pass 1/scale, never the stroke-width itself).
 function scaledDash(key, pxPerMm){
-  const r = DASH_RATIOS[key];
-  if (!r) return '';
-  const trimmed = trimTrailingZeroPairs(r);
-  if (trimmed[0] <= 0) return '';   // first dash itself is 0 — nothing to draw a pattern with, treat as solid
+  const p = dashPattern(key);
+  if (!p) return '';
   const w = Math.max(1e-6, pxPerMm);
-  return trimmed.map(v => (v*w).toFixed(3)).join(' ');
+  return p.map(v => (v*w).toFixed(3)).join(' ');
 }
 // Fraction of a dashed stroke's length that's actually "ink" (pen-down),
 // e.g. D1's 3.5-on/2.5-off pattern is 3.5/6 =~ 0.583. Since DASH_RATIOS
@@ -129,10 +136,8 @@ function scaledDash(key, pxPerMm){
 // travel, not a literal geometric split like splitDashedPathD does at
 // export time.
 function dashOnFraction(key){
-  const r = DASH_RATIOS[key];
-  if (!r) return 1;                       // solid
-  const t = trimTrailingZeroPairs(r);
-  if (t[0] <= 0) return 1;                // degenerate pattern — scaledDash also treats this as solid
+  const t = dashPattern(key);
+  if (!t) return 1;                       // solid
   let on = 0, total = 0;
   for (let i = 0; i < t.length; i += 2){ on += t[i]; total += t[i] + t[i+1]; }
   return total > 1e-9 ? on / total : 1;

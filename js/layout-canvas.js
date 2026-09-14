@@ -574,7 +574,7 @@ function updateBlockStyle(block){
     // slot's own values if either is edited later, exactly like a synced
     // layer would.
     const ov = block.override && block.overrideStyle ? block.overrideStyle[L.key] : null;
-    const pen = penById(ov ? ov.pen : layerEls[L.key].pen.value);
+    const pen = penById(blockLayerPenId(block, L.key));
     const color = pen.color;
     const widthMm = pen.width;
     const dashKey = ov ? ov.dash : layerEls[L.key].dash.value;
@@ -593,6 +593,14 @@ function updateBlockStyle(block){
     // per-block layer menu, for every block regardless of override state.
     g.style.display = block.layerVisible[L.key] ? '' : 'none';
   }
+}
+// The pen one of a block's layers draws with: its own override pen while
+// Override is on, the live panel's otherwise. Shared by updateBlockStyle
+// and the one-path-per-pen export (buildPenPathsExport, svg-export.js), so
+// the file can never group a layer under a different pen than it shows.
+function blockLayerPenId(block, key){
+  const ov = block.override && block.overrideStyle ? block.overrideStyle[key] : null;
+  return ov ? ov.pen : layerEls[key].pen.value;
 }
 function removeBlockDom(block){
   if (block.dom){ block.dom.outer.remove(); block.dom = null; }
