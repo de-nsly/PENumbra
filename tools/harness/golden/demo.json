@@ -1,0 +1,1409 @@
+{
+ "scene": "demo",
+ "vp": {
+  "w": 798,
+  "h": 947
+ },
+ "views": {
+  "scene": {
+   "so": {
+    "hash": "70cc0ef0d12e",
+    "segs": 33,
+    "len": 3057.2537,
+    "cov": 6802
+   },
+   "iv": {
+    "hash": "d31c7f154aa9",
+    "segs": 15,
+    "len": 886.8521,
+    "cov": 1969
+   },
+   "ih": {
+    "hash": "6ae05676d6c0",
+    "segs": 6,
+    "len": 804.9463,
+    "cov": 1794
+   },
+   "sv": {
+    "hash": "d8962d502ef8",
+    "segs": 10,
+    "len": 425.0685,
+    "cov": 925
+   },
+   "sh": {
+    "hash": "bc5e2d8ee45a",
+    "segs": 30,
+    "len": 936.4324,
+    "cov": 1955
+   },
+   "cv": {
+    "hash": "1cd83155de6e",
+    "segs": 333,
+    "len": 15502.2993,
+    "cov": 33897
+   },
+   "ch": {
+    "hash": "8892e9b83020",
+    "segs": 515,
+    "len": 20413.944,
+    "cov": 43961
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 89227
+   }
+  },
+  "axis+X": {
+   "so": {
+    "hash": "af24ca9e922e",
+    "segs": 48,
+    "len": 3504.6042,
+    "cov": 7170
+   },
+   "iv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "ih": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "ab3cecbfb01a",
+    "segs": 14,
+    "len": 634.5352,
+    "cov": 1418
+   },
+   "cv": {
+    "hash": "e855c480f7c1",
+    "segs": 218,
+    "len": 8675.5142,
+    "cov": 17443
+   },
+   "ch": {
+    "hash": "b191a11d0462",
+    "segs": 168,
+    "len": 5349.9393,
+    "cov": 11288
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 36735
+   }
+  },
+  "axis+Xp": {
+   "so": {
+    "hash": "e941dceb6bf8",
+    "segs": 44,
+    "len": 4415.9166,
+    "cov": 9113
+   },
+   "iv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "ih": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "cb951be18bef",
+    "segs": 46,
+    "len": 1614.8311,
+    "cov": 3372
+   },
+   "cv": {
+    "hash": "c5138cf8bf31",
+    "segs": 154,
+    "len": 8939.7551,
+    "cov": 18713
+   },
+   "ch": {
+    "hash": "66f47b304b53",
+    "segs": 647,
+    "len": 23101.367,
+    "cov": 48161
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 77800
+   }
+  },
+  "axis-X": {
+   "so": {
+    "hash": "ce744e2a6c84",
+    "segs": 48,
+    "len": 3504.6042,
+    "cov": 7170
+   },
+   "iv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "ih": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "7e1b084dc0ac",
+    "segs": 14,
+    "len": 634.5352,
+    "cov": 1418
+   },
+   "cv": {
+    "hash": "62bd3e84c547",
+    "segs": 218,
+    "len": 8675.5142,
+    "cov": 17443
+   },
+   "ch": {
+    "hash": "6eef940395e0",
+    "segs": 168,
+    "len": 5349.9393,
+    "cov": 11288
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 36735
+   }
+  },
+  "axis-Xp": {
+   "so": {
+    "hash": "5d8e80281b71",
+    "segs": 44,
+    "len": 4415.9166,
+    "cov": 9113
+   },
+   "iv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "ih": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "68209fb8112f",
+    "segs": 46,
+    "len": 1614.8311,
+    "cov": 3372
+   },
+   "cv": {
+    "hash": "9046e302bc3a",
+    "segs": 155,
+    "len": 8939.7551,
+    "cov": 18713
+   },
+   "ch": {
+    "hash": "6a9bfa497c41",
+    "segs": 647,
+    "len": 23101.367,
+    "cov": 48161
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 77800
+   }
+  },
+  "axis+Z": {
+   "so": {
+    "hash": "68162fb7153d",
+    "segs": 50,
+    "len": 3512.1855,
+    "cov": 7204
+   },
+   "iv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "ih": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "2a4f98c248e8",
+    "segs": 14,
+    "len": 636.1363,
+    "cov": 1424
+   },
+   "cv": {
+    "hash": "a9720d90220b",
+    "segs": 224,
+    "len": 8980.8935,
+    "cov": 18279
+   },
+   "ch": {
+    "hash": "8fe57bd79eb3",
+    "segs": 188,
+    "len": 5895.3671,
+    "cov": 12437
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 38728
+   }
+  },
+  "axis+Zp": {
+   "so": {
+    "hash": "a52f62fec6f5",
+    "segs": 46,
+    "len": 4414.3229,
+    "cov": 9146
+   },
+   "iv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "ih": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "81fc3f1cc3fb",
+    "segs": 48,
+    "len": 1649.87,
+    "cov": 3382
+   },
+   "cv": {
+    "hash": "3bc8d0dca4f6",
+    "segs": 151,
+    "len": 9096.7514,
+    "cov": 18986
+   },
+   "ch": {
+    "hash": "f51475428179",
+    "segs": 664,
+    "len": 23535.402,
+    "cov": 48750
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 78388
+   }
+  },
+  "axis-Z": {
+   "so": {
+    "hash": "1b14f50985da",
+    "segs": 50,
+    "len": 3512.1855,
+    "cov": 7204
+   },
+   "iv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "ih": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "2239c8a68a96",
+    "segs": 14,
+    "len": 636.1363,
+    "cov": 1424
+   },
+   "cv": {
+    "hash": "1e8869c7409d",
+    "segs": 229,
+    "len": 8980.8935,
+    "cov": 18279
+   },
+   "ch": {
+    "hash": "529b8c571511",
+    "segs": 188,
+    "len": 5895.3671,
+    "cov": 12437
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 38728
+   }
+  },
+  "axis-Zp": {
+   "so": {
+    "hash": "a52f62fec6f5",
+    "segs": 46,
+    "len": 4414.3229,
+    "cov": 9146
+   },
+   "iv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "ih": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "81fc3f1cc3fb",
+    "segs": 48,
+    "len": 1649.87,
+    "cov": 3382
+   },
+   "cv": {
+    "hash": "3bc8d0dca4f6",
+    "segs": 151,
+    "len": 9096.7514,
+    "cov": 18986
+   },
+   "ch": {
+    "hash": "c462e259a0b6",
+    "segs": 664,
+    "len": 23535.4018,
+    "cov": 48747
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 78385
+   }
+  },
+  "axis+Y": {
+   "so": {
+    "hash": "7575ef471d2e",
+    "segs": 4,
+    "len": 3226.32,
+    "cov": 6456
+   },
+   "iv": {
+    "hash": "a7c2221ac3d6",
+    "segs": 60,
+    "len": 3278.6078,
+    "cov": 7304
+   },
+   "ih": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "cv": {
+    "hash": "02d25345d83c",
+    "segs": 390,
+    "len": 16603.5596,
+    "cov": 36866
+   },
+   "ch": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 50558
+   }
+  },
+  "axis+Yp": {
+   "so": {
+    "hash": "be3284f49ca7",
+    "segs": 26,
+    "len": 3071.7509,
+    "cov": 6244
+   },
+   "iv": {
+    "hash": "e326c9afa8bd",
+    "segs": 50,
+    "len": 2547.11,
+    "cov": 5802
+   },
+   "ih": {
+    "hash": "57da625cc57e",
+    "segs": 4,
+    "len": 971.56,
+    "cov": 1948
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "cv": {
+    "hash": "50883bf6f9ca",
+    "segs": 555,
+    "len": 17309.2391,
+    "cov": 38220
+   },
+   "ch": {
+    "hash": "1e738e25060a",
+    "segs": 216,
+    "len": 15626.0514,
+    "cov": 34066
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 85778
+   }
+  },
+  "axis-Y": {
+   "so": {
+    "hash": "7575ef471d2e",
+    "segs": 4,
+    "len": 3226.32,
+    "cov": 6456
+   },
+   "iv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "ih": {
+    "hash": "abb416ffa53b",
+    "segs": 60,
+    "len": 3278.6078,
+    "cov": 7304
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "cv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "ch": {
+    "hash": "5f0c310ddf3a",
+    "segs": 390,
+    "len": 16603.5596,
+    "cov": 36872
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 50564
+   }
+  },
+  "axis-Yp": {
+   "so": {
+    "hash": "0d374e35dfd9",
+    "segs": 4,
+    "len": 3682.96,
+    "cov": 7368
+   },
+   "iv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "ih": {
+    "hash": "97d90e329600",
+    "segs": 60,
+    "len": 3063.9034,
+    "cov": 6824
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "cv": {
+    "hash": "e3d3dbd182d9",
+    "segs": 2,
+    "len": 93.7906,
+    "cov": 136
+   },
+   "ch": {
+    "hash": "1c908bc3a22a",
+    "segs": 771,
+    "len": 29592.1115,
+    "cov": 64622
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 78876
+   }
+  },
+  "gen17_38": {
+   "so": {
+    "hash": "53349e5b108b",
+    "segs": 22,
+    "len": 3043.4837,
+    "cov": 6739
+   },
+   "iv": {
+    "hash": "42a00eb5775a",
+    "segs": 56,
+    "len": 2283.7444,
+    "cov": 5108
+   },
+   "ih": {
+    "hash": "1eec03281256",
+    "segs": 2,
+    "len": 597.1602,
+    "cov": 1311
+   },
+   "sv": {
+    "hash": "9ccfb16a365a",
+    "segs": 6,
+    "len": 76.5397,
+    "cov": 176
+   },
+   "sh": {
+    "hash": "000b193b5090",
+    "segs": 11,
+    "len": 204.2079,
+    "cov": 341
+   },
+   "cv": {
+    "hash": "b275c1261ff8",
+    "segs": 416,
+    "len": 18401.959,
+    "cov": 40461
+   },
+   "ch": {
+    "hash": "b1ab923351da",
+    "segs": 416,
+    "len": 18342.4688,
+    "cov": 40351
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 92589
+   }
+  },
+  "gen17_72": {
+   "so": {
+    "hash": "f3755575ee79",
+    "segs": 32,
+    "len": 2713.2188,
+    "cov": 5876
+   },
+   "iv": {
+    "hash": "335c516ac850",
+    "segs": 18,
+    "len": 769.4231,
+    "cov": 1695
+   },
+   "ih": {
+    "hash": "63cdda84b4de",
+    "segs": 6,
+    "len": 730.9173,
+    "cov": 1547
+   },
+   "sv": {
+    "hash": "d69332bab920",
+    "segs": 12,
+    "len": 415.298,
+    "cov": 883
+   },
+   "sh": {
+    "hash": "65d9e7fd40d3",
+    "segs": 33,
+    "len": 910.7723,
+    "cov": 1905
+   },
+   "cv": {
+    "hash": "af358971a461",
+    "segs": 353,
+    "len": 14643.715,
+    "cov": 31747
+   },
+   "ch": {
+    "hash": "d47906798f07",
+    "segs": 480,
+    "len": 17586.4848,
+    "cov": 37508
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 78799
+   }
+  },
+  "gen17_115": {
+   "so": {
+    "hash": "cc9d27c8b828",
+    "segs": 31,
+    "len": 2750.8874,
+    "cov": 5976
+   },
+   "iv": {
+    "hash": "1eb67cce8380",
+    "segs": 6,
+    "len": 792.5431,
+    "cov": 1715
+   },
+   "ih": {
+    "hash": "6b171866d964",
+    "segs": 95,
+    "len": 1989.0081,
+    "cov": 4145
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "f50994a0fbc6",
+    "segs": 8,
+    "len": 165.9047,
+    "cov": 369
+   },
+   "cv": {
+    "hash": "4cc4e98c27bb",
+    "segs": 132,
+    "len": 6903.0413,
+    "cov": 14823
+   },
+   "ch": {
+    "hash": "65ea809d59fa",
+    "segs": 715,
+    "len": 27234.0659,
+    "cov": 58363
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 84010
+   }
+  },
+  "gen63_38": {
+   "so": {
+    "hash": "a76204227394",
+    "segs": 23,
+    "len": 3054.3097,
+    "cov": 6925
+   },
+   "iv": {
+    "hash": "b18f5539d81d",
+    "segs": 57,
+    "len": 2147.6778,
+    "cov": 4785
+   },
+   "ih": {
+    "hash": "15b9b471bc42",
+    "segs": 2,
+    "len": 728.9708,
+    "cov": 1651
+   },
+   "sv": {
+    "hash": "9f42c786ae66",
+    "segs": 6,
+    "len": 73.6326,
+    "cov": 166
+   },
+   "sh": {
+    "hash": "4dc9bfa36e7c",
+    "segs": 12,
+    "len": 220.1457,
+    "cov": 444
+   },
+   "cv": {
+    "hash": "0a4855038f6b",
+    "segs": 416,
+    "len": 18358.4327,
+    "cov": 40595
+   },
+   "ch": {
+    "hash": "b41f3ed732de",
+    "segs": 416,
+    "len": 18358.4345,
+    "cov": 40475
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 93084
+   }
+  },
+  "gen63_72": {
+   "so": {
+    "hash": "6870a456f00f",
+    "segs": 33,
+    "len": 2843.5896,
+    "cov": 6219
+   },
+   "iv": {
+    "hash": "85b3c9dc8e41",
+    "segs": 17,
+    "len": 744.3538,
+    "cov": 1633
+   },
+   "ih": {
+    "hash": "fb75a320eaae",
+    "segs": 5,
+    "len": 717.035,
+    "cov": 1563
+   },
+   "sv": {
+    "hash": "96196edaefab",
+    "segs": 11,
+    "len": 394.2304,
+    "cov": 853
+   },
+   "sh": {
+    "hash": "14905539b68a",
+    "segs": 33,
+    "len": 890.6992,
+    "cov": 1839
+   },
+   "cv": {
+    "hash": "9c52bb5bc09f",
+    "segs": 353,
+    "len": 14717.2831,
+    "cov": 31854
+   },
+   "ch": {
+    "hash": "4b45488ae47e",
+    "segs": 478,
+    "len": 17831.3006,
+    "cov": 38067
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 79602
+   }
+  },
+  "gen63_115": {
+   "so": {
+    "hash": "d08b15c822c4",
+    "segs": 31,
+    "len": 2850.2456,
+    "cov": 6308
+   },
+   "iv": {
+    "hash": "0b5a65f3130d",
+    "segs": 4,
+    "len": 780.4884,
+    "cov": 1722
+   },
+   "ih": {
+    "hash": "f7c88d855b7e",
+    "segs": 80,
+    "len": 1943.4136,
+    "cov": 4127
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "0aff988d0d1e",
+    "segs": 8,
+    "len": 196.6484,
+    "cov": 405
+   },
+   "cv": {
+    "hash": "0bc0084cc6c8",
+    "segs": 134,
+    "len": 7015.2274,
+    "cov": 15310
+   },
+   "ch": {
+    "hash": "3b9d548591c0",
+    "segs": 713,
+    "len": 27183.8907,
+    "cov": 58416
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 84784
+   }
+  },
+  "gen128_38": {
+   "so": {
+    "hash": "df8ed423fe25",
+    "segs": 25,
+    "len": 3062.9941,
+    "cov": 7046
+   },
+   "iv": {
+    "hash": "9b87496bb3d9",
+    "segs": 55,
+    "len": 2095.9843,
+    "cov": 4624
+   },
+   "ih": {
+    "hash": "eaa8770821de",
+    "segs": 2,
+    "len": 777.9044,
+    "cov": 1807
+   },
+   "sv": {
+    "hash": "15b71e31c77e",
+    "segs": 6,
+    "len": 73.5259,
+    "cov": 173
+   },
+   "sh": {
+    "hash": "e7a19a7c5c85",
+    "segs": 12,
+    "len": 218.9419,
+    "cov": 419
+   },
+   "cv": {
+    "hash": "719fa9bda1a4",
+    "segs": 416,
+    "len": 18415.857,
+    "cov": 40687
+   },
+   "ch": {
+    "hash": "96c182741c5d",
+    "segs": 416,
+    "len": 18415.8815,
+    "cov": 40574
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 93366
+   }
+  },
+  "gen128_72": {
+   "so": {
+    "hash": "2733489d615d",
+    "segs": 33,
+    "len": 2930.8664,
+    "cov": 6431
+   },
+   "iv": {
+    "hash": "dbf6713c719c",
+    "segs": 17,
+    "len": 731.4565,
+    "cov": 1604
+   },
+   "ih": {
+    "hash": "10b4853a3029",
+    "segs": 4,
+    "len": 706.7975,
+    "cov": 1568
+   },
+   "sv": {
+    "hash": "d4e33a7d8c43",
+    "segs": 12,
+    "len": 414.6254,
+    "cov": 875
+   },
+   "sh": {
+    "hash": "32dbaaad3afd",
+    "segs": 33,
+    "len": 910.6778,
+    "cov": 1900
+   },
+   "cv": {
+    "hash": "97dd44db04c3",
+    "segs": 351,
+    "len": 14644.5347,
+    "cov": 31721
+   },
+   "ch": {
+    "hash": "830f1cb25c66",
+    "segs": 478,
+    "len": 17586.1901,
+    "cov": 37667
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 79528
+   }
+  },
+  "gen128_115": {
+   "so": {
+    "hash": "a0b75f90eae6",
+    "segs": 31,
+    "len": 2915.1057,
+    "cov": 6488
+   },
+   "iv": {
+    "hash": "d7b3f122d359",
+    "segs": 8,
+    "len": 774.7292,
+    "cov": 1750
+   },
+   "ih": {
+    "hash": "a83388328c40",
+    "segs": 88,
+    "len": 1933.7342,
+    "cov": 4135
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "b4e700203a1e",
+    "segs": 10,
+    "len": 193.3344,
+    "cov": 406
+   },
+   "cv": {
+    "hash": "a910d810a57e",
+    "segs": 135,
+    "len": 7081.597,
+    "cov": 15450
+   },
+   "ch": {
+    "hash": "ad2c8b4b65d5",
+    "segs": 710,
+    "len": 27163.2875,
+    "cov": 58312
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 85155
+   }
+  },
+  "gen214_38": {
+   "so": {
+    "hash": "2e6128e58592",
+    "segs": 25,
+    "len": 3090.3641,
+    "cov": 7017
+   },
+   "iv": {
+    "hash": "df7932d9bd63",
+    "segs": 49,
+    "len": 2037.1435,
+    "cov": 4526
+   },
+   "ih": {
+    "hash": "f75237483022",
+    "segs": 2,
+    "len": 944.1023,
+    "cov": 2163
+   },
+   "sv": {
+    "hash": "609b69edcae9",
+    "segs": 6,
+    "len": 81.4291,
+    "cov": 193
+   },
+   "sh": {
+    "hash": "a76b82bb389a",
+    "segs": 10,
+    "len": 230.4976,
+    "cov": 449
+   },
+   "cv": {
+    "hash": "15256d56dbfc",
+    "segs": 387,
+    "len": 18998.6879,
+    "cov": 42052
+   },
+   "ch": {
+    "hash": "8f6913ccbfb7",
+    "segs": 447,
+    "len": 20203.356,
+    "cov": 44719
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 99298
+   }
+  },
+  "gen214_72": {
+   "so": {
+    "hash": "089dcc54efbb",
+    "segs": 35,
+    "len": 3048.7492,
+    "cov": 6786
+   },
+   "iv": {
+    "hash": "aeccdc0dfdd5",
+    "segs": 15,
+    "len": 778.9109,
+    "cov": 1699
+   },
+   "ih": {
+    "hash": "772c8b886920",
+    "segs": 8,
+    "len": 742.3338,
+    "cov": 1613
+   },
+   "sv": {
+    "hash": "5ac9473b9e3f",
+    "segs": 10,
+    "len": 442.3929,
+    "cov": 917
+   },
+   "sh": {
+    "hash": "93c12a0593b2",
+    "segs": 36,
+    "len": 1085.19,
+    "cov": 2197
+   },
+   "cv": {
+    "hash": "7055723c26fe",
+    "segs": 276,
+    "len": 13223.1839,
+    "cov": 28535
+   },
+   "ch": {
+    "hash": "c75f18bf242b",
+    "segs": 563,
+    "len": 21297.4142,
+    "cov": 45350
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 85058
+   }
+  },
+  "gen214_115": {
+   "so": {
+    "hash": "0cc1cb264653",
+    "segs": 26,
+    "len": 2975.731,
+    "cov": 6566
+   },
+   "iv": {
+    "hash": "09e9316bdbbc",
+    "segs": 2,
+    "len": 865.3139,
+    "cov": 1965
+   },
+   "ih": {
+    "hash": "04e1c17d342d",
+    "segs": 119,
+    "len": 2132.403,
+    "cov": 4501
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "cv": {
+    "hash": "6dc9fa8418ed",
+    "segs": 82,
+    "len": 5347.9083,
+    "cov": 11737
+   },
+   "ch": {
+    "hash": "e04237bad174",
+    "segs": 762,
+    "len": 29157.7782,
+    "cov": 62777
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 86391
+   }
+  },
+  "gen305_38": {
+   "so": {
+    "hash": "aede16b052e9",
+    "segs": 25,
+    "len": 3092.0024,
+    "cov": 7053
+   },
+   "iv": {
+    "hash": "21c7a139496c",
+    "segs": 47,
+    "len": 2038.0736,
+    "cov": 4524
+   },
+   "ih": {
+    "hash": "42b0e95d802f",
+    "segs": 2,
+    "len": 941.362,
+    "cov": 2167
+   },
+   "sv": {
+    "hash": "027325fbfa21",
+    "segs": 7,
+    "len": 111.4523,
+    "cov": 257
+   },
+   "sh": {
+    "hash": "cde5b44fb0d6",
+    "segs": 12,
+    "len": 206.4917,
+    "cov": 449
+   },
+   "cv": {
+    "hash": "03c8ac547c06",
+    "segs": 385,
+    "len": 18982.799,
+    "cov": 41984
+   },
+   "ch": {
+    "hash": "b909dcdcc45d",
+    "segs": 448,
+    "len": 20313.4284,
+    "cov": 44781
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 99424
+   }
+  },
+  "gen305_72": {
+   "so": {
+    "hash": "2a0fda977473",
+    "segs": 35,
+    "len": 3046.0596,
+    "cov": 6781
+   },
+   "iv": {
+    "hash": "3fa72d6be1e9",
+    "segs": 15,
+    "len": 779.5321,
+    "cov": 1713
+   },
+   "ih": {
+    "hash": "08dde5f0bcb4",
+    "segs": 8,
+    "len": 743.9587,
+    "cov": 1625
+   },
+   "sv": {
+    "hash": "71453d93bb84",
+    "segs": 12,
+    "len": 506.6501,
+    "cov": 1052
+   },
+   "sh": {
+    "hash": "a054307cc7ce",
+    "segs": 34,
+    "len": 1078.2735,
+    "cov": 2157
+   },
+   "cv": {
+    "hash": "201169d19554",
+    "segs": 272,
+    "len": 13225.9884,
+    "cov": 28644
+   },
+   "ch": {
+    "hash": "a502322a10e5",
+    "segs": 567,
+    "len": 21231.5963,
+    "cov": 45069
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 85147
+   }
+  },
+  "gen305_115": {
+   "so": {
+    "hash": "a1eab0e29e5c",
+    "segs": 26,
+    "len": 2979.9964,
+    "cov": 6584
+   },
+   "iv": {
+    "hash": "720ad8736461",
+    "segs": 2,
+    "len": 862.6979,
+    "cov": 1967
+   },
+   "ih": {
+    "hash": "9201c38515e7",
+    "segs": 135,
+    "len": 2164.859,
+    "cov": 4630
+   },
+   "sv": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "sh": {
+    "hash": "da39a3ee5e6b",
+    "segs": 0,
+    "len": 0,
+    "cov": 0
+   },
+   "cv": {
+    "hash": "17818768f3af",
+    "segs": 80,
+    "len": 5367.7714,
+    "cov": 11782
+   },
+   "ch": {
+    "hash": "47456994de7c",
+    "segs": 764,
+    "len": 29056.0094,
+    "cov": 62475
+   },
+   "_all": {
+    "hash": "-",
+    "segs": 0,
+    "len": 0,
+    "cov": 86142
+   }
+  }
+ }
+}
