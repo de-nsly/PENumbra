@@ -548,7 +548,10 @@ function generate(cam, S, shadingBuffer){
   /* 5 · segment occlusion: returns merged occluded t-intervals over [0,1] */
   const COMP = M.comp;
   const occIv=[];
-  function occlude(x0,y0,z0,x1,y1,z1, skipA, skipB, skipShell, va, vb){
+  // skipA/skipB: the segment's own two faces, never treated as occluders.
+  // va/vb: the segment's welded endpoint vertices when it IS a mesh edge —
+  // their presence selects the far (token) slope bias, see EPS_SLOPE_FAR.
+  function occlude(x0,y0,z0,x1,y1,z1, skipA, skipB, va, vb){
     occIv.length=0; gen++;
     const bx0=Math.min(x0,x1), bx1=Math.max(x0,x1), by0=Math.min(y0,y1), by1=Math.max(y0,y1);
     const fpEps=Math.abs(z0+z1)*0.5*EPS_FP_REL;
@@ -574,7 +577,6 @@ function generate(cam, S, shadingBuffer){
           if (oBx1[j]<bx0 || oBx0[j]>bx1 || oBy1[j]<by0 || oBy0[j]>by1) continue;  // bbox reject
           const f=ofc[j];
           if (f===skipA||f===skipB) continue;
-          if (skipShell!==undefined && COMP[f]===skipShell) continue;
           const o=j*9;
           const ax=ocp[o],ay=ocp[o+1], bx=ocp[o+3],by=ocp[o+4], cx=ocp[o+6],cy2=ocp[o+7];
           const s=oS[j];
@@ -862,7 +864,7 @@ function generate(cam, S, shadingBuffer){
     const pieces = [];                  // flat list of [state, [x0,y0], [x1,y1]], in walk order
     for (const {e:ei, rev} of chain.edges){
       const hid = occlude(ccX0[ei],ccY0[ei],ccZ0[ei],ccX1[ei],ccY1[ei],ccZ1[ei],
-                           et0[ei], et1[ei], undefined, ea[ei], eb[ei]);
+                           et0[ei], et1[ei], ea[ei], eb[ei]);
       for (const [st,t0,t1w] of toWalkOrder(hiddenToStates(hid), rev)){
         pieces.push([st,
           [ccX0[ei]+(ccX1[ei]-ccX0[ei])*t0, ccY0[ei]+(ccY1[ei]-ccY0[ei])*t0],
@@ -1276,7 +1278,7 @@ function generate(cam, S, shadingBuffer){
       if (!csValid[seg]) continue;
       const e = csEdge[seg];
       const hid = occlude(csX0[seg],csY0[seg],csZ0[seg],csX1[seg],csY1[seg],csZ1[seg],
-                           csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
+                           csFaceA[seg], csFaceB[seg], ea[e], eb[e]);
       if (hid.length) hidBySeg[seg] = hid;
     }
   }
@@ -1798,7 +1800,7 @@ function generate(cam, S, shadingBuffer){
         const keep = wantIndividual ? !dropSelf : backF<0;
         if (!keep){ out.push({brk:true}); continue; }
         const sz0 = csZ0[seg]+(csZ1[seg]-csZ0[seg])*ca.t, sz1 = csZ0[seg]+(csZ1[seg]-csZ0[seg])*cb.t;
-        const hid = occlude(ca.x,ca.y,sz0, cb.x,cb.y,sz1, csFaceA[seg], csFaceB[seg], undefined, ea[e], eb[e]);
+        const hid = occlude(ca.x,ca.y,sz0, cb.x,cb.y,sz1, csFaceA[seg], csFaceB[seg], ea[e], eb[e]);
         for (const [st,a,b] of hiddenToStates(hid)) out.push({st, p0:lerp2(ca,cb,a), p1:lerp2(ca,cb,b)});
       }
       return out;
@@ -2718,13 +2720,12 @@ function generate(cam, S, shadingBuffer){
   // now fixed; clip boundaries are exact projections of the true hi
   // endpoints. Re-enabling hatch clipping is now just a matter of appending
   // 'h1','h2','h3' to HIER below, if that behavior is wanted again.
-  // DIAGNOSTIC snapshot — raw so/iv geometry before ANY cross-layer
-  // subtraction, purely to answer directly whether they're actually
-  // identical (as the math says they should be for one shell) or genuinely
-  // diverge somewhere, rather than continuing to guess. Never affects any
+  // Diagnostic snapshot of raw so/iv geometry before any cross-layer
+  // subtraction, for the "Silhouette vs Individual" debug export. Only
+  // taken when that export asked for it (S.debugPreDedup); never affects
   // real output.
-  const debugPreDedupSo = groups.so.slice();
-  const debugPreDedupIv = groups.iv.slice();
+  const debugPreDedupSo = S.debugPreDedup ? groups.so.slice() : null;
+  const debugPreDedupIv = S.debugPreDedup ? groups.iv.slice() : null;
   const HIER = ['so','iv','ih','sv','sh','cv','ch'];
   for (let i=1;i<HIER.length;i++){
     const lo = HIER[i];
@@ -2787,9 +2788,12 @@ function generate(cam, S, shadingBuffer){
     outCarrier[k]=new Int32Array(hatchCarrier[k]);
     transfer.push(outCarrier[k].buffer);
   }
-  const debugPreDedupSoOut = new Float32Array(debugPreDedupSo);
-  const debugPreDedupIvOut = new Float32Array(debugPreDedupIv);
-  transfer.push(debugPreDedupSoOut.buffer, debugPreDedupIvOut.buffer);
+  let debugPreDedupSoOut = null, debugPreDedupIvOut = null;
+  if (debugPreDedupSo){
+    debugPreDedupSoOut = new Float32Array(debugPreDedupSo);
+    debugPreDedupIvOut = new Float32Array(debugPreDedupIv);
+    transfer.push(debugPreDedupSoOut.buffer, debugPreDedupIvOut.buffer);
+  }
   post({ type:'result', groups:out, runIds:outRunIds, seqs:outSeqs, hatchCarrier:outCarrier, w:W, h:H, counts, ms: Date.now()-t0ms,
     circlePatternSegs, debugPreDedupSo: debugPreDedupSoOut, debugPreDedupIv: debugPreDedupIvOut }, transfer);
 }
@@ -2959,12 +2963,9 @@ if (typeof self !== 'undefined' && typeof self.document === 'undefined'){
           post({ type:'smoothAngleResult', cornerNormals: cnCopy }, [cnCopy.buffer]);
         }
       } else if (m.type === 'testShadingSample'){
-        // Phase 2 round-trip test — see testShadingBufferRoundTrip in
-        // panel-controls.js. Samples the SAME buffer the main thread also
-        // sampled directly (bilinear, no transfer/flip involved), so the
-        // two result sets can be compared for agreement — validates both
-        // the transfer+flip mechanism and sampleShading's own math in one
-        // pass, without needing to render or affect any real output.
+        // Round-trip check used by js/debug/shading-diagnostics.js: samples
+        // a buffer the main thread also sampled directly, so the transfer +
+        // row flip + sampleShading path can be compared against it.
         flipBufferRowsY(m.pixels, m.w, m.h);
         const values = m.points.map(([sx, sy]) => sampleShading(m.pixels, m.w, m.h, sx, sy));
         post({ type: 'testShadingSampleResult', values });

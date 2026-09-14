@@ -77,7 +77,7 @@ for (const L of LAYERS){
   pen.addEventListener('change', restyle);
   dash.addEventListener('change', () => { restyle(); refreshStatusR(); });
   chk.addEventListener('change', () => {
-    L.solve ? markStale() : applyLayerStyle(L.key);
+    markStale();
     // Fades the Lines-section sliders that belong to a layer group once that
     // group draws nothing (panel-controls.js, which loads after this file —
     // fine, since this only runs on a click, long after both are loaded).
@@ -707,16 +707,10 @@ function accumulatePathStats(stats, pts, closed){
       self-closure), producing interpolated midpoints, then walks the
       resulting pairing graph (multi-hop runs and full closed loops alike)
       into final chains. so/iv/ih all get identical treatment — no
-      exceptions, every gap within tolerance gets closed. (An earlier
-      version tried to protect genuine occlusion-cut endpoints for
-      Individual Silhouette specifically, but per the actual dropSelf/keep
-      formula in the worker, Individual Silhouette only ever hides on
-      same-shell self-occlusion, never on being occluded by a different
-      shell — so there was never a real cross-shell cut to protect, only
-      self-occlusion noise indistinguishable from what so already merges
-      through fine. Dropped as unnecessary; kept as a parameter in case
-      that's worth revisiting if the underlying occlusion semantics ever
-      change.)
+      exceptions, every gap within tolerance gets closed. Individual
+      Silhouette only ever hides on same-shell self-occlusion (see the
+      dropSelf test in the worker's 6.9), so it has no cross-shell cut
+      endpoints that would need protecting from this merge.
    ================================================================ */
 function trimTipFoldback(chains, angleThreshDeg){
   const cosThresh = Math.cos(angleThreshDeg * Math.PI/180);
@@ -744,34 +738,25 @@ function trimTipFoldback(chains, angleThreshDeg){
     return { pts, closed:false };
   });
 }
-function mergeSilhouetteClose(chains, tolMerge, protectedPoints){
+function mergeSilhouetteClose(chains, tolMerge){
   function mdist(a,b){ return Math.hypot(a[0]-b[0],a[1]-b[1]); }
-  const PROT_EPS = 1e-4;   // exact-coordinate match (same computation, not independently-drifted geometry), not a proximity tolerance
-  function isProtected(pt){
-    if (!protectedPoints || !protectedPoints.length) return false;
-    for (let i=0;i<protectedPoints.length;i+=2){
-      if (mdist(pt, [protectedPoints[i],protectedPoints[i+1]]) < PROT_EPS) return true;
-    }
-    return false;
-  }
   const open = [], closedOut = [];
   chains.forEach(c => { if (c.closed || c.pts.length < 2) closedOut.push(c); else open.push({ pts: c.pts.map(p=>p.slice()) }); });
   const N = open.length;
   const tips = [];
   for (let ci=0; ci<N; ci++){
     const p = open[ci].pts;
-    tips.push({ pos:p[0], protected: isProtected(p[0]) });
-    tips.push({ pos:p[p.length-1], protected: isProtected(p[p.length-1]) });
+    tips.push({ pos:p[0] });
+    tips.push({ pos:p[p.length-1] });
   }
   const cell = Math.max(tolMerge, 1e-6);
   const key = (x,y) => Math.floor(x/cell)+'_'+Math.floor(y/cell);
   const grid = new Map();
-  tips.forEach((t,i) => { if (t.protected) return; const k=key(t.pos[0],t.pos[1]); let a=grid.get(k); if(!a){a=[];grid.set(k,a);} a.push(i); });
+  tips.forEach((t,i) => { const k=key(t.pos[0],t.pos[1]); let a=grid.get(k); if(!a){a=[];grid.set(k,a);} a.push(i); });
   const paired = new Map();
   const used = new Set();
   const cand = [];
   for (let i=0;i<tips.length;i++){
-    if (tips[i].protected) continue;
     const cx=Math.floor(tips[i].pos[0]/cell), cy=Math.floor(tips[i].pos[1]/cell);
     for (let dx=-1;dx<=1;dx++) for (let dy=-1;dy<=1;dy++){
       const arr = grid.get((cx+dx)+'_'+(cy+dy)); if (!arr) continue;
@@ -1133,7 +1118,7 @@ function buildChainedPathD(segs, stats, silMergeOpts){
   const d = [];
   let chains = chainSegments(segs);
   chains = trimTipFoldback(chains, silMergeOpts.foldbackAngleThreshDeg);
-  chains = mergeSilhouetteClose(chains, silMergeOpts.tolMerge, silMergeOpts.protectedPoints);
+  chains = mergeSilhouetteClose(chains, silMergeOpts.tolMerge);
   for (const chain of chains)
     for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
       appendPolylineD(d, simplifyCollinear(rawPts, closed), closed, stats);
@@ -2077,11 +2062,7 @@ function onResult(m){
       const mmToPx = layout ? 1/Math.max(1e-6, layout.scale) : 1;
       // Silhouette and Individual Silhouette get identical treatment here —
       // no exceptions, every gap gets closed.
-      const silMergeOpts = {
-        tolMerge: 0.25 * mmToPx,
-        foldbackAngleThreshDeg: 150,
-        protectedPoints: null,
-      };
+      const silMergeOpts = { tolMerge: 0.25 * mmToPx, foldbackAngleThreshDeg: 150 };
       d.push(buildChainedPathD(segs, stats, silMergeOpts));
     } else if (SEQ_CHAIN_LAYERS[L.key]){
       appendCreasePathD(d, segs, stats);
@@ -2151,12 +2132,10 @@ function onResult(m){
   }
   if (firstEverGen) resetPvFitWithRulers();   // first drawing ever shown: fit the whole page, rulers included
   renderPaper();                        // regenerating an existing view keeps the user's pan/zoom
-  const outlineWarn = (m.counts.outlineTooComplex ? ' · scene outline skipped (too complex)' : '') +
-    (m.counts.shadowCapped ? ' · shadow budget hit (partial)' : '');
   lastLiveStats = {
     segments: pathStats.segments, paths: pathStats.paths, closedPaths: pathStats.closedPaths,
     rawLenByLayer, ms: m.ms,
-    hatchCapped: m.counts.hatchCapped, outlineWarn,
+    hatchCapped: m.counts.hatchCapped, shadowCapped: m.counts.shadowCapped,
   };
   refreshStatusR();
 }
@@ -2193,7 +2172,7 @@ function refreshStatusR(){
     $('statusR').textContent = s.segments.toLocaleString() + ' segments · ' +
       s.paths.toLocaleString() + ' paths (' + s.closedPaths.toLocaleString() + ' closed) · ' +
       lenMm.toLocaleString(undefined, {maximumFractionDigits:0}) + ' mm · ' + s.ms + ' ms' +
-      (s.hatchCapped ? ' · hatch capped' : '') + s.outlineWarn;
+      (s.hatchCapped ? ' · hatch capped' : '') + (s.shadowCapped ? ' · shadow budget hit (partial)' : '');
   }
 }
 

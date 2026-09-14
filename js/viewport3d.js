@@ -909,43 +909,26 @@ function onSmoothAngleResult(m){
   }
 }
 
-/* ================= Phase 1 prototype: shading-buffer capture =================
-   [CONFIRMED WORKING — see project notes] Exploring whether Smooth
-   Shading's soft+cast shadow hatching could eventually be driven by
-   sampling an actual rendered shading pass, instead of the analytic Phong
-   + shadow-map hybrid the worker currently computes. This block is
-   PURELY ADDITIVE and is not called from anywhere else in the app — the
-   render loop, generate(), and every existing material are completely
-   untouched. Flat Shading is not part of this exploration at all and
-   never will be; only Smooth Shading's soft/cast shadow computation is a
-   candidate for eventually using this.
+/* ================= shading-buffer capture =================
+   Renders the model once more into an offscreen float target with a
+   material that outputs only max(0,N·L)·shadowFactor (R channel) plus a
+   geometry mask (G channel), and reads the pixels back. doGenerate()
+   sends this buffer to the worker whenever Smooth shading is on: Hatch
+   and Circles density on the model surface are driven by sampling it
+   (sampleShading, js/worker/geom-utils.js) rather than by the per-face
+   brightness Flat shading uses.
 
-   Reuses the EXACT SAME `camera` object the live viewport renders with —
-   not a reconstructed approximation of its FOV/aspect/near/far — so this
-   inherits buildCamMessage()'s own view+projection matrices by
-   construction, avoiding a whole class of alignment risk.
+   Reuses the SAME `camera` object the live viewport renders with, so the
+   buffer's projection matches buildCamMessage()'s by construction.
+   The scene's AmbientLight is deliberately excluded — it would bake a flat
+   baseline into every pixel, deep shadow included. makeShadingMaterialFrom
+   clones each mesh's own material (so shadows compile exactly as in the
+   live view) and overrides only the final colour output via
+   onBeforeCompile, calling Three's own getShadow() for PCF sampling.
 
-   The scene's AmbientLight(0.45) is deliberately NOT part of the output —
-   a plain lit material would bake that flat baseline into every pixel,
-   including deep shadow, contaminating exactly the signal hatch/circle
-   generation would need (max(0,N·L) times shadow factor, nothing else).
-   makeShadingMaterialFrom clones each mesh's own actual material (proven
-   correct with shadows already, since that's what the live viewport
-   renders) and overrides only its final output stage via onBeforeCompile,
-   calling Three.js's own getShadow(shadowMap, shadowMapSize, shadowBias,
-   shadowRadius, shadowCoord) — verified directly against this build's
-   real compiled shader source, not guessed — so PCF shadow sampling is
-   Three's own tested code, not hand-rolled.
-
-   Usage from the browser console once a model is loaded:
-     previewShadingBuffer()        — draws the captured buffer directly over
-                                      the live viewport for a direct visual
-                                      alignment check (shadow/terminator
-                                      edges should land exactly on the
-                                      visible mesh underneath)
-     removeShadingBufferPreview()  — removes it
-     captureShadingBuffer()        — returns { pixels, w, h } directly, for
-                                      scripted/numeric inspection instead */
+   Console diagnostics for this pipeline (round-trip test, benchmark,
+   overlay preview) live in js/debug/shading-diagnostics.js, loaded with
+   ?debug in the URL. */
 let shadingCaptureTarget = null;
 function ensureShadingCaptureTarget(w, h){
   if (shadingCaptureTarget && shadingCaptureTarget.width === w && shadingCaptureTarget.height === h) return shadingCaptureTarget;
@@ -1021,7 +1004,6 @@ function makeShadingMaterialFrom(sourceMaterial){
 }
 function captureShadingBuffer(){
   if (!modelMesh){ console.warn('[shadingCapture] no model loaded'); return null; }
-  const tStart = performance.now();
   const w = Math.max(1, vp.clientWidth), h = Math.max(1, vp.clientHeight);
   const target = ensureShadingCaptureTarget(w, h);
   const prevBackground = scene.background;
@@ -1044,12 +1026,10 @@ function captureShadingBuffer(){
       o.material = makeShadingMaterialFrom(o.material);
     }
   });
-  const tAfterSwap = performance.now();
   const prevTarget = renderer.getRenderTarget();
   renderer.setRenderTarget(target);
   renderer.clear();
   renderer.render(scene, camera);
-  const tAfterRender = performance.now();
   renderer.setRenderTarget(prevTarget);
   for (const [o, mat] of swapped) o.material = mat;   // restore originals
   scene.background = prevBackground;
@@ -1059,151 +1039,5 @@ function captureShadingBuffer(){
   }
   const pixels = new Float32Array(w*h*4);
   renderer.readRenderTargetPixels(target, 0, 0, w, h, pixels);
-  const tEnd = performance.now();
-  // Phase 3 measurement — always computed (performance.now() calls are
-  // essentially free), not gated behind a special "benchmark mode", so
-  // ordinary use of this function (Phase 2's doGenerate hook, Phase 1's
-  // previewShadingBuffer) also feeds real-world numbers into
-  // benchmarkShadingCapture's running stats below.
-  const timing = {
-    materialSwapMs: tAfterSwap - tStart,
-    renderMs: tAfterRender - tAfterSwap,
-    // readRenderTargetPixels forces the GPU pipeline to sync/flush before
-    // the CPU can read results back — in most WebGL setups this, not the
-    // render itself, is where most of the real cost of an extra pass
-    // tends to show up.
-    readbackMs: tEnd - tAfterRender,
-    totalMs: tEnd - tStart,
-    meshCount: swapped.length, w, h,
-    bufferBytes: pixels.byteLength,
-  };
-  if (typeof recordShadingCaptureTiming === 'function') recordShadingCaptureTiming(timing);
-  return { pixels, w, h, timing };
+  return { pixels, w, h };
 }
-/* ================= Phase 3: measurement =================
-   Real numbers on real geometry, not estimates. Call from the browser
-   console once a model is loaded:
-     benchmarkShadingCapture(n)   — runs n captures (default 20), reports
-                                     avg/min/max timing per stage
-     analyzeShadingBuffer()       — one capture, scanned for the same
-                                     brightness-discontinuity metric the
-                                     original standalone prototype used,
-                                     so the numbers are directly comparable
-                                     to what was already validated there */
-let shadingCaptureTimingLog = [];
-function recordShadingCaptureTiming(t){
-  shadingCaptureTimingLog.push(t);
-  if (shadingCaptureTimingLog.length > 200) shadingCaptureTimingLog.shift();   // bounded — avoid unbounded growth over a long session
-}
-function benchmarkShadingCapture(n){
-  n = n || 20;
-  if (!modelMesh){ console.warn('[shadingBench] no model loaded'); return; }
-  const before = shadingCaptureTimingLog.length;
-  for (let i = 0; i < n; i++) captureShadingBuffer();
-  const samples = shadingCaptureTimingLog.slice(before);
-  const stat = key => {
-    const vals = samples.map(s => s[key]);
-    const sum = vals.reduce((a,b) => a+b, 0);
-    return { avg: sum/vals.length, min: Math.min(...vals), max: Math.max(...vals) };
-  };
-  console.log('[shadingBench] ' + n + ' captures at ' + samples[0].w + '\u00d7' + samples[0].h +
-    ' (' + samples[0].meshCount + ' mesh(es)), ' + (samples[0].bufferBytes/1024/1024).toFixed(2) + ' MB per buffer:');
-  for (const key of ['materialSwapMs', 'renderMs', 'readbackMs', 'totalMs']){
-    const s = stat(key);
-    console.log('  ' + key + ': avg ' + s.avg.toFixed(2) + 'ms, min ' + s.min.toFixed(2) + 'ms, max ' + s.max.toFixed(2) + 'ms');
-  }
-  console.log('[shadingBench] for context, compare totalMs against the status bar\'s own generate() time ' +
-    '(e.g. "...\u00b7 55 ms") to judge relative overhead.');
-}
-window.benchmarkShadingCapture = benchmarkShadingCapture;
-function analyzeShadingBuffer(){
-  const cap = captureShadingBuffer();
-  if (!cap) return null;
-  const { pixels: buf, w, h } = cap;
-  // Same methodology as the standalone (non-Three.js) prototype that
-  // originally validated Phase 1's core premise — scans every row, within
-  // continuous "hasGeometry" runs, for the largest single-texel-to-texel
-  // brightness jump. Directly comparable to those earlier numbers, just
-  // against this build's real geometry instead of a synthetic two-torus
-  // test scene.
-  let maxJump = 0, maxJumpLoc = null;
-  const counts = { '0.1':0, '0.2':0, '0.3':0, '0.4':0 };
-  for (let y=0; y<h; y++){
-    let prevB = null, prevG = 0;
-    for (let x=0; x<w; x++){
-      const i = (y*w+x)*4;
-      const b = buf[i], g = buf[i+1];
-      if (g > 0.5 && prevG > 0.5){
-        const step = Math.abs(b - prevB);
-        for (const t of Object.keys(counts)) if (step > +t) counts[t]++;
-        if (step > maxJump){ maxJump = step; maxJumpLoc = [x,y]; }
-      }
-      prevB = b; prevG = g;
-    }
-  }
-  console.log('[shadingAnalyze] buffer ' + w + '\u00d7' + h + ' (' + (w*h) + ' px):');
-  console.log('  max single-texel brightness jump: ' + maxJump.toFixed(4) + ' at ' + JSON.stringify(maxJumpLoc));
-  console.log('  jump counts (pixel-pairs exceeding each threshold):', counts);
-  console.log('  for reference, the standalone prototype at 800\u00d7800 on a synthetic two-torus scene ' +
-    'saw a max jump of ~0.51 with a narrow 3\u00d73 PCF filter (~0.46 with a wider one), and >0.3 jumps in ' +
-    'the tens out of ~640,000 pixel-pairs \u2014 coherent boundary curves, not scattered noise. Values in a ' +
-    'similar range here would suggest the same holds on real geometry; a much higher count or max would ' +
-    'be worth a closer look before moving on.');
-  return { maxJump, maxJumpLoc, counts, w, h };
-}
-window.analyzeShadingBuffer = analyzeShadingBuffer;
-function previewShadingBuffer(){
-  const cap = captureShadingBuffer();
-  if (!cap) return;
-  const { pixels, w, h } = cap;
-  let overlay = document.getElementById('shadingBufferPreview');
-  if (!overlay){
-    overlay = document.createElement('canvas');
-    overlay.id = 'shadingBufferPreview';
-    overlay.style.cssText = 'position:fixed;z-index:99999;pointer-events:none;';
-    document.body.appendChild(overlay);
-  }
-  // Positioned to match the 3D viewport PANE's own bounding rect, not
-  // inset:0 (the whole browser window) — vp sits below the header bar and
-  // isn't at the window's own origin, so inset:0 was drawing the buffer at
-  // the right SIZE but the wrong POSITION, off by exactly the header's
-  // height. Re-measured on every call rather than cached, since panel
-  // layout could plausibly change between calls.
-  const vpRect = vp.getBoundingClientRect();
-  overlay.style.left = vpRect.left + 'px';
-  overlay.style.top = vpRect.top + 'px';
-  overlay.style.width = vpRect.width + 'px';
-  overlay.style.height = vpRect.height + 'px';
-  overlay.width = w; overlay.height = h;
-  const ctx = overlay.getContext('2d');
-  const img = ctx.createImageData(w, h);
-  for (let y=0;y<h;y++){
-    const srcY = h-1-y;   // WebGL readback is bottom-up; canvas 2D is top-down
-    for (let x=0;x<w;x++){
-      const si = (srcY*w+x)*4, di = (y*w+x)*4;
-      const hasGeom = pixels[si+1] > 0.5;
-      const v = hasGeom ? Math.round(Math.min(1, Math.max(0, pixels[si])) * 255) : 0;
-      img.data[di]=v; img.data[di+1]=v; img.data[di+2]=v; img.data[di+3]= hasGeom ? 255 : 0;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  console.log('[shadingCapture] buffer drawn over the live viewport (white=captured geometry areas). ' +
-    'Compare its silhouette and shadow/terminator edges against the mesh underneath — they should line up exactly, ' +
-    'with no offset or scale mismatch, since this reused the exact same camera object. ' +
-    'Call removeShadingBufferPreview() to remove it and see the live view again.');
-}
-function removeShadingBufferPreview(){
-  const overlay = document.getElementById('shadingBufferPreview');
-  if (overlay) overlay.remove();
-}
-window.captureShadingBuffer = captureShadingBuffer;
-window.previewShadingBuffer = previewShadingBuffer;
-window.removeShadingBufferPreview = removeShadingBufferPreview;
-
-// Chain touching 2-point segments into maximal polylines. A segment's own
-// endpoints already carry all the information needed — no extra data from the
-// solver required, this is purely a presentation-layer optimization on 2D
-// points that are already known to be correct. Open chains (a curve broken by
-// real occlusion, or a boundary that's genuinely cut off) keep two distinct
-// ends; closed chains (loop back to their own start) get flagged so the caller
-// can emit an SVG "Z" instead of a duplicate closing point.

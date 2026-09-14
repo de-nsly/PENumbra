@@ -208,9 +208,9 @@ export class HarnessApp {
     this._setCamera(this.camera);
   }
 
-  /* Ticking a layer's pen checkbox. Every layer is solve:true (see LAYERS in
-     js/main.js) — toggling one changes what survives in every layer below it
-     — so this must be followed by a fresh generate(), exactly as in the app. */
+  /* Ticking a layer's checkbox. Toggling one layer changes what survives in
+     every layer below it (see LAYERS in js/main.js), so this must be followed
+     by a fresh generate(), exactly as in the app. */
   setLayer(key, on){
     if (!this.layers[key]) this.layers[key] = { on:false, color:'#000000', width:0.35, dash:'solid' };
     this.layers[key].on = !!on;

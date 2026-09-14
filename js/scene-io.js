@@ -21,28 +21,6 @@ worker.onmessage = ev => {
     handleDebugRawEdgesResult(m);
   } else if (m.type === 'debugRawContourEdgesResult'){
     handleDebugRawContourEdgesResult(m);
-  } else if (m.type === 'testShadingSampleResult'){
-    // Phase 2 validation — see testShadingBufferRoundTrip in panel-controls.js
-    if (!pendingShadingTestReference){
-      console.warn('[shadingTest] got a result with no pending reference — ignoring');
-    } else {
-      const { reference } = pendingShadingTestReference;
-      pendingShadingTestReference = null;
-      let allMatch = true;
-      reference.forEach((ref, i) => {
-        const got = m.values[i];
-        const brightDiff = Math.abs(ref.brightness - got.brightness);
-        const match = brightDiff < 1e-4 && ref.hasGeometry === got.hasGeometry;
-        if (!match) allMatch = false;
-        console.log('[shadingTest] point ' + i + ': reference=' + ref.brightness.toFixed(5) +
-          ' worker=' + got.brightness.toFixed(5) + ' diff=' + brightDiff.toExponential(2) +
-          ' hasGeometry ref=' + ref.hasGeometry + ' worker=' + got.hasGeometry +
-          (match ? ' \u2713' : ' \u2717 MISMATCH'));
-      });
-      console.log(allMatch
-        ? '[shadingTest] ALL POINTS MATCH \u2014 transfer + flip + sampleShading are all correct.'
-        : '[shadingTest] MISMATCH FOUND \u2014 see above for which point(s) disagree.');
-    }
   } else if (m.type === 'error'){
     busy = false; $('genBtn').disabled = false;
     $('paperPane').classList.remove('busy');
@@ -151,10 +129,11 @@ $('debugRawContourEdgesPaperBtn').addEventListener('click', () => triggerDebugRa
    Exports the raw so/iv geometry EXACTLY as computed, before subtractCovered
    (or anything else) touches it — so (black) and iv (red), overlaid in one
    file, at full opacity so any actual divergence is directly visible rather
-   than inferred from what survives the dedup cascade. Answers directly:
-   are these two layers' raw geometry actually identical, or do they
-   genuinely differ somewhere? Reads straight off lastGen (set in onResult),
-   since debugPreDedupSo/Iv ride along in every normal generate() result. */
+   than inferred from what survives the dedup cascade. The worker only
+   includes debugPreDedupSo/Iv in a result when the generate request asked
+   for them (settings.debugPreDedup, set from pendingSoIvExport in
+   doGenerate), so the button triggers one such generate and exports from
+   its result. */
 function exportSoIvOverlayNow(){
   const so = lastGen.debugPreDedupSo, iv = lastGen.debugPreDedupIv;
   const dFor = (segs) => {
@@ -502,3 +481,12 @@ async function importScene(file){
 /* ================= boot: demo scene ================= */
 $('statusL').textContent = 'building demo scene…';
 worker.postMessage({ type:'demo' });
+
+/* ================= optional debug tools =================
+   js/debug/*.js hold console-only diagnostics that are never needed in
+   normal use. Adding ?debug to the URL loads them. */
+if (new URLSearchParams(location.search).has('debug')){
+  const s = document.createElement('script');
+  s.src = 'js/debug/shading-diagnostics.js';
+  document.body.appendChild(s);
+}

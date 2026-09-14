@@ -126,7 +126,7 @@ export function buildShadowMap(pos, tri, fn, nt, L, watertight, eps){
     }
   }
   const nOcc = keep.length;
-  if (!nOcc) return { test: () => false, countHits: () => 0, kept: 0, uvOf: () => [0,0], bounds: [0,0,0,0] };
+  if (!nOcc) return { test: () => false, kept: 0, uvOf: () => [0,0], bounds: [0,0,0,0] };
   /* Per-occluder precomputation — mirror of the camera-space occlusion
      optimization: everything test() used to rebuild per query (vertex uv
      fetches through tri[], det, sign, plane coefficients, bbox) depends only
@@ -211,46 +211,8 @@ export function buildShadowMap(pos, tri, fn, nt, L, watertight, eps){
     }
     return false;
   }
-  // Same occluder grid and per-occluder plane math as test() — but instead
-  // of stopping at the first occluder found, counts distinct occluders
-  // between the point and the light, up to `cap` (early-exits once reached,
-  // since callers only ever need "is this >= 2", never the exact count).
-  // Used to tell a genuine gap (a ray passing fully through some solid —
-  // its own shell or another's, entry AND exit, always registers as 2+)
-  // apart from a self-shadow terminator (only ever the one grazing
-  // crossing back onto the same surface it started from) — see project
-  // notes for the reasoning and the standalone verification behind it.
-  function countHits(px, py, pz, skipF, cap){
-    const u = px*B.ux + py*B.uy + pz*B.uz;
-    const v = px*B.vx + py*B.vy + pz*B.vz;
-    if (u < bu0-1e-9 || u > bu1+1e-9 || v < bv0-1e-9 || v > bv1+1e-9) return 0;
-    const d = px*B.wx + py*B.wy + pz*B.wz;
-    const dEps = d + eps;
-    const ci = cellV(v)*gw + cellU(u);
-    if (cellMaxD[ci] <= dEps) return 0;
-    const s0=cellStart[ci], s1=cellStart[ci+1];
-    let count = 0;
-    for (let li=s0; li<s1; li++){
-      const ki = cellItems[li];
-      if (kSkip[ki]) continue;
-      if (kMaxD[ki] <= dEps) continue;
-      if (u<kU0[ki] || u>kU1[ki] || v<kV0[ki] || v>kV1[ki]) continue;
-      if (kF[ki] === skipF) continue;
-      const ax=kAx[ki],ay=kAy[ki], bx=kBx[ki],by=kBy[ki], cx=kCx[ki],cy=kCy[ki];
-      const s = kS[ki];
-      if (s*((bx-ax)*(v-ay)-(by-ay)*(u-ax)) < -1e-12) continue;
-      if (s*((cx-bx)*(v-by)-(cy-by)*(u-bx)) < -1e-12) continue;
-      if (s*((ax-cx)*(v-cy)-(ay-cy)*(u-cx)) < -1e-12) continue;
-      const occD = kAd[ki] + kA[ki]*(u-ax) + kBc[ki]*(v-ay);
-      if (occD > dEps){
-        count++;
-        if (count >= cap) return count;
-      }
-    }
-    return count;
-  }
   return {
-    test, countHits, kept: nOcc,
+    test, kept: nOcc,
     uvOf: (px,py,pz) => [px*B.ux+py*B.uy+pz*B.uz, px*B.vx+py*B.vy+pz*B.vz],
     bounds: [bu0, bu1, bv0, bv1],
   };

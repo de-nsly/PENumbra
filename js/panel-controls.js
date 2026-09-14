@@ -498,68 +498,18 @@ function doGenerate(){
     const cap = captureShadingBuffer();
     if (cap){ shadingBuffer = cap; transfer.push(cap.pixels.buffer); }
   }
+  const settings = gatherSettings();
+  // The "Silhouette vs Individual (pre-dedup)" debug export (scene-io.js)
+  // needs the worker's raw so/iv geometry too; everything else skips the
+  // extra copies.
+  settings.debugPreDedup = pendingSoIvExport;
   worker.postMessage({
     type: 'generate',
     cam: buildCamMessage(),
-    settings: gatherSettings(),
+    settings,
     shadingBuffer,
   }, transfer);
 }
-
-/* ================= Phase 2 validation: shading-buffer round trip =================
-   Samples the SAME captured buffer two independent ways — directly here on
-   the main thread, and round-tripped through the worker (transfer, row-
-   flip, sampleShading's bilinear lookup) — and checks that they agree.
-   Deliberately a separate, independent implementation from the worker's
-   own sampleShading rather than shared code, so this is a genuine cross-
-   check rather than the same bug (if any) agreeing with itself. Doesn't
-   touch doGenerate/generate() at all — a standalone diagnostic, same
-   discipline as Phase 1's previewShadingBuffer().
-   Call from the browser console: testShadingBufferRoundTrip() */
-let pendingShadingTestReference = null;
-function testShadingBufferRoundTrip(){
-  if (typeof captureShadingBuffer !== 'function'){ console.warn('[shadingTest] Phase 1 capture not available'); return; }
-  const cap = captureShadingBuffer();
-  if (!cap){ console.warn('[shadingTest] no model loaded / capture failed'); return; }
-  const { pixels, w, h } = cap;
-  // A handful of points spread across the buffer, including one
-  // deliberately fractional (non-integer) point to exercise the bilinear
-  // interpolation path itself, not just nearest-texel lookups.
-  const points = [
-    [w*0.5, h*0.5], [w*0.25, h*0.75], [w*0.1, h*0.1],
-    [w*0.9, h*0.9], [w*0.5 + 0.37, h*0.5 + 0.62],
-  ];
-  // Reference: flip a COPY (never mutate the buffer about to be
-  // transferred away) using the same row-flip the worker applies, then
-  // sample with a plain, independent bilinear implementation.
-  const flipped = pixels.slice();
-  const rowFloats = w * 4;
-  for (let y = 0; y < h >> 1; y++){
-    const y2 = h - 1 - y;
-    const o1 = y*rowFloats, o2 = y2*rowFloats;
-    const tmp = flipped.slice(o1, o1+rowFloats);
-    flipped.copyWithin(o1, o2, o2+rowFloats);
-    flipped.set(tmp, o2);
-  }
-  const sampleRef = (sx, sy) => {
-    const x = Math.max(0, Math.min(w - 1, sx));
-    const y = Math.max(0, Math.min(h - 1, sy));
-    const x0 = Math.floor(x), y0 = Math.floor(y);
-    const x1 = Math.min(w-1, x0+1), y1 = Math.min(h-1, y0+1);
-    const fx = x-x0, fy = y-y0;
-    const idx = (xi,yi) => (yi*w+xi)*4;
-    const ia=idx(x0,y0), ib=idx(x1,y0), ic=idx(x0,y1), id=idx(x1,y1);
-    const wA=(1-fx)*(1-fy), wB=fx*(1-fy), wC=(1-fx)*fy, wD=fx*fy;
-    return {
-      brightness: flipped[ia]*wA + flipped[ib]*wB + flipped[ic]*wC + flipped[id]*wD,
-      hasGeometry: (flipped[ia+1]*wA + flipped[ib+1]*wB + flipped[ic+1]*wC + flipped[id+1]*wD) > 0.5,
-    };
-  };
-  pendingShadingTestReference = { points, reference: points.map(([sx,sy]) => sampleRef(sx,sy)) };
-  worker.postMessage({ type: 'testShadingSample', pixels, w, h, points }, [pixels.buffer]);
-  console.log('[shadingTest] sent ' + points.length + ' test points to the worker — waiting for testShadingSampleResult...');
-}
-window.testShadingBufferRoundTrip = testShadingBufferRoundTrip;
 
 /* ================= H: hide/show floating panels =================
    Toggles both floating panel stacks (3D viewport's #camPanelStack, 2D/

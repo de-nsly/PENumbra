@@ -19,11 +19,9 @@ const APP_VERSION = '0.8.6';
      - paint order in the SVG: the result-building loop walks this list in
        REVERSE so the highest-priority layer (Silhouette) ends up painted
        last/on top, and the lowest (Deep shadow) painted first/underneath.
-   solve:true → checkbox re-runs the pipeline. Every layer needs this now:
-   toggling any one can change which ink survives in every layer BELOW it in
-   the hierarchy, so a pure display-only toggle (the old solve:false shortcut
-   for the hidden sub-layers) would leave lower layers stale until the next
-   unrelated regenerate.
+   Toggling any layer's checkbox re-runs the whole pipeline: the cascade
+   means one layer's on/off changes which ink survives in every layer below
+   it, so there is no display-only toggle.
    host → which container in index.html the row is appended to. The edge
    layers are split across three hosts so each group's own solve settings can
    sit in the panel directly under the rows they affect: Contour Cleanup + Max hops between the Contour
@@ -33,17 +31,17 @@ const APP_VERSION = '0.8.6';
    pen → the DEFAULT pen id (see PEN_LIBRARY below) the row starts on. A
    layer has no colour/width of its own any more, only a pen reference. */
 const LAYERS = [
-  { key:'so', name:'Silhouette',           on:false, solve:true,  pen:'p1', dash:'solid', host:'edgeLayersSil'  },
-  { key:'iv', name:'Silhouette individual', on:false, solve:true, pen:'p2', dash:'solid', host:'edgeLayersSil'  },
-  { key:'ih', name:'· hidden',             on:false, solve:true,  pen:'p4', dash:'D1',    host:'edgeLayersSil'  },
-  { key:'sv', name:'Contour',              on:true,  solve:true,  pen:'p2', dash:'solid', host:'edgeLayersContour' },
-  { key:'sh', name:'· hidden',             on:false, solve:true,  pen:'p4', dash:'D1',    host:'edgeLayersContour' },
-  { key:'cv', name:'Crease',               on:true,  solve:true,  pen:'p3', dash:'solid', host:'edgeLayersCrease' },
-  { key:'ch', name:'· hidden',             on:false, solve:true,  pen:'p4', dash:'D1',    host:'edgeLayersCrease' },
-  { key:'h1', name:'Hatch',               on:true,  solve:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
-  { key:'h2', name:'Crosshatch',          on:true,  solve:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
-  { key:'h3', name:'Deep shadow',         on:false, solve:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
-  { key:'cr', name:'Circles',             on:false, solve:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
+  { key:'so', name:'Silhouette',            on:false, pen:'p1', dash:'solid', host:'edgeLayersSil'  },
+  { key:'iv', name:'Silhouette individual', on:false, pen:'p2', dash:'solid', host:'edgeLayersSil'  },
+  { key:'ih', name:'· hidden',              on:false, pen:'p4', dash:'D1',    host:'edgeLayersSil'  },
+  { key:'sv', name:'Contour',               on:true,  pen:'p2', dash:'solid', host:'edgeLayersContour' },
+  { key:'sh', name:'· hidden',              on:false, pen:'p4', dash:'D1',    host:'edgeLayersContour' },
+  { key:'cv', name:'Crease',                on:true,  pen:'p3', dash:'solid', host:'edgeLayersCrease' },
+  { key:'ch', name:'· hidden',              on:false, pen:'p4', dash:'D1',    host:'edgeLayersCrease' },
+  { key:'h1', name:'Hatch',                 on:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
+  { key:'h2', name:'Crosshatch',            on:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
+  { key:'h3', name:'Deep shadow',           on:false, pen:'p5', dash:'solid', host:'hatchLayers' },
+  { key:'cr', name:'Circles',               on:false, pen:'p5', dash:'solid', host:'hatchLayers' },
 ];
 
 /* ================= pen library =================

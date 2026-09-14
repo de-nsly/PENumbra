@@ -59,8 +59,7 @@ export function layerPathD(m, key, { mmToPx = 1, mode = 'chained' } = {}){
   if (key === 'sv' || key === 'sh'){
     appendContourPathD(d, segs, m.runIds[key], m.seqs[key], m.counts && m.counts.contourAdjacency, null);
   } else if (CHAIN_LAYERS[key]){
-    d.push(buildChainedPathD(segs, null, {
-      tolMerge: 0.25 * mmToPx, foldbackAngleThreshDeg: 150, protectedPoints: null }));
+    d.push(buildChainedPathD(segs, null, { tolMerge: 0.25 * mmToPx, foldbackAngleThreshDeg: 150 }));
   } else if (SEQ_CHAIN_LAYERS[key]){
     appendCreasePathD(d, segs, null);
   } else {

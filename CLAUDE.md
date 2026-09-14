@@ -70,8 +70,8 @@ circle fill patterns for shaded faces -> post back flat segment arrays per layer
 `iv`/`ih` silhouette individual, `sv`/`sh` contour, `cv`/`ch` crease, `h1`/`h2`/`h3` hatch/crosshatch/deep
 shadow, `cr` circles). Order is the drawing-priority hierarchy: higher entries in the array win
 ink-avoidance against lower ones, and the array is walked in reverse when painting so the highest-priority
-layer ends up on top. Every layer has `solve:true` — toggling any single layer can change what survives in
-every layer below it, so all layers re-run the pipeline on toggle, not just a display-only flag.
+layer ends up on top. Toggling any single layer can change what survives in every layer below it, so
+every layer checkbox re-runs the pipeline; there is no display-only toggle.
 
 **Pen library** (`PEN_LIBRARY` in `main.js`, UI in `pen-library.js`): an ordered list of `{id, name, color,
 width}` pens. Layers and Layout block overrides store only a pen id (plus their own dash) and resolve colour/

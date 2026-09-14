@@ -956,8 +956,6 @@ function extendSelectionTo(block, additive){
 function rowActionScope(block){
   return selectedBlocks.has(block) ? blocks.filter(b => selectedBlocks.has(b)) : [block];
 }
-// Back-compat single-block convenience wrapper — block===null clears.
-function selectBlock(block){ setSelection(block ? [block] : []); }
 function updateSelectionOverlay(){
   const ov = $('layoutOverlaySvg');
   ov.innerHTML = '';
@@ -2429,7 +2427,7 @@ $('clearBlocksBtn').addEventListener('click', () => {
   if (!confirm('Delete all ' + blocks.length + ' layer(s)? This cannot be undone.')) return;
   for (const b of blocks) removeBlockDom(b);
   blocks = [];
-  selectBlock(null);
+  clearSelection();
   closeLayerContextMenu();
   refreshStatusR();
   renderBlocksList();
