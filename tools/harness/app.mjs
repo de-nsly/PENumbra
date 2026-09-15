@@ -29,8 +29,8 @@ import { THREE, getEl, setControl } from './app-env.mjs';   // first: installs t
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { LAYERS } from '../../js/main.js';
-import { computePaperLayout, getMargins, layerEls } from '../../js/svg-export.js';
+import { defaultLayers, replaceLayers, sceneLayers } from '../../js/layers.js';
+import { computePaperLayout, getMargins } from '../../js/svg-export.js';
 import { lightVec, orbit, updateFrustum, setProjMode, updateModelRotation, perspCam, orthoCam } from '../../js/viewport3d.js';
 import { gatherSettings, buildCamMessage, setLastGen } from '../../js/panel-controls.js';
 
@@ -57,7 +57,7 @@ let stateOwner = null;
 export class HarnessApp {
   constructor(){
     this.controls = new Map();  // id -> value, as the .pen's settings block holds them
-    this.layers = {};
+    this.layerList = defaultLayers();   // this app's layer instances (js/layers.js shape)
     this.vp = { w: DEFAULT_VIEWPORT.w, h: DEFAULT_VIEWPORT.h };
     this.projMode = 'persp';
     this.orbitState = null;     // the .pen camera block, re-applied when this app takes the modules over
@@ -122,17 +122,14 @@ export class HarnessApp {
     if (!this._loadMsg) throw new Error('no model loaded — call loadScene() first');
     this.post(this._loadMsg());
   }
-  /* Pushes this app's controls, layer checkboxes and viewport size into the
+  /* Pushes this app's controls, layer instances and viewport size into the
      app modules. Cheap and idempotent, so it runs before every read of
      module state. The camera (orbit, projection, model rotation) is only
      re-applied when a DIFFERENT app used the modules last: a caller that
      changed app.orbit for a view (sweep.mjs) must keep that view. */
   _activate(){
     for (const [id, val] of this.controls) setControl(id, val);
-    for (const L of LAYERS){
-      const st = this.layers[L.key];
-      layerEls[L.key] = { chk: { checked: !!(st && st.on) }, pen: { value: L.pen }, dash: { value: (st && st.dash) || L.dash } };
-    }
+    replaceLayers(this.layerList);
     const vpEl = getEl('viewport3d');
     vpEl.clientWidth = this.vp.w; vpEl.clientHeight = this.vp.h;
     if (stateOwner !== this){
@@ -174,20 +171,16 @@ export class HarnessApp {
   updateFrustum(){ this._activate(); updateFrustum(); }
 
   /* Ticking a layer's checkbox. Toggling one layer changes what survives in
-     every layer below it (see LAYERS in js/main.js), so this must be followed
-     by a fresh generate(), exactly as in the app. */
+     every layer below it (see layers in js/layers.js), so this must be
+     followed by a fresh generate(), exactly as in the app. */
   setLayer(key, on){
-    if (!this.layers[key]) this.layers[key] = { on:false, color:'#000000', width:0.35, dash:'solid' };
-    this.layers[key].on = !!on;
+    const L = this.layerList.find(l => l.id === key);
+    if (L) L.on = !!on;
     return this;
   }
   setLayers(spec){ for (const [k, v] of Object.entries(spec)) this.setLayer(k, v); return this; }
-
-  layerStyle(key){
-    const st = this.layers[key];
-    return st ? { on: !!st.on, color: st.color, width: +st.width, dash: st.dash }
-              : { on: false, color: '#000000', width: 1, dash: 'solid' };
-  }
+  layerOn(key){ const L = this.layerList.find(l => l.id === key); return !!(L && L.on); }
+  layerIds(){ return this.layerList.map(L => L.id); }
 
   // viewport3d.js setProjMode() — the real one; only its solver-visible
   // effect (which camera buildCamMessage reads) matters here.
@@ -227,7 +220,7 @@ export class HarnessApp {
             paperSize: 'A3', orient: 'portrait', marginMm: '5', marginIndependent: false },
           layers: {} }
       : JSON.parse(readFileSync(penPath, 'utf8'));
-    if (!data || data.penumbraScene !== 1 || !data.model)
+    if (!data || !(data.penumbraScene >= 1 && data.penumbraScene <= 2) || !data.model)
       throw new Error('unrecognized scene file: ' + penPath);
     this.scene = data;
     if (opts.viewport){ this.vp.w = opts.viewport.w; this.vp.h = opts.viewport.h; }
@@ -253,8 +246,15 @@ export class HarnessApp {
 
   _applyImportedScene(data){
     for (const [id, val] of Object.entries(data.settings || {})) this.controls.set(id, val);
-    this.layers = {};
-    for (const [key, st] of Object.entries(data.layers || {})) this.layers[key] = { ...st };
+    // The app's own loader (js/layers.js), minus pen matching: a saved pen
+    // id is taken as is (pens don't affect the solve). A version-1 scene
+    // that doesn't mention a layer leaves it OFF here (the browser keeps the
+    // row's current state instead) — callers tick what they want on.
+    this.layerList = sceneLayers(data, (st, def) => typeof st.pen === 'string' ? st.pen : def);
+    if (!(data.penumbraScene >= 2)){
+      const saved = data.layers || {};
+      for (const L of this.layerList) if (!(L.id in saved)) L.on = false;
+    }
     const cs = data.camera || {};
     this.projMode = cs.ortho ? 'ortho' : 'persp';
     this.orbitState = cs;

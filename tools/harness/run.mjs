@@ -55,7 +55,7 @@ const m = app.generate();
 const wallMs = Date.now() - t0;
 
 const layout = app.computePaperLayout({ w: m.w, h: m.h });
-const keys = args.layers || Object.keys(app.layers).filter(k => app.layers[k].on);
+const keys = args.layers || app.layerIds().filter(k => app.layerOn(k));
 
 console.log('scene    : ' + path.basename(args.pen) + '  (' + app.modelName + ')');
 console.log('mesh     : ' + app.loaded.stats.tris + ' tris, ' + app.loaded.stats.verts +
@@ -76,9 +76,9 @@ if (args.json){
   const base = path.basename(args.pen).replace(/\.pen$/i, '');
   const mode = args.raw ? 'raw' : 'chained';
   const written = [];
-  const styleFor = k => ({ key: k, mode,
-    color: (app.layers[k] && app.layers[k].color) || '#000000',
-    width: (app.layers[k] && app.layers[k].width) || 0.35 });
+  // A pre-pen-library scene's own layer colour/width, else a fixed style.
+  const saved = k => (app.scene.layers && !Array.isArray(app.scene.layers) && app.scene.layers[k]) || {};
+  const styleFor = k => ({ key: k, mode, color: saved(k).color || '#000000', width: saved(k).width || 0.35 });
   if (args.combined){
     const f = path.join(args.outDir, base + '-' + keys.join('+') + (args.raw ? '-raw' : '') + '.svg');
     writeFileSync(f, buildPaperSvg(m, keys.map(styleFor), layout));

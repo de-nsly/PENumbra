@@ -25,10 +25,11 @@
    splitSelfTouching, simplifyCollinear) are the main-thread suspects;
    worldOnFace()/intersectSegs()/subtractCovered are the worker's.
    ================================================================ */
-import { $, DASH_KEYS, DASH_RATIOS, LAYERS, MAX_DASH_SLOTS, PEN_LIBRARY, SVG_NS, dashOnFraction, dashPattern, downloadFile, penById, scaledDash, svgEl } from './main.js';
+import { $, DASH_KEYS, DASH_RATIOS, MAX_DASH_SLOTS, PEN_LIBRARY, SVG_NS, dashOnFraction, dashPattern, downloadFile, penById, scaledDash, svgEl } from './main.js';
+import { LAYER_TYPES, layerById, layerType, layers, stackEntry } from './layers.js';
 import { activeTab, gatherSettings, generateFinished, lastGen, markStale, syncLineLayerUI, updateGroundPatternSliderRange } from './panel-controls.js';
 import { blockLayerPenId, blocks, computeLayoutPaperDims, computeLayoutStats, createBlockDom, gridGuidePositions, layoutOverlayOn, refreshAllBlockStyles, renderPreviewLayoutOverlay, syncLayoutPaperFrame, syncLayoutTrimMask, updateBlockStyle } from './layout-canvas.js';
-import { applyPv, resetPv, resetPvFitWithRulers } from './paper-preview.js';
+import { applyPv, resetPv, resetPvFitWithRulers, updateTextureGizmo } from './paper-preview.js';
 import { exportSoIvOverlayNow, takePendingSoIvExport } from './scene-io.js';
 import { modelName } from './viewport3d.js';
 
@@ -64,6 +65,10 @@ export function fillPenSelect(select, fallbackId){
   const has = id => PEN_LIBRARY.some(p => p.id === id);
   select.value = has(prev) ? prev : has(fallbackId) ? fallbackId : PEN_LIBRARY[0].id;
 }
+// The layer rows' DOM, keyed by layer id: { chk, pen, dash, sw }. A VIEW of
+// the instances in layers.js — the instance is the state; a row's own
+// listeners write into it (see buildLayerRows) and applyLayerStyle pushes
+// the instance back into the row.
 export const layerEls = {};
 
 /* ================= Dash section (Pen library tab) =================
@@ -72,7 +77,7 @@ export const layerEls = {};
    DASH_RATIOS/scaledDash/dashPattern in main.js. Editing a field here
    refreshes every layer currently on this pattern (any layer could be
    using it, not just one), the same reason a paper-size change already
-   re-runs applyLayerStyle for the whole LAYERS list elsewhere. */
+   re-runs applyLayerStyle for every layer elsewhere. */
 const DASH_FIELD_LABELS = ['dash','gap','dash','gap','dash','gap'];
 export function refreshDashPreview(key){
   const line = $('dashPreview' + key).querySelector('line');
@@ -95,7 +100,7 @@ function buildDashFields(key){
     input.addEventListener('input', () => {
       DASH_RATIOS[key][i] = Math.max(0, +input.value || 0);
       refreshDashPreview(key);
-      for (const L of LAYERS) applyLayerStyle(L.key);
+      for (const L of layers) applyLayerStyle(L.id);
       refreshStatusR();
     });
   });
@@ -124,27 +129,33 @@ export function addDashSlot(){
 
   // every already-built per-layer dash <select> needs the new option too —
   // appending (rather than rebuilding) preserves each one's current value
-  for (const L of LAYERS){
+  for (const L of layers){
     const opt = document.createElement('option');
     opt.value = newKey; opt.textContent = newKey;
-    layerEls[L.key].dash.appendChild(opt);
+    layerEls[L.id].dash.appendChild(opt);
   }
   if (DASH_KEYS.length >= MAX_DASH_SLOTS) $('addDashBtn').disabled = true;
 }
-// color/width are resolved through the layer's pen (see PEN_LIBRARY in
-// main.js) — callers keep seeing the same flat shape they always did.
-export function layerStyle(key){
-  const el = layerEls[key];
-  const pen = penById(el.pen.value);
-  return { on: el.chk.checked, color: pen.color, width: pen.width, dash: el.dash.value };
+// The layer instance's on/pen/dash with color/width resolved through its
+// pen (see PEN_LIBRARY in main.js) — callers keep seeing the same flat
+// shape they always did.
+export function layerStyle(id){
+  const L = layerById(id);
+  const pen = penById(L.pen);
+  return { on: L.on, color: pen.color, width: pen.width, dash: L.dash };
 }
-export function applyLayerStyle(key){
-  const s = layerStyle(key), el = layerEls[key];
+// Renders one layer's instance state: its row (checkbox, pen and dash
+// dropdowns, swatch) and its group in the on-screen SVG.
+export function applyLayerStyle(id){
+  const s = layerStyle(id), el = layerEls[id], L = layerById(id);
+  el.chk.checked = L.on;
+  if (PEN_LIBRARY.some(p => p.id === L.pen)) el.pen.value = L.pen;
+  el.dash.value = L.dash;
   const swWidth = Math.max(0.6, s.width);
   el.sw.setAttribute('stroke', s.color);
   el.sw.setAttribute('stroke-width', swWidth);
   el.sw.setAttribute('stroke-dasharray', scaledDash(s.dash, swWidth));
-  const g = document.getElementById('g_' + key);
+  const g = document.getElementById('g_' + id);
   if (g){
     g.setAttribute('stroke', s.color);
     // s.width is a true mm value (the pen's W[mm] — see PEN_LIBRARY).
@@ -304,7 +315,7 @@ export function renderPaper(){
   // refreshing right away rather than looking wrong until the next
   // regenerate. Geometry positioning already updates immediately above
   // (the content transform); this keeps stroke width in step with it.
-  for (const L of LAYERS) applyLayerStyle(L.key);
+  for (const L of layers) applyLayerStyle(L.id);
   // Layout overlay — same "recreate on every renderPaper() call" pattern as
   // marginGuide/pvGridGuides above, since #plot's entire subtree (including
   // whatever this drew last time) gets wiped on every regenerate (see
@@ -611,7 +622,7 @@ export function simplifyCollinear(pts, closed, tol=SIMPLIFY_COLLINEAR_TOL){
 /* Shared by any flat [x0,y0,x1,y1,...] segment list that needs reconstructing
    into proper chained/closed SVG path data — the exact same chainSegments →
    splitSelfTouching → simplifyCollinear pipeline the real Silhouette/Scene-
-   Outline layers use (see CHAIN_LAYERS below). Used for the parallel
+   Outline layers use (chain:'silhouette' in layers.js). Used for the parallel
    topological-pipeline debug exports too, so their output can go through
    the person's own closed-vs-open coloring check the same way a real
    layer's export would. */
@@ -1414,7 +1425,21 @@ export function appendCreasePathD(d, segs, stats){
       appendPolylineD(d, simplifyCollinear(rawPts, closed), closed, stats);
 }
 
-const HATCH_ANGLE_OFFSET = { h1: 0, h2: 90, h3: 45 };
+/* ================= texture effects =================
+   The implementations of the texture filters a fill layer's stack can
+   hold (TEXTURE_FILTERS in layers.js declares their parameters). Every
+   length parameter is authored in mm and converted with the caller's
+   mmToPx. A hatch layer's effects run on its flat segment list (plus the
+   per-segment carrier index the worker sends, so fragments of one line
+   jitter together); Circles has arc-aware variants of the first few and
+   shares wobble/gaps once its arcs are polylines. onResult applies them
+   in the fixed order trim → overshoot/spacing/angle jitter → wobble →
+   regular wobble → gaps, reading each entry from the stack. */
+// The family angle of a hatch layer's lines: the global Hatch angle slider
+// plus the instance's own offset (layers.js: angleOffsetDeg).
+function hatchFamilyAngleDeg(L){
+  return (+$('hatchAng').value || 0) + (L.angleOffsetDeg || 0);
+}
 // Smooth 2D value noise: hash the 4 surrounding integer-grid corners
 // pseudo-randomly, then smoothstep-interpolate between them. Continuous
 // and deterministic — same (x,y) always gives the same value — which is
@@ -1514,24 +1539,25 @@ function applyHatchGaps(polylines, minLenPx, maxGapPx){
   }
   return out;
 }
-// The Wobble and Gaps settings for one layer, in local px — read the same
-// way for the hatch layers and the Circles layer in onResult. Noise seeds
-// are drawn only when "Same noise field per layer" is on.
-function readWobbleParams(layerKey, mmToPx){
-  const isShared = $(texId('texWobbleShared', layerKey)).checked;
+// The Wobble and Gaps stack entries of one layer as local-px parameters —
+// read the same way for the hatch layers and the Circles layer in
+// onResult. Noise seeds are drawn only when "Same noise field per layer"
+// is on.
+function readWobbleParams(entry, mmToPx){
+  const isShared = !!entry.shared;
   return {
-    spacingPx: (+$(texId('texWobbleSpacing', layerKey)).value || 1) * mmToPx,
-    ampPx: (+$(texId('texWobbleAmp', layerKey)).value || 0) * mmToPx,
-    variationAmount: +$(texId('texWobbleVariation', layerKey)).value || 0,
-    envScalePx: (+$(texId('texWobbleVarScale', layerKey)).value || 10) * mmToPx,
+    spacingPx: (+entry.spacing || 1) * mmToPx,
+    ampPx: (+entry.amp || 0) * mmToPx,
+    variationAmount: +entry.variation || 0,
+    envScalePx: (+entry.varScale || 10) * mmToPx,
     sharedSeed: isShared ? [Math.random()*10000, Math.random()*10000] : null,
     sharedEnvSeed: isShared ? [Math.random()*10000, Math.random()*10000] : null,
   };
 }
-function readGapParams(layerKey, mmToPx){
+function readGapParams(entry, mmToPx){
   return {
-    minLenPx: (+$(texId('texGapsSpacing', layerKey)).value || 30) * mmToPx,
-    maxGapPx: (+$(texId('texGapsMax', layerKey)).value || 2) * mmToPx,
+    minLenPx: (+entry.spacing || 30) * mmToPx,
+    maxGapPx: (+entry.max || 2) * mmToPx,
   };
 }
 function applyHatchWobble(segs, spacingPx, ampPx, sharedSeed, variationAmount, envScalePx, sharedEnvSeed){
@@ -1616,26 +1642,18 @@ function applyHatchTrimExtend(segs, carrierIdx, trimPx){
   }
   return { segs: new Float32Array(outSegs), carrierIdx: outCarrier };
 }
-// Resolves a texture-effect base id to the actual element to read: if
-// Individual texture settings is on, that specific layer's own suffixed
-// copy; otherwise the single shared General control. Centralizes the
-// "which copy of this setting applies to this layer" decision in one
-// place, since every texture-effect read throughout this pipeline needs
-// the same resolution.
-export function texId(baseId, layerKey){
-  const individualOn = $('texIndividualOn') && $('texIndividualOn').checked;
-  return individualOn ? baseId + '_' + layerKey : baseId;
-}
-function applyHatchTexture(segs, carrierIdx, familyAngleDeg, mmToPx, layerKey){
-  const overshootOn = $(texId('texOvershootOn', layerKey)).checked;
-  const spacingOn = $(texId('texSpacingOn', layerKey)).checked;
-  const angleOn = $(texId('texAngleOn', layerKey)).checked;
-  const oMin = overshootOn ? (+$(texId('texOvershootMin', layerKey)).value || 0) * mmToPx : 0;
-  const oMax = overshootOn ? (+$(texId('texOvershootMax', layerKey)).value || 0) * mmToPx : 0;
-  const sMin = spacingOn ? (+$(texId('texSpacingMin', layerKey)).value || 0) * mmToPx : 0;
-  const sMax = spacingOn ? (+$(texId('texSpacingMax', layerKey)).value || 0) * mmToPx : 0;
-  const aMin = angleOn ? (+$(texId('texAngleMin', layerKey)).value || 0) : 0;
-  const aMax = angleOn ? (+$(texId('texAngleMax', layerKey)).value || 0) : 0;
+// Overshoot, spacing jitter and angle jitter, from the layer's stack.
+function applyHatchTexture(segs, carrierIdx, familyAngleDeg, mmToPx, stack){
+  const overshoot = stackEntry(stack, 'overshoot');
+  const spacing = stackEntry(stack, 'spacingJitter');
+  const angle = stackEntry(stack, 'angleJitter');
+  const overshootOn = !!overshoot, spacingOn = !!spacing, angleOn = !!angle;
+  const oMin = overshootOn ? (+overshoot.min || 0) * mmToPx : 0;
+  const oMax = overshootOn ? (+overshoot.max || 0) * mmToPx : 0;
+  const sMin = spacingOn ? (+spacing.min || 0) * mmToPx : 0;
+  const sMax = spacingOn ? (+spacing.max || 0) * mmToPx : 0;
+  const aMin = angleOn ? (+angle.min || 0) : 0;
+  const aMax = angleOn ? (+angle.max || 0) : 0;
   if (!overshootOn && !spacingOn && !angleOn) return segs;   // all off — skip untouched
   const rad = familyAngleDeg * Math.PI/180;
   const nx = -Math.sin(rad), ny = Math.cos(rad);          // hatch family's shared normal direction
@@ -1895,9 +1913,8 @@ export function onResult(m){
   // its own. Hatch is untouched — it already has its own, different
   // optimization (straight-line runs reduced to 2 points per carrier).
   // Contour (sv/sh) chains by the worker's run identity instead — see
-  // appendContourPathD.
-  const CHAIN_LAYERS = { so:1, iv:1, ih:1 };
-  const SEQ_CHAIN_LAYERS = { cv:1, ch:1 };
+  // appendContourPathD. Which treatment an edge layer gets is its type's
+  // `chain` (LAYER_TYPES in layers.js).
 
   // Tracks the FINAL, post-processing picture — one entry per actual pen
   // stroke (subpath) in the rendered SVG, not per raw 2-point input
@@ -1912,43 +1929,49 @@ export function onResult(m){
   // otherwise the cached lastLiveStats mm figure would go stale the moment
   // the user changes a dash setting without re-generating. See refreshStatusR.
   const rawLenByLayer = {};
-  // Paint order is the REVERSE of the hierarchy in LAYERS: the highest-
-  // priority layer (Silhouette, first in LAYERS) must end up LAST in the
-  // SVG so it paints on top, and the lowest (Deep shadow, last in LAYERS)
-  // paints first/underneath everything else.
-  for (const L of LAYERS.slice().reverse()){
+  // Paint order is the REVERSE of the hierarchy in layers: the highest-
+  // priority layer (Silhouette, first) must end up LAST in the SVG so it
+  // paints on top, and the lowest (Circles, last) paints first/underneath
+  // everything else.
+  for (const L of layers.slice().reverse()){
     const lenBefore = pathStats.lenPx;
-    if (L.key === 'cr'){
-      if (!layerStyle('cr').on || !m.circlePatternSegs || !m.circlePatternSegs.length) continue;
+    const T = layerType(L);
+    if (L.type === 'circles'){
+      if (!layerStyle(L.id).on || !m.circlePatternSegs || !m.circlePatternSegs.length) continue;
       const mmToPx = pxPerMm();
+      const stack = L.texture;
       let pieces = m.circlePatternSegs;
-      if ($(texId('texTrimOn', 'cr')).checked){
-        const trimPx = (+$(texId('texTrimValue', 'cr')).value || 0) * mmToPx;
+      const trim = stackEntry(stack, 'trim');
+      if (trim){
+        const trimPx = (+trim.value || 0) * mmToPx;
         pieces = applyCircleTrimExtend(pieces, trimPx);
       }
-      if ($(texId('texOvershootOn', 'cr')).checked){
-        const oMin = (+$(texId('texOvershootMin', 'cr')).value || 0) * mmToPx;
-        const oMax = (+$(texId('texOvershootMax', 'cr')).value || 0) * mmToPx;
+      const overshoot = stackEntry(stack, 'overshoot');
+      if (overshoot){
+        const oMin = (+overshoot.min || 0) * mmToPx;
+        const oMax = (+overshoot.max || 0) * mmToPx;
         pieces = applyCircleOvershootUndershoot(pieces, oMin, oMax);
       }
-      if ($(texId('texSpacingOn', 'cr')).checked){
-        const sMin = (+$(texId('texSpacingMin', 'cr')).value || 0) * mmToPx;
-        const sMax = (+$(texId('texSpacingMax', 'cr')).value || 0) * mmToPx;
+      const spacing = stackEntry(stack, 'spacingJitter');
+      if (spacing){
+        const sMin = (+spacing.min || 0) * mmToPx;
+        const sMax = (+spacing.max || 0) * mmToPx;
         pieces = applyCircleSpacingJitter(pieces, sMin, sMax);
       }
-      // texAngleOn is deliberately never read here — a circle has no
-      // meaningful "angle" for that effect to act on (also skipped entirely
-      // in the Circles per-layer clone — see data-skipforcircles).
-      const wobbleOn = $(texId('texWobbleOn', 'cr')).checked;
+      // Angle jitter and regular wobble never apply here — a circle has no
+      // "angle" for them to act on (TEXTURE_FILTERS lists them for 'lines'
+      // only, so an arcs stack never holds one).
+      const wobble = stackEntry(stack, 'wobble');
+      const gaps = stackEntry(stack, 'gaps');
       const d = [];
-      if (wobbleOn){
+      if (wobble){
         // Wobble displaces points along the arc, so the result is no longer
         // a circle — falls back to the original dense-polyline path, same
         // as before this feature existed.
-        const wb = readWobbleParams('cr', mmToPx);
+        const wb = readWobbleParams(wobble, mmToPx);
         let polylines = applyCircleWobble(pieces, wb.spacingPx, wb.ampPx, wb.sharedSeed, wb.variationAmount, wb.envScalePx, wb.sharedEnvSeed);
-        if ($(texId('texGapsOn', 'cr')).checked){
-          const gp = readGapParams('cr', mmToPx);
+        if (gaps){
+          const gp = readGapParams(gaps, mmToPx);
           polylines = applyHatchGaps(polylines, gp.minLenPx, gp.maxGapPx);
         }
         for (const poly of polylines){
@@ -1963,8 +1986,8 @@ export function onResult(m){
         // way through, so it can be emitted as a handful of Bezier curves
         // instead of a dense polyline.
         let gappedPieces = pieces;
-        if ($(texId('texGapsOn', 'cr')).checked){
-          const gp = readGapParams('cr', mmToPx);
+        if (gaps){
+          const gp = readGapParams(gaps, mmToPx);
           gappedPieces = applyCircleGaps(pieces, gp.minLenPx, gp.maxGapPx);
         }
         for (const piece of gappedPieces){
@@ -1984,7 +2007,7 @@ export function onResult(m){
         }
       }
       const g = svgEl('g');
-      g.id = 'g_cr';
+      g.id = 'g_' + L.id;
       g.setAttribute('fill', 'none');
       g.setAttribute('stroke-linecap', 'round');
       g.setAttribute('stroke-linejoin', 'round');
@@ -1992,10 +2015,10 @@ export function onResult(m){
       p.setAttribute('d', d.join(' '));
       g.appendChild(p);
       content.appendChild(g);
-      rawLenByLayer[L.key] = pathStats.lenPx - lenBefore;
+      rawLenByLayer[L.id] = pathStats.lenPx - lenBefore;
       continue;
     }
-    const segs = m.groups[L.key];
+    const segs = m.groups[L.id];
     if (!segs || !segs.length) continue;
     // The 'd' string/DOM group is always built regardless of this layer's
     // on/off checkbox (display:none just hides it visually — see
@@ -2005,42 +2028,41 @@ export function onResult(m){
     // actually visible right now — matching computeLayoutStats, which only
     // sums a block's layers that are currently layerVisible — so an off
     // layer's contribution is deliberately excluded from pathStats below.
-    const layerOn = layerStyle(L.key).on;
+    const layerOn = layerStyle(L.id).on;
     const g = svgEl('g');
-    g.id = 'g_' + L.key;
+    g.id = 'g_' + L.id;
     g.setAttribute('fill', 'none');
     g.setAttribute('stroke-linecap', 'round');
     g.setAttribute('stroke-linejoin', 'round');
     const d = [];
     const stats = layerOn ? pathStats : null;
-    if (L.key === 'sv' || L.key === 'sh'){
-      appendContourPathD(d, segs, m.runIds[L.key], m.seqs[L.key],
+    if (T.chain === 'contour'){
+      appendContourPathD(d, segs, m.runIds[L.id], m.seqs[L.id],
         m.counts && m.counts.contourAdjacency, stats);
-    } else if (CHAIN_LAYERS[L.key]){
+    } else if (T.chain === 'silhouette'){
       const mmToPx = pxPerMm();
       // Silhouette and Individual Silhouette get identical treatment here —
       // no exceptions, every gap gets closed.
       const silMergeOpts = { tolMerge: 0.25 * mmToPx, foldbackAngleThreshDeg: 150 };
       d.push(buildChainedPathD(segs, stats, silMergeOpts));
-    } else if (SEQ_CHAIN_LAYERS[L.key]){
+    } else if (T.chain === 'crease'){
       appendCreasePathD(d, segs, stats);
     } else {
-      // one path per layer, one subpath per segment: subpaths stay separate
-      // pen strokes for plotter software; nothing is joined or reordered.
+      // Hatch: one path per layer, one subpath per segment: subpaths stay
+      // separate pen strokes for plotter software; nothing is joined or
+      // reordered. The layer's texture stack is applied here.
+      const stack = L.texture;
       let outSegs = segs;
-      let outCarrier = (m.hatchCarrier && m.hatchCarrier[L.key]) || null;
-      let mmToPx = 1;
-      if (HATCH_ANGLE_OFFSET[L.key] !== undefined){
-        mmToPx = pxPerMm();
-        if ($(texId('texTrimOn', L.key)).checked){
-          const trimPx = (+$(texId('texTrimValue', L.key)).value || 0) * mmToPx;
-          const r = applyHatchTrimExtend(outSegs, outCarrier, trimPx);
-          outSegs = r.segs; outCarrier = r.carrierIdx;
-        }
-        if (outCarrier){
-          const familyAngleDeg = (+$('hatchAng').value || 0) + HATCH_ANGLE_OFFSET[L.key];
-          outSegs = applyHatchTexture(outSegs, outCarrier, familyAngleDeg, mmToPx, L.key);
-        }
+      let outCarrier = (m.hatchCarrier && m.hatchCarrier[L.id]) || null;
+      const mmToPx = pxPerMm();
+      const trim = stackEntry(stack, 'trim');
+      if (trim){
+        const trimPx = (+trim.value || 0) * mmToPx;
+        const r = applyHatchTrimExtend(outSegs, outCarrier, trimPx);
+        outSegs = r.segs; outCarrier = r.carrierIdx;
+      }
+      if (outCarrier){
+        outSegs = applyHatchTexture(outSegs, outCarrier, hatchFamilyAngleDeg(L), mmToPx, stack);
       }
       // From here on everything is expressed as an array of polylines (each
       // a flat [x0,y0,x1,y1,...] array) — wobble subdivides into multi-point
@@ -2048,21 +2070,23 @@ export function onResult(m){
       // went through neither is just its own trivial 2-point polyline, so
       // the d-string builder below can treat every case uniformly.
       let polylines;
-      if ($(texId('texWobbleOn', L.key)).checked && HATCH_ANGLE_OFFSET[L.key] !== undefined){
-        const wb = readWobbleParams(L.key, mmToPx);
+      const wobble = stackEntry(stack, 'wobble');
+      if (wobble){
+        const wb = readWobbleParams(wobble, mmToPx);
         polylines = applyHatchWobble(outSegs, wb.spacingPx, wb.ampPx, wb.sharedSeed, wb.variationAmount, wb.envScalePx, wb.sharedEnvSeed);
       } else {
         polylines = [];
         for (let i = 0; i < outSegs.length; i += 4) polylines.push([outSegs[i], outSegs[i+1], outSegs[i+2], outSegs[i+3]]);
       }
-      if ($(texId('texRegWobbleOn', L.key)).checked && HATCH_ANGLE_OFFSET[L.key] !== undefined){
-        const familyAngleDeg = (+$('hatchAng').value || 0) + HATCH_ANGLE_OFFSET[L.key];
-        const regAmpPx = (+$(texId('texRegWobbleAmp', L.key)).value || 0) * mmToPx;
-        const regWavelengthPx = (+$(texId('texRegWobbleWavelength', L.key)).value || 5) * mmToPx;
-        polylines = applyHatchRegularWobble(polylines, familyAngleDeg, regAmpPx, regWavelengthPx);
+      const regWobble = stackEntry(stack, 'regularWobble');
+      if (regWobble){
+        const regAmpPx = (+regWobble.amp || 0) * mmToPx;
+        const regWavelengthPx = (+regWobble.wavelength || 5) * mmToPx;
+        polylines = applyHatchRegularWobble(polylines, hatchFamilyAngleDeg(L), regAmpPx, regWavelengthPx);
       }
-      if ($(texId('texGapsOn', L.key)).checked && HATCH_ANGLE_OFFSET[L.key] !== undefined){
-        const gp = readGapParams(L.key, mmToPx);
+      const gaps = stackEntry(stack, 'gaps');
+      if (gaps){
+        const gp = readGapParams(gaps, mmToPx);
         polylines = applyHatchGaps(polylines, gp.minLenPx, gp.maxGapPx);
       }
       for (const poly of polylines){
@@ -2077,8 +2101,8 @@ export function onResult(m){
     p.setAttribute('d', d.join(' '));
     g.appendChild(p);
     content.appendChild(g);
-    applyLayerStyle(L.key);
-    rawLenByLayer[L.key] = pathStats.lenPx - lenBefore;
+    applyLayerStyle(L.id);
+    rawLenByLayer[L.id] = pathStats.lenPx - lenBefore;
   }
   if (firstEverGen) resetPvFitWithRulers();   // first drawing ever shown: fit the whole page, rulers included
   renderPaper();                        // regenerating an existing view keeps the user's pan/zoom
@@ -2730,18 +2754,18 @@ function buildPenPathsExport(isLayout, dims){
       // Same guard renderPreviewLayoutOverlay uses; refreshing the style
       // makes sure the stroke-dasharray read below is the current one.
       if (!block.dom) createBlockDom(block); else updateBlockStyle(block);
-      for (const L of LAYERS.slice().reverse()){
-        const g = block.dom.layerGroups[L.key];
-        if (!g || !block.layerVisible[L.key]) continue;
-        sources.push({ g, root, pen: penById(blockLayerPenId(block, L.key)) });
+      for (const L of layers.slice().reverse()){
+        const g = block.dom.layerGroups[L.id];
+        if (!g || !block.layerVisible[L.id]) continue;
+        sources.push({ g, root, pen: penById(blockLayerPenId(block, L.id)) });
       }
     }
   } else {
     const root = $('plot');
-    for (const L of LAYERS.slice().reverse()){
-      const g = document.getElementById('g_' + L.key);
-      if (!g || !layerStyle(L.key).on) continue;
-      sources.push({ g, root, pen: penById(layerEls[L.key].pen.value) });
+    for (const L of layers.slice().reverse()){
+      const g = document.getElementById('g_' + L.id);
+      if (!g || !L.on) continue;
+      sources.push({ g, root, pen: penById(L.pen) });
     }
   }
   const trim = $('trimToMargins').checked;
@@ -2801,33 +2825,47 @@ function buildPenPathsExport(isLayout, dims){
 /* ================= init =================
    Everything above only declares. This wires the DOM and starts the
    module's live behaviour — called once by app.js, in script order. */
-export function initSvgExport(){
-  for (const L of LAYERS){
+// (Re)builds the Lines tab's layer rows from the current instances — at
+// boot, and again after a scene import replaced the list. Each row's
+// listeners write into its instance; applyLayerStyle renders the instance
+// back into the row.
+export function buildLayerRows(){
+  for (const id in layerEls) delete layerEls[id];
+  for (const host of new Set(Object.values(LAYER_TYPES).map(T => T.host))) $(host).replaceChildren();
+  for (const L of layers){
     const row = document.createElement('div');
     row.className = 'layer';
     row.innerHTML =
-      '<input type="checkbox" ' + (L.on ? 'checked' : '') + ' aria-label="' + L.name + ' on">' +
+      '<input type="checkbox" aria-label="' + L.name + ' on">' +
       '<svg class="swatch" viewBox="0 0 50 14" aria-hidden="true"><path d="M3 7 L47 7" fill="none"/></svg>' +
-      '<span class="nm' + (L.name.startsWith('·') ? ' hid' : '') + '">' + L.name + '</span>' +
+      '<span class="nm' + (L.name.startsWith('·') ? ' hid' : '') + '"></span>' +
       '<select class="penSelect" aria-label="' + L.name + ' pen"></select>' +
       '<select aria-label="' + L.name + ' dash">' + dashOptionsHtml() + '</select>';
-    $(L.host).appendChild(row);
+    row.children[2].textContent = L.name;   // a fill instance's name is user text — never innerHTML
+    $(layerType(L).host).appendChild(row);
     const [chk, , , pen, dash] = row.children;
     const sw = row.children[1].firstChild;
     fillPenSelect(pen, L.pen);
-    dash.value = L.dash;
-    layerEls[L.key] = { chk, pen, dash, sw };
-    const restyle = () => applyLayerStyle(L.key);
-    pen.addEventListener('change', restyle);
-    dash.addEventListener('change', () => { restyle(); refreshStatusR(); });
+    layerEls[L.id] = { chk, pen, dash, sw };
+    pen.addEventListener('change', () => { L.pen = pen.value; applyLayerStyle(L.id); });
+    dash.addEventListener('change', () => { L.dash = dash.value; applyLayerStyle(L.id); refreshStatusR(); });
     chk.addEventListener('change', () => {
+      L.on = chk.checked;
       markStale();
       // Fades the Lines-section sliders that belong to a layer group once that
       // group draws nothing (panel-controls.js).
       syncLineLayerUI();
+      updateTextureGizmo();   // the Circles centre gizmo follows its layer's checkbox
     });
-    applyLayerStyle(L.key);
+    applyLayerStyle(L.id);
   }
+}
+
+/* ================= init =================
+   Everything above only declares. This wires the DOM and starts the
+   module's live behaviour — called once by app.js, in script order. */
+export function initSvgExport(){
+  buildLayerRows();
   buildDashFields('D1');
   buildDashFields('D2');
   $('addDashBtn').addEventListener('click', addDashSlot);

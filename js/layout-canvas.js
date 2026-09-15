@@ -23,8 +23,9 @@
    snap guides) is a separate top-level layer, updated independently, so
    selecting/dragging never touches block content nodes and vice versa.
    ================================================================ */
-import { $, DASH_KEYS, LAYERS, PEN_LIBRARY, dashOnFraction, isFormControlTarget, isTextEntryTarget, penById, positionSegPill, scaledDash, svgEl } from './main.js';
-import { PAPERS, buildTrimMaskGroup, computeDStats, computePaperLayout, dashOptionsHtml, fillPenSelect, getMargins, layerEls, refreshStatusR, renderPaper, syncPreviewTrimMask } from './svg-export.js';
+import { $, DASH_KEYS, PEN_LIBRARY, dashOnFraction, isFormControlTarget, isTextEntryTarget, penById, positionSegPill, scaledDash, svgEl } from './main.js';
+import { layerById, layers } from './layers.js';
+import { PAPERS, buildTrimMaskGroup, computeDStats, computePaperLayout, dashOptionsHtml, fillPenSelect, getMargins, refreshStatusR, renderPaper, syncPreviewTrimMask } from './svg-export.js';
 import { activeTab, setActiveTab, lastGen, makeNameEditable, markStale } from './panel-controls.js';
 import { setActiveSheet, applyPv, resetPvFitWithRulers, updateRuler } from './paper-preview.js';
 import { resolveOverridePen, syncPenLibraryUI } from './pen-library.js';
@@ -258,11 +259,11 @@ function syncLayoutGridGuides(dims){
    file keeps calling it "block" throughout (blocks[], blockCounter,
    renderBlocksList, #blocksFloat, etc). That's deliberate, not an
    oversight: this codebase already has a completely different, pre-
-   existing "layer" concept — the pen layers (LAYERS, layerEls,
+   existing "layer" concept — the pen layers (layers.js, layerEls,
    applyLayerStyle, the .layer CSS class for Crease/Hatch/etc rows).
    Reusing "layer" for the internal identifiers here too would collide
    with that existing system throughout these very functions (e.g. this
-   function already reads layerEls per pen layer WHILE building one of
+   function already reads every pen layer WHILE building one of
    these). Only user-visible strings say "layer"; every internal name
    stays "block" to keep the two concepts unambiguous in the code. */
 function freezeCurrentGeneration(){
@@ -272,12 +273,12 @@ function freezeCurrentGeneration(){
   const layerPaths = {};
   const layerVisible = {};
   let any = false;
-  for (const L of LAYERS){
-    const g = document.getElementById('g_' + L.key);
+  for (const L of layers){
+    const g = document.getElementById('g_' + L.id);
     const path = g ? g.querySelector('path') : null;
     const d = path ? path.getAttribute('d') : '';
     if (d && d.trim()){
-      layerPaths[L.key] = d;
+      layerPaths[L.id] = d;
       // Visibility is captured ONCE here and becomes the block's OWN,
       // independent state from this point on — unlike color/width/dash
       // (which stay live, read fresh from the panel on every render, unless
@@ -285,7 +286,7 @@ function freezeCurrentGeneration(){
       // right-click layer menu), a layer toggled off in the panel later
       // should NOT retroactively hide it here, and vice versa. Per-block
       // visibility is edited afterward via the right-click layer menu.
-      layerVisible[L.key] = layerEls[L.key].chk.checked;
+      layerVisible[L.id] = L.on;
       any = true;
     }
   }
@@ -472,15 +473,15 @@ export function createBlockDom(block){
     'translate(' + block.freezeOffX + ',' + block.freezeOffY + ') scale(' + block.freezeScale + ')');
   outer.appendChild(inner);
   const layerGroups = {};
-  // LAYERS is ordered highest-priority-first (see main.js); paint order
+  // layers is ordered highest-priority-first (see layers.js); paint order
   // needs the OPPOSITE — later-appended SVG elements draw on top, so
   // iterating in reverse here puts Silhouette last/on top and Hatch/
   // Crosshatch/Deep shadow first/underneath, matching exactly how
   // svg-export.js's onResult() builds the live preview's paint order
-  // (LAYERS.slice().reverse()). A previous version iterated forward here,
+  // (layers.slice().reverse()). A previous version iterated forward here,
   // which inverted every block's layer stacking versus the live preview.
-  for (const L of LAYERS.slice().reverse()){
-    const d = block.layerPaths[L.key];
+  for (const L of layers.slice().reverse()){
+    const d = block.layerPaths[L.id];
     if (!d) continue;
     const g = svgEl('g');
     g.setAttribute('fill', 'none');
@@ -491,7 +492,7 @@ export function createBlockDom(block){
     p.setAttribute('d', d);
     g.appendChild(p);
     inner.appendChild(g);
-    layerGroups[L.key] = g;
+    layerGroups[L.id] = g;
   }
   block.dom = { outer, inner, layerGroups };
   $('layoutBlocksLayer').appendChild(outer);
@@ -513,8 +514,8 @@ function updateBlockTransform(block){
 export function updateBlockStyle(block){
   if (!block.dom) return;
   const combinedScale = Math.max(1e-6, block.scale * block.freezeScale);
-  for (const L of LAYERS){
-    const g = block.dom.layerGroups[L.key];
+  for (const L of layers){
+    const g = block.dom.layerGroups[L.id];
     if (!g) continue;
     // Override reads this block's OWN per-layer style (set via the
     // right-click layer menu — see openLayerContextMenu) instead of the
@@ -528,11 +529,11 @@ export function updateBlockStyle(block){
     // either way, so an overridden layer still follows its pen's and its
     // slot's own values if either is edited later, exactly like a synced
     // layer would.
-    const ov = block.override && block.overrideStyle ? block.overrideStyle[L.key] : null;
-    const pen = penById(blockLayerPenId(block, L.key));
+    const ov = block.override && block.overrideStyle ? block.overrideStyle[L.id] : null;
+    const pen = penById(blockLayerPenId(block, L.id));
     const color = pen.color;
     const widthMm = pen.width;
-    const dashKey = ov ? ov.dash : layerEls[L.key].dash.value;
+    const dashKey = ov ? ov.dash : L.dash;
     const width = widthMm / combinedScale;
     // Dash/gap are true mm lengths, independent of pen width — scale by the
     // same mm->local-unit factor as width above, NOT by width itself (see
@@ -546,7 +547,7 @@ export function updateBlockStyle(block){
     // not the live panel checkbox — for a synced block, color/width/dash
     // above stay live on purpose; only on/off is decoupled per the
     // per-block layer menu, for every block regardless of override state.
-    g.style.display = block.layerVisible[L.key] ? '' : 'none';
+    g.style.display = block.layerVisible[L.id] ? '' : 'none';
   }
 }
 // The pen one of a block's layers draws with: its own override pen while
@@ -555,7 +556,7 @@ export function updateBlockStyle(block){
 // the file can never group a layer under a different pen than it shows.
 export function blockLayerPenId(block, key){
   const ov = block.override && block.overrideStyle ? block.overrideStyle[key] : null;
-  return ov ? ov.pen : layerEls[key].pen.value;
+  return ov ? ov.pen : layerById(key).pen;
 }
 export function removeBlockDom(block){
   if (block.dom){ block.dom.outer.remove(); block.dom = null; }
@@ -654,12 +655,12 @@ export function computeLayoutStats(){
   const out = { segments: 0, paths: 0, closedPaths: 0, lenMm: 0 };
   for (const block of blocks){
     if (!block.visible) continue;
-    for (const L of LAYERS){
-      if (!block.layerVisible[L.key]) continue;
-      const d = block.layerPaths[L.key];
+    for (const L of layers){
+      if (!block.layerVisible[L.id]) continue;
+      const d = block.layerPaths[L.id];
       if (!d) continue;
       // Same override-vs-live dash resolution updateBlockStyle already uses.
-      const dashKey = (block.override && block.overrideStyle[L.key]) ? block.overrideStyle[L.key].dash : layerEls[L.key].dash.value;
+      const dashKey = (block.override && block.overrideStyle[L.id]) ? block.overrideStyle[L.id].dash : L.dash;
       const s = computeDStats(d, dashOnFraction(dashKey));
       out.segments += s.segments;
       out.paths += s.paths;
@@ -1501,7 +1502,7 @@ function endInteraction(e){
 /* ================= per-block layer visibility context menu =================
    Right-clicking a block overrides the browser's default context menu with
    a small list of just that block's OWN layers (only the ones it actually
-   has geometry for — layerPaths keys — not every entry in LAYERS), each
+   has geometry for — layerPaths keys — not every layer instance), each
    toggleable independently. This is where the per-block visibility state
    introduced above actually gets edited after the fact.
    The "Override" checkbox at the bottom (static — see index.html, not
@@ -1524,18 +1525,17 @@ function openLayerContextMenu(block, clientX, clientY){
   $('layerContextMenu').classList.toggle('overrideActive', !!block.override);
   const list = $('layerContextMenuList');
   list.innerHTML = '';
-  for (const L of LAYERS){
-    if (!(L.key in block.layerPaths)) continue;
+  for (const L of layers){
+    if (!(L.id in block.layerPaths)) continue;
     const row = document.createElement('div');
     row.className = 'savedView';
     let html =
       '<span class="svName">' + L.name + '</span>' +
       '<button type="button" class="svBtn svEye" title="Toggle visibility" aria-label="Toggle ' + L.name + ' visibility">' +
-        (block.layerVisible[L.key] ? '&#9673;' : '&#9675;') + '</button>';
+        (block.layerVisible[L.id] ? '&#9673;' : '&#9675;') + '</button>';
     if (block.override){
-      if (!block.overrideStyle[L.key]){
-        const els = layerEls[L.key];
-        block.overrideStyle[L.key] = { pen: els.pen.value, dash: els.dash.value };
+      if (!block.overrideStyle[L.id]){
+        block.overrideStyle[L.id] = { pen: L.pen, dash: L.dash };
       }
       html +=
         // Empty spacer — occupies the extra grid column between the eye
@@ -1555,13 +1555,13 @@ function openLayerContextMenu(block, clientX, clientY){
     // Override was on.
     row.innerHTML = html;
     row.querySelector('.svEye').addEventListener('click', () => {
-      block.layerVisible[L.key] = !block.layerVisible[L.key];
+      block.layerVisible[L.id] = !block.layerVisible[L.id];
       updateBlockStyle(block);
       refreshStatusR();
       openLayerContextMenu(block, clientX, clientY);   // cheap full rebuild — refreshes the toggled icon
     });
     if (block.override){
-      const st = block.overrideStyle[L.key];
+      const st = block.overrideStyle[L.id];
       const penSelect = row.children[3], dashSelect = row.children[4];
       fillPenSelect(penSelect, st.pen);
       dashSelect.value = st.dash;
@@ -1641,9 +1641,9 @@ function clipboardRecordToBlock(rec, srcPens){
   const src = rec.layerPaths;
   if (!src || typeof src !== 'object') return null;
   const layerPaths = {};
-  for (const L of LAYERS){
-    const d = src[L.key];
-    if (typeof d === 'string' && d.trim()) layerPaths[L.key] = d;
+  for (const L of layers){
+    const d = src[L.id];
+    if (typeof d === 'string' && d.trim()) layerPaths[L.id] = d;
   }
   if (!Object.keys(layerPaths).length) return null;
   // Placement — every number the transform math divides or rotates by.

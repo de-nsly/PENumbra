@@ -591,8 +591,7 @@ input[type=checkbox]:checked{background:radial-gradient(circle, var(--accent) 4.
 /* checkbox row — ONE class for every checkbox in the app (a <label> wrapping
    the input + its text). Modifiers:
      .chk-sub    muted secondary checkbox (e.g. "same noise field per layer")
-     .chkRow     two checkboxes sharing one line, split evenly
-     .rowSplit   a checkbox and an unrelated sibling control pushed to opposite ends */
+     .chkRow     two checkboxes sharing one line, split evenly */
 .chk{display:flex;align-items:center;gap:8px;margin:7px 0;
   font-size:var(--fs-control);cursor:pointer}
 .chk input{width:var(--check-size);height:var(--check-size)}
@@ -600,13 +599,13 @@ input[type=checkbox]:checked{background:radial-gradient(circle, var(--accent) 4.
 .chk-gap{margin-top:10px}   /* a checkbox that starts a new sub-group inside a section */
 .chkRow{display:flex;gap:8px;margin:7px 0}
 .chkRow .chk{flex:1;margin:0;min-width:0}
-.rowSplit{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
-.rowSplit .chk{margin:0}
 select,input[type=number]{background:var(--panel2);border:1px solid var(--line);
   border-radius:5px;padding:4px 6px;font-family:var(--mono);font-size:var(--fs-data)}
 input[type=number]{width:58px}
 
-/* Dash section (Pen library tab) — two user-editable 6-value patterns */
+/* Dash section (Pen library tab) — two user-editable 6-value patterns.
+   .dashGroupLabel (a group title with a control at the right end) is also
+   the header of each texture filter in the Texture tab (texture-stack.js). */
 .dashGroup{margin:10px 0}
 .dashGroupLabel{display:flex;align-items:center;justify-content:space-between;
   font-size:var(--fs-control);color:var(--text);margin-bottom:6px}
@@ -620,12 +619,9 @@ input[type=number]{width:58px}
   -webkit-appearance:none;margin:0}
 .dashField span{font-size:var(--fs-caps);color:var(--muted);text-transform:uppercase;letter-spacing:var(--ls-caps)}
 
-/* Texture section (texture tab) — each effect is a .textureGroup: a .chk
-   on/off toggle, then its .textureFieldsWrap of min/max sliders. */
+/* Texture section (texture tab) — each filter in a layer's stack is a
+   .textureGroup: a .dashGroupLabel header, then its parameter controls. */
 .textureGroup{margin:10px 0}
-.textureGroup > .chk{margin:0 0 6px}
-.textureFieldsWrap{transition:opacity .15s}
-.textureSectionSep{border:none;border-top:1px solid var(--line);margin:14px 0 10px}
 
 /* layer rows — pen swatch style */
 #hatchLayers{border-top:1px solid var(--line);margin-top:6px;padding-top:2px}

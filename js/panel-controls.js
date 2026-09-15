@@ -7,38 +7,21 @@
    the shadow/soft-shadow UI sync helpers.
    ================================================================ */
 import { $, APP_VERSION, isFormControlTarget, positionSegPill, worker } from './main.js';
-import { HATCH_CAP_PRESETS, SETTINGS, SHADOW_BUDGET_PRESETS, TEXTURE_LAYER_KEYS, formatValue, settingById, settingElementIds } from './settings.js';
+import { HATCH_CAP_PRESETS, SETTINGS, SHADOW_BUDGET_PRESETS, formatValue, settingById } from './settings.js';
 import { camera, captureShadingBuffer, clearActiveView, lightVec, modelMesh, modelPivot, syncGroundCatcher, syncShadowCasting, updateLight, updateLightGizmo, updateModelRotation, vp } from './viewport3d.js';
-import { computePaperLayout, layerEls, layerStyle } from './svg-export.js';
+import { computePaperLayout, layerStyle } from './svg-export.js';
 import { updateTextureGizmo } from './paper-preview.js';
 import { pendingSoIvExport } from './scene-io.js';
 
 /* ================= settings / staleness ================= */
 // shared by the live 'input' listener below AND scene import — a restored
 // control's value has to be reflected in its val-span the same way a user
-// dragging it would, just without an 'input' event to trigger it naturally
-// Per-layer texture clones suffix every id with _h1/_h2/_h3/_cr (see
-// buildPerLayerTextureTabs in main.js) — stripping that suffix maps a
-// clone back to the registry entry (settings.js) it shares with the
-// General control.
-function baseTexId(id){
-  return id.replace(/_(h1|h2|h3|cr)$/, '');
-}
-function settingFor(el){ return settingById(baseTexId(el.id)); }
-// The value span's own id is always "<baseId>Val" in the source markup
-// (e.g. texOvershootMin / texOvershootMinVal) — but buildPerLayerTextureTabs
-// (main.js) renames every id in a per-layer clone by appending _h1/_h2/_h3/_cr
-// to whatever id was already there, so the clone's span ends up
-// "texOvershootMinVal_h1", not "texOvershootMin_h1Val". Has to reinsert the
-// suffix in the right place rather than just appending 'Val'.
-function valLabelId(id){
-  const m = id.match(/^(.*)(_(?:h1|h2|h3|cr))$/);
-  return m ? m[1] + 'Val' + m[2] : id + 'Val';
-}
+// dragging it would, just without an 'input' event to trigger it naturally.
+// The value span's id is always "<id>Val" in the markup.
 export function refreshValLabel(el){
-  const v = $(valLabelId(el.id));
+  const v = $(el.id + 'Val');
   if (!v) return;
-  const s = settingFor(el);
+  const s = settingById(el.id);
   if (!s) return;
   v.textContent = formatValue(s, el.value);
 }
@@ -59,13 +42,13 @@ export function refreshValLabel(el){
    value" problem this feature exists to solve.
    Invalid (non-numeric) text reverts to the previous value with no
    change. A valid number outside the slider's range clamps to whichever
-   boundary it's past, rather than reverting. */
-function makeSliderValueEditable(rangeEl){
-  const s = settingFor(rangeEl);
-  if (!s || s.presets) return;      // preset ladders excluded — see comment above
-  const span = $(valLabelId(rangeEl.id));
-  if (!span) return;
-  const unit = s.unit || '';
+   boundary it's past, rather than reverting.
+   `spec` is the slider's registry entry or a texture filter parameter
+   (anything formatValue accepts); `span` its value label; `refresh` puts
+   the current value back into the label. */
+export function makeSliderValueEditable(rangeEl, span, spec, refresh){
+  if (!span || spec.presets) return;      // preset ladders excluded — see comment above
+  const unit = spec.unit || '';
   let editing = false, cancelled = false;
   function beginEdit(){
     if (editing) return;
@@ -98,7 +81,7 @@ function makeSliderValueEditable(rangeEl){
         rangeEl.dispatchEvent(new Event('input', { bubbles: true }));
       }
     }
-    refreshValLabel(rangeEl);   // restores the unit suffix; also re-displays the true value if reverted
+    refresh();   // restores the unit suffix; also re-displays the true value if reverted
   }
   span.addEventListener('dblclick', beginEdit);
   span.addEventListener('blur', endEdit);
@@ -359,13 +342,6 @@ export function syncLineLayerUI(){
   $('contourMaxHopsCtl').classList.toggle('ctlDisabled', !contourOn);
   $('creaseDegCtl').classList.toggle('ctlDisabled', !creaseOn);
 }
-// Circles pattern's Center X/Y/threshold now live in the always-visible
-// General sub-tab (moved there alongside Hatching/Shadows), so there's no
-// group visibility to toggle here anymore — only the gizmo, which still
-// depends on the Circles layer's own pen checkbox.
-function syncTexturePatternUI(){
-  updateTextureGizmo();
-}
 // Texture pattern's Center X/Y are offsets from the page's own center
 // (redefined from the solver's arbitrary origin — see groundPatternCenterX/Y
 // in gatherSettings above), so the natural range is exactly half the page
@@ -491,120 +467,28 @@ export function setPanelMode(mode){
     $(m.btn).classList.toggle('active', m.mode === mode);
     $(m.btn).setAttribute('aria-selected', String(m.mode === mode));
   }
-  // The hatching tab's sub-tabs sit in the pinned #panelHead, outside
-  // #textureTab itself, so they need their own show/hide (the pill inside
-  // re-measures itself on reveal via its ResizeObserver).
-  $('texSubTabsHead').style.display = mode === 'texture' ? '' : 'none';
   positionSegPill($('panelModeToggle'));
-}
-
-/* ================= hatch texture enable checkboxes =================
-   Each texture effect (Overshoot, Spacing jitter, Angle jitter, and
-   whatever gets added later) has its own on/off checkbox, unchecked by
-   default so shadows stay clean unless explicitly turned on, with its
-   fields row dimmed while off. Listed by id prefix only, so a future
-   effect just needs one more entry here — same pattern as PANEL_MODES. */
-const TEXTURE_GROUPS = ['texTrim', 'texOvershoot', 'texSpacing', 'texAngle', 'texWobble', 'texRegWobble', 'texGaps'];
-function syncTextureGroup(prefix, suffix){
-  const onEl = $(prefix + 'On' + suffix), fieldsEl = $(prefix + 'Fields' + suffix);
-  if (!onEl || !fieldsEl) return;   // e.g. texAngle/texRegWobble don't exist in the Circles clone
-  fieldsEl.classList.toggle('ctlDisabled', !onEl.checked);
-}
-
-/* ================= texture tab: single-level tabs + per-layer individual mode =================
-   One tab level, two possible button rows shown mutually exclusively:
-   General/Texture by default, or G/H1/H2/H3/C when "Individual texture
-   settings" (in General) is on — not a nested third tier. The per-layer
-   content panels (H1/H2/H3/Circles, built by cloning — see
-   buildPerLayerTextureTabs in main.js) are the same regardless of which
-   row is currently shown. Turning Individual back off simply goes back
-   to reading General's own values, which were never touched while it
-   was on. */
-let texActiveTop = 'general';
-
-function texLayerEnabled(key){
-  return !!(layerEls[key] && layerEls[key].chk.checked);
-}
-// Sets which top-level content panel is showing (General settings, the
-// shared Texture controls, or one specific layer's own controls).
-function selectTexTop(key){
-  texActiveTop = key;
-  document.querySelectorAll('.texTopTabBtn').forEach(b => b.classList.toggle('active', b.dataset.textop === key));
-  $('texSubGeneral').style.display = key === 'general' ? '' : 'none';
-  $('texGeneralSettings').style.display = key === 'texture' ? '' : 'none';
-  TEXTURE_LAYER_KEYS.forEach(k => {
-    const el = $('texLayerSettings_' + k);
-    if (el) el.style.display = (key === k) ? '' : 'none';
-  });
-  document.querySelectorAll('.textureSubTabs').forEach(positionSegPill);
-}
-// Only show tab buttons for currently-enabled layers (in the Individual
-// row); if every one of them happens to be off, fall back to showing H1
-// alone rather than leaving nothing to click. The General/"G" button is
-// never filtered.
-export function updateTexLayerTabVisibility(){
-  const anyEnabled = TEXTURE_LAYER_KEYS.some(texLayerEnabled);
-  document.querySelectorAll('#texTopTabsIndividual .texTopTabBtn').forEach(btn => {
-    const key = btn.dataset.textop;
-    if (key === 'general') return;
-    btn.style.display = (anyEnabled ? texLayerEnabled(key) : key === 'h1') ? '' : 'none';
-  });
-  const individualOn = $('texIndividualOn').checked;
-  if (individualOn && texActiveTop !== 'general'){
-    const activeBtn = document.querySelector('#texTopTabsIndividual .texTopTabBtn[data-textop="' + texActiveTop + '"]');
-    if (!activeBtn || activeBtn.style.display === 'none'){
-      const firstVisible = [...document.querySelectorAll('#texTopTabsIndividual .texTopTabBtn')].find(b => b.style.display !== 'none');
-      if (firstVisible) selectTexTop(firstVisible.dataset.textop);
-    }
-  }
-  document.querySelectorAll('.textureSubTabs').forEach(positionSegPill);
-}
-
-// Copies every current General texture-effect value into one layer's own
-// suffixed controls — run once per layer at the moment Individual mode
-// is switched on, so each layer starts out matching what was already
-// active rather than jumping to a different default.
-function seedLayerTextureSettings(key){
-  $('texGeneralSettings').querySelectorAll('input').forEach(genEl => {
-    const layerEl = $(genEl.id + '_' + key);
-    if (!layerEl) return;   // e.g. Angle jitter / Regular wobble have no Circles counterpart
-    if (genEl.type === 'checkbox') layerEl.checked = genEl.checked;
-    else layerEl.value = genEl.value;
-    refreshValLabel(layerEl);
-    layerEl.dispatchEvent(new Event('change'));
-  });
-}
-export function syncIndividualMode(){
-  const on = $('texIndividualOn').checked;
-  $('texTopTabsNormal').style.display = on ? 'none' : '';
-  $('texTopTabsIndividual').style.display = on ? '' : 'none';
-  let nextTop = texActiveTop;
-  if (on && nextTop === 'texture') nextTop = 'h1';                        // "Texture" doesn't exist in Individual mode
-  if (!on && TEXTURE_LAYER_KEYS.includes(nextTop)) nextTop = 'texture';   // layer tabs don't exist in Normal mode
-  selectTexTop(nextTop);
-  if (on) updateTexLayerTabVisibility();
 }
 
 /* ================= init =================
    Everything above only declares. This wires the DOM and starts the
    module's live behaviour — called once by app.js, in script order. */
 export function initPanelControls(){
-  document.querySelectorAll('input[type="range"]').forEach(makeSliderValueEditable);
   // Every solve-affecting control (settings.js: regen) re-runs the pipeline
-  // on input; the entry's flags say what else that edit has to move.
+  // on input; the entry's flags say what else that edit has to move. Every
+  // range control gets the double-click value editor.
   for (const s of SETTINGS){
+    const el = $(s.id);
+    if (!el) continue;
+    if (s.kind === 'range') makeSliderValueEditable(el, $(s.id + 'Val'), s, () => refreshValLabel(el));
     if (!s.regen) continue;
-    for (const id of settingElementIds(s)){
-      const el = $(id);
-      if (!el) continue;   // e.g. the Circles clone has no Angle jitter
-      el.addEventListener('input', () => {
-        markStale();
-        if (s.light){ updateLight(); updateLightGizmo(); }
-        if (s.rotAxis){ updateModelRotation(); }
-        if (s.clearsView) clearActiveView();
-        refreshValLabel(el);
-      });
-    }
+    el.addEventListener('input', () => {
+      markStale();
+      if (s.light){ updateLight(); updateLightGizmo(); }
+      if (s.rotAxis){ updateModelRotation(); }
+      if (s.clearsView) clearActiveView();
+      refreshValLabel(el);
+    });
   }
   $('genBtn').addEventListener('click', doGenerate);
   $('autoGenBtn').setAttribute('aria-checked', 'true');
@@ -614,8 +498,7 @@ export function initPanelControls(){
   $('groundShadow').addEventListener('change', syncShadowUI);
   syncShadowUI();   // sets the initial disabled state at load
   syncLineLayerUI();
-  layerEls['cr'].chk.addEventListener('change', syncTexturePatternUI);
-  syncTexturePatternUI();
+  updateTextureGizmo();
   // previewOverlaySvg's visibility is normally kept in sync by the tab-switch
   // click handler in layout-canvas.js — but that handler has an early return
   // when the clicked tab is already the active one, so it never runs for
@@ -655,30 +538,6 @@ export function initPanelControls(){
     if (e.key === 'Escape' && !aboutOverlay.hidden) closeAbout();
   });
   for (const m of PANEL_MODES) $(m.btn).addEventListener('click', () => setPanelMode(m.mode));
-  for (const prefix of TEXTURE_GROUPS){
-    syncTextureGroup(prefix, '');
-    $(prefix + 'On').addEventListener('change', () => syncTextureGroup(prefix, ''));
-    for (const key of TEXTURE_LAYER_KEYS){
-      const suffix = '_' + key;
-      syncTextureGroup(prefix, suffix);
-      const onEl = $(prefix + 'On' + suffix);
-      if (onEl) onEl.addEventListener('change', () => syncTextureGroup(prefix, suffix));
-    }
-  }
-  document.querySelectorAll('.texTopTabBtn').forEach(btn => {
-    btn.addEventListener('click', () => { selectTexTop(btn.dataset.textop); markStale(); });
-  });
-  $('texIndividualOn').addEventListener('change', () => {
-    if ($('texIndividualOn').checked) TEXTURE_LAYER_KEYS.forEach(seedLayerTextureSettings);
-    syncIndividualMode();
-    markStale();
-  });
-  selectTexTop('general');
-  syncIndividualMode();
-  TEXTURE_LAYER_KEYS.forEach(k => {
-    if (layerEls[k]) layerEls[k].chk.addEventListener('change', updateTexLayerTabVisibility);
-  });
-  updateTexLayerTabVisibility();
   /* ================= settings panel resize handle =================
      Drag-to-resize for the right settings panel. 322px (this stylesheet's
      own default column width) is both the starting width and the hard

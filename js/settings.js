@@ -25,14 +25,13 @@
      clearsView  editing it invalidates the active saved view
      light       editing it moves the three.js light + gizmo
      rotAxis     editing it re-applies the model rotation
-     perLayer    the control is cloned per fill layer with an _h1/_h2/
-                 _h3/_cr id suffix (buildPerLayerTextureTabs, main.js);
-                 those clones share this entry — transitional until the
-                 per-layer texture stacks replace the clones
      onRestore   a sync function (or a list) the scene importer calls
                  once after every restored value is in place; the same
                  function named by several entries runs once, in the
                  order entries appear here (see restoreHooks)
+
+   Not here: each layer's on/pen/dash and its texture stack — those are
+   the layer instances (layers.js), saved as their own block of a .pen.
 
    Every onRestore target is a hoisted `function` declaration in its
    module, so referencing it here at module top level is safe inside the
@@ -40,7 +39,7 @@
    ================================================================ */
 import { applySmoothAngleChange, applySmoothShadingToggle, syncGroundCatcher, syncShadowCasting, syncSmoothAngleVisibility, updateLight, updateLightGizmo, updateModelRotation } from './viewport3d.js';
 import { applyPageColor, syncMarginMode } from './svg-export.js';
-import { syncIndividualMode, syncShadowUI, syncSoftShadowsUI, updateTexLayerTabVisibility } from './panel-controls.js';
+import { syncShadowUI, syncSoftShadowsUI } from './panel-controls.js';
 import { syncPenPathsExportUI, syncSplitDashChoiceFromDom } from './pen-library.js';
 
 /* ================= preset ladders =================
@@ -61,14 +60,8 @@ export function fmtBigCount(n){
   return Math.round(n/1e3) + 'k';
 }
 
-// The fill layers whose texture controls are cloned with an id suffix.
-// Goes away with the clones (refactor plan §4b).
-export const TEXTURE_LAYER_KEYS = ['h1', 'h2', 'h3', 'cr'];
-
 const range = (id, extra) => ({ id, kind:'range', regen:true, ...extra });
 const chk   = (id, extra) => ({ id, kind:'checkbox', regen:true, ...extra });
-const tex   = (id, extra) => ({ id, kind:'range', regen:true, perLayer:true, decimals:1, unit:'mm', ...extra });
-const texOn = id => ({ id, kind:'checkbox', regen:true, perLayer:true });
 
 export const SETTINGS = [
   /* ---- camera (3D viewport panel) ---- */
@@ -93,17 +86,6 @@ export const SETTINGS = [
   range('texGroundPatternCenterX', { unit:'mm', decimals:1 }),
   range('texGroundPatternCenterY', { unit:'mm', decimals:1 }),
   range('texCirclesThr', { unit:'', decimals:2 }),
-  /* ---- texture mode ---- */
-  chk('texIndividualOn', { onRestore: [syncIndividualMode, updateTexLayerTabVisibility] }),
-  /* ---- texture effects (cloned per fill layer, see perLayer) ---- */
-  texOn('texTrimOn'),      tex('texTrimValue'),
-  texOn('texOvershootOn'), tex('texOvershootMin'), tex('texOvershootMax'),
-  texOn('texSpacingOn'),   tex('texSpacingMin'),   tex('texSpacingMax'),
-  texOn('texAngleOn'),     tex('texAngleMin', { unit:'°' }), tex('texAngleMax', { unit:'°' }),
-  texOn('texWobbleOn'),    texOn('texWobbleShared'),
-  tex('texWobbleSpacing'), tex('texWobbleAmp'), tex('texWobbleVariation', { unit:'' }), tex('texWobbleVarScale'),
-  texOn('texRegWobbleOn'), tex('texRegWobbleAmp'), tex('texRegWobbleWavelength'),
-  texOn('texGapsOn'),      tex('texGapsSpacing'),  tex('texGapsMax'),
   /* ---- lines ---- */
   chk('watertight'),
   range('dedupOffMult', { unit:'×', decimals:2 }),
@@ -149,14 +131,8 @@ export const SETTINGS = [
 const byId = new Map(SETTINGS.map(s => [s.id, s]));
 export function settingById(id){ return byId.get(id); }
 
-// The element ids one entry owns: its own, plus the per-layer clones for
-// a perLayer entry. A clone may not exist (the Circles clone has no Angle
-// jitter / Regular wobble) — callers $() each id and skip a null.
-export function settingElementIds(s){
-  return s.perLayer ? [s.id, ...TEXTURE_LAYER_KEYS.map(k => s.id + '_' + k)] : [s.id];
-}
-
-// Text for a control's value label.
+// Text for a control's value label. `s` is a registry entry, or any object
+// with the same unit/decimals/presets fields (a texture filter parameter).
 export function formatValue(s, value){
   if (s.presets) return fmtBigCount(s.presets[+value]);
   const num = s.decimals == null ? String(value) : (+value).toFixed(s.decimals);
@@ -166,7 +142,7 @@ export function formatValue(s, value){
 // Every id a .pen scene's settings block records (the dash fields are
 // added by the caller — they are a growable slot list, not fixed controls).
 export function sceneSettingIds(){
-  return SETTINGS.filter(s => s.scene !== false).flatMap(settingElementIds);
+  return SETTINGS.filter(s => s.scene !== false).map(s => s.id);
 }
 
 // The sync functions the scene importer runs after restoring values, each

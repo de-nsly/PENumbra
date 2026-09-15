@@ -16,7 +16,8 @@
    viewport to fit) lives in layout-canvas.js.
    ================================================================ */
 import { $, onMiddleDblClick, svgEl } from './main.js';
-import { baseSheetSize, computePaperLayout, layerEls, layerStyle } from './svg-export.js';
+import { fillLayers, layerType, layers } from './layers.js';
+import { baseSheetSize, computePaperLayout, layerStyle } from './svg-export.js';
 import { computeLayoutPaperDims, selectedBlocks, updateSelectionOverlay } from './layout-canvas.js';
 import { activeTab } from './panel-controls.js';
 
@@ -163,7 +164,8 @@ function screenToPreviewMm(clientX, clientY){
    easily carry thousands of endpoints.
    ================================================================ */
 const ENDPOINT_DOT_R = 3;                                    // screen px
-const ENDPOINT_DOT_LAYERS = ['so', 'iv', 'ih', 'sv', 'sh'];
+// The Silhouette and Contour families (LAYER_TYPES chain in layers.js), in layer order.
+const ENDPOINT_DOT_CHAINS = { silhouette: 1, contour: 1 };
 const ENDPOINT_DOT_CAP = 8000;                               // sanity bound on one redraw
 function openSubpathEndpoints(d){
   const out = [];
@@ -182,12 +184,14 @@ function drawPathEndpointMarkers(){
   if (activeTab !== 'preview' || !$('debugShowPathEndpoints').checked) return;
   const d = [], r = ENDPOINT_DOT_R;
   let n = 0;
-  for (const key of ENDPOINT_DOT_LAYERS){
+  for (const L of layers){
+    if (!ENDPOINT_DOT_CHAINS[layerType(L).chain]) continue;
+    const key = L.id;
     // The group is built even for a layer that is switched off (it is only
     // display:none — see applyLayerStyle), so the checkbox is the thing to
     // test, not the group's existence. getScreenCTM would return null on a
     // hidden element anyway.
-    if (!layerEls[key] || !layerStyle(key).on) continue;
+    if (!layerStyle(key).on) continue;
     const path = document.querySelector('#g_' + key + ' path');
     if (!path) continue;
     const m = path.getScreenCTM();      // folds in #paperContent's transform AND the sheet's current pan/zoom
@@ -215,7 +219,10 @@ export function updateTextureGizmo(){
   // redrawn here, before any of the gizmo's own early returns below.
   updateRuler();
   drawPathEndpointMarkers();
-  const visible = activeTab === 'preview' && layerEls['cr'].chk.checked && $('texGizmoShow').checked;
+  // The centre is one global setting today (texGroundPatternCenterX/Y), so
+  // any enabled Circles layer shows the gizmo.
+  const circlesOn = fillLayers().some(L => L.type === 'circles' && L.on);
+  const visible = activeTab === 'preview' && circlesOn && $('texGizmoShow').checked;
   if (!visible) return;
   const layout = computePaperLayout();
   if (!layout) return;

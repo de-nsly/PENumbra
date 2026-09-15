@@ -2635,7 +2635,7 @@ function generate(cam, S, shadingBuffer){
      back. This can't simply merge layers together since each keeps its own
      pen/weight on purpose (Silhouette is a deliberately bold re-stroke of
      the boundary for emphasis — 1.2mm black against Contour's 0.8mm, see
-     LAYERS in main.js) — the covered portion is removed instead,
+     defaultLayers in js/layers.js) — the covered portion is removed instead,
      and any uncovered remainder still draws in its own style.
      Every subtraction is gated on the higher layer being ACTUALLY enabled:
      e.g. if Silhouette's pen is off, Silhouette individual and Contour draw

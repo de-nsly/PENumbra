@@ -143,7 +143,35 @@ integer, `layoutOverlayOpacity` %, `texCirclesThr` 2 decimals, `hatchM*` mm, `*T
 each as an entry, then diff the rendered labels against the old function on every id before deleting
 it. The per-layer texture clones (`texOvershootMin_h1`) are *not* entries; 4b removes them.
 
-### 4b. Layer-instance model (`js/layers.js`, new; replaces `LAYERS` in main.js)
+### 4b. Layer-instance model (`js/layers.js`, new; replaces `LAYERS` in main.js) — DONE 2026-09-15
+
+Done, with these deliberate differences from the sketch below:
+- **Fill settings are not on the instance yet.** Angle, spacing, threshold and circles centre stay the
+  global controls until 4d. Hatch instances carry a transitional `angleOffsetDeg` (0/90/45, replaces
+  `HATCH_ANGLE_OFFSET`); the family angle is `hatchAng + angleOffsetDeg` (`hatchFamilyAngleDeg`). A
+  `.pen` v2 saved before 4d has `angleOffsetDeg` and the global `hatchAng` setting; the 4d loader must
+  turn that into `angleDeg = hatchAng + angleOffsetDeg`.
+- **Texture is a stack** as specified (`texture: [{type, ...params}]`, `TEXTURE_FILTERS` lives in
+  `layers.js` for now with the parameter schema; the implementations stay in `svg-export.js`). `onResult`
+  still runs the fixed pipeline and looks each effect up with `stackEntry(stack, type)`; the editor keeps
+  one entry per type, inserted at its pipeline position, so list order equals application order. 4e
+  replaces this with `applyTextureStack`.
+- **The instance is the state.** `layerEls` is a view rebuilt by `buildLayerRows()` (boot and scene
+  import); row listeners write into the instance, `applyLayerStyle(id)` renders the instance back.
+  `layerStyle(id)` reads the instance. `L.key` is `L.id`.
+- **UI:** the Texture tab's General/Texture/H1…C sub-tabs are gone; the tab shows the global Hatching and
+  Circles controls, then a Texture section: a layer dropdown (fill layers), the selected layer's filter
+  entries (slider rows + remove), and an "+ Add filter…" dropdown offering what the layer's geometry
+  supports. Module `js/texture-stack.js`.
+- **Persistence:** `penumbraScene: 2` writes `layers` as the instance array. `sceneLayers(data,
+  resolvePen)` (layers.js) loads v1 and v2; v1 fill stacks come from `v1TextureStack`, which coerces a
+  missing/unparseable number to 0 so the reader's `|| fallback` reproduces the old `+el.value || fallback`
+  read exactly. The texture ids (`texOvershootOn`, `_h1`…) are no longer controls or saved settings.
+- **Verified:** besides verify-golden (which never runs `onResult`'s texture code), a scratch script ran
+  the pre-4b and post-4b `onResult` on real worker results (arches + demo with circles), seeded
+  `Math.random`, over 84 texture configurations (as saved, all off, 40 random General/Individual mixes
+  per scene incl. missing ids), each via v1 load and via a v2 save/load round trip: every layer's path
+  `d`, group order and status text identical (168/168; a perturbed seed shows 138 differences).
 
 ```js
 export const LAYER_TYPES = {

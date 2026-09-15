@@ -1,12 +1,12 @@
 /* ================================================================
    main.js — shared app state & boot glue
-   Declares the $ helper, APP_VERSION, the layer registry (LAYERS), the
-   pen library (PEN_LIBRARY/penById), the dash patterns
-   (DASH_RATIOS/DASH_KEYS/scaledDash), two small shared widgets
-   (segmented-toggle pill positioning, middle-button double-click), the
-   per-layer texture-tab cloning, and the HLR worker (bootWorker creates it
-   from js/worker/solver.js as a module worker). Imports nothing from the
-   other modules; every one of them imports from here.
+   Declares the $ helper, APP_VERSION, the pen library
+   (PEN_LIBRARY/penById), the dash patterns (DASH_RATIOS/DASH_KEYS/
+   scaledDash), two small shared widgets (segmented-toggle pill
+   positioning, middle-button double-click), and the HLR worker
+   (bootWorker creates it from js/worker/solver.js as a module worker).
+   The layer model is layers.js. Imports nothing from the other modules;
+   every one of them imports from here.
    ================================================================ */
 export const $ = id => document.getElementById(id);
 // SVG element factory — the one place the namespace is spelled out.
@@ -53,42 +53,9 @@ export function downloadFile(name, text, mime){
 // App version (shown in the About dialog footer). Bump on release.
 export const APP_VERSION = '0.8.6';
 
-/* ================= layer registry =================
-   Order here is the drawing-priority hierarchy (top = highest), used for:
-     - UI row order, top to bottom
-     - cross-layer ink-avoidance (a lower layer never re-strokes what an
-       enabled higher layer already covers — see the cascade in generate())
-     - paint order in the SVG: the result-building loop walks this list in
-       REVERSE so the highest-priority layer (Silhouette) ends up painted
-       last/on top, and the lowest (Deep shadow) painted first/underneath.
-   Toggling any layer's checkbox re-runs the whole pipeline: the cascade
-   means one layer's on/off changes which ink survives in every layer below
-   it, so there is no display-only toggle.
-   host → which container in index.html the row is appended to. The edge
-   layers are split across three hosts so each group's own solve settings can
-   sit in the panel directly under the rows they affect: Contour Cleanup + Max hops between the Contour
-   rows and the Crease rows, Crease angle after the Crease rows. Order within
-   this list still decides row order inside each host, and the hosts appear in
-   index.html in the same order as here.
-   pen → the DEFAULT pen id (see PEN_LIBRARY below) the row starts on. A
-   layer has no colour/width of its own any more, only a pen reference. */
-export const LAYERS = [
-  { key:'so', name:'Silhouette',            on:false, pen:'p1', dash:'solid', host:'edgeLayersSil'  },
-  { key:'iv', name:'Silhouette individual', on:false, pen:'p2', dash:'solid', host:'edgeLayersSil'  },
-  { key:'ih', name:'· hidden',              on:false, pen:'p4', dash:'D1',    host:'edgeLayersSil'  },
-  { key:'sv', name:'Contour',               on:true,  pen:'p2', dash:'solid', host:'edgeLayersContour' },
-  { key:'sh', name:'· hidden',              on:false, pen:'p4', dash:'D1',    host:'edgeLayersContour' },
-  { key:'cv', name:'Crease',                on:true,  pen:'p3', dash:'solid', host:'edgeLayersCrease' },
-  { key:'ch', name:'· hidden',              on:false, pen:'p4', dash:'D1',    host:'edgeLayersCrease' },
-  { key:'h1', name:'Hatch',                 on:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
-  { key:'h2', name:'Crosshatch',            on:true,  pen:'p5', dash:'solid', host:'hatchLayers' },
-  { key:'h3', name:'Deep shadow',           on:false, pen:'p5', dash:'solid', host:'hatchLayers' },
-  { key:'cr', name:'Circles',               on:false, pen:'p5', dash:'solid', host:'hatchLayers' },
-];
-
 /* ================= pen library =================
    Every stroke's colour and width come from a pen here — edge/fill layers
-   (LAYERS above) and a Layout block's Override menu both store only a pen
+   (layers.js) and a Layout block's Override menu both store only a pen
    id and resolve it through penById on every render, so editing a pen
    restyles everything using it. The UI (Pen library tab), add/delete and
    the scene/clipboard matching live in pen-library.js.
@@ -180,32 +147,6 @@ export function dashOnFraction(key){
   let on = 0, total = 0;
   for (let i = 0; i < t.length; i += 2){ on += t[i]; total += t[i] + t[i+1]; }
   return total > 1e-9 ? on / total : 1;
-}
-
-/* ================= per-layer texture settings =================
-   Builds the 4 per-layer texture-settings tabs (H1/H2/H3/Circles) by
-   cloning the General texture settings structure and relabeling every
-   id/for attribute with a layer suffix — far lower-risk than hand-
-   duplicating ~150 lines of markup 4 times, since it reuses the exact,
-   already-correct DOM structure rather than a second hand-maintained
-   copy that could drift out of sync. Circles' clone additionally drops
-   Angle jitter and Regular wobble entirely (tagged with
-   data-skipforcircles in the source markup), since neither applies to a
-   circle. */
-export function buildPerLayerTextureTabs(){
-  const generalWrap = document.getElementById('texGeneralSettings');
-  const layerKeys = ['h1', 'h2', 'h3', 'cr'];
-  for (const key of layerKeys){
-    const clone = generalWrap.cloneNode(true);
-    clone.id = 'texLayerSettings_' + key;
-    clone.style.display = 'none';
-    clone.querySelectorAll('[id]').forEach(el => { el.id = el.id + '_' + key; });
-    clone.querySelectorAll('[for]').forEach(el => { el.setAttribute('for', el.getAttribute('for') + '_' + key); });
-    if (key === 'cr'){
-      clone.querySelectorAll('[data-skipforcircles]').forEach(g => g.remove());
-    }
-    generalWrap.parentElement.appendChild(clone);
-  }
 }
 
 /* ================= segmented-toggle sliding pill =================

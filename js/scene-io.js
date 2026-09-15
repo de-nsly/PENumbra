@@ -8,14 +8,22 @@
    at the end of initSceneIO — app.js calls that init last, so it is the
    step that starts the app.
    ================================================================ */
-import { $, APP_VERSION, DASH_KEYS, DASH_RATIOS, LAYERS, MAX_DASH_SLOTS, PEN_LIBRARY, downloadFile, penById, worker } from './main.js';
+import { $, APP_VERSION, DASH_KEYS, DASH_RATIOS, MAX_DASH_SLOTS, PEN_LIBRARY, downloadFile, penById, worker } from './main.js';
 import { restoreHooks, sceneSettingIds } from './settings.js';
+import { layerById, layers, replaceLayers, sceneLayers } from './layers.js';
 import { camera, modelMesh, modelName, onLoaded, onSmoothAngleResult, orbit, orthoCam, renderSavedViews, savedViewCounter, savedViews, setSavedViews, setProjMode } from './viewport3d.js';
-import { addDashSlot, applyLayerStyle, computePaperLayout, layerEls, onResult, refreshDashPreview, refreshStatusR } from './svg-export.js';
+import { addDashSlot, applyLayerStyle, buildLayerRows, computePaperLayout, onResult, refreshDashPreview, refreshStatusR } from './svg-export.js';
 import { activeTab, buildCamMessage, doGenerate, generateFailed, lastGen, refreshValLabel, syncLineLayerUI } from './panel-controls.js';
 import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncPenLibraryUI } from './pen-library.js';
 import { blockCounter, blocks, replaceBlocks, renderBlocksList, renderLayoutCanvas } from './layout-canvas.js';
-import { resetPvFitWithRulers } from './paper-preview.js';
+import { resetPvFitWithRulers, updateTextureGizmo } from './paper-preview.js';
+import { renderTextureStack } from './texture-stack.js';
+
+// .pen format version this build writes. 1: layers as { key: {on, pen,
+// dash} } and the texture as General/per-layer settings ids; 2: layers as
+// the instance array with each layer's texture stack (layers.js —
+// sceneLayers there loads both).
+const SCENE_VERSION = 2;
 
 
 /* ================= debug: raw edges export =================
@@ -166,9 +174,10 @@ async function loadFile(file){
    any future change to that pipeline can't drift the two apart), every
    control in the settings registry (settings.js: the solve settings plus
    the paper layout controls, which aren't solve-affecting but are still
-   part of "what I had"), the pen library and each layer's pen/dash choice,
-   and the camera (orbit angles/distance/target + projection mode — FOV
-   rides along as an ordinary registry control already).
+   part of "what I had"), the pen library, the layer instances (on/pen/
+   dash and each layer's texture stack — layers.js), and the camera (orbit
+   angles/distance/target + projection mode — FOV rides along as an
+   ordinary registry control already).
    A plain JSON container, base64 for the binary model bytes — simple, and
    the model is the only part large enough for that ~33% inflation to
    matter, which is an acceptable trade for not inventing a binary format. */
@@ -231,31 +240,25 @@ export function applyImportedScene(data){
   // before pens existed have no data.pens: setPenLibrary restarts from the
   // built-in set, and each layer's own color/width is matched into it below.
   setPenLibrary(data.pens, data.penIdCounter);
-  // Every layer's pen is resolved BEFORE the dropdowns are refilled: an old
-  // scene's color/width can append a pen (resolvePen), and a <select> can't
-  // take a value it has no <option> for yet.
-  const layerPens = {};
-  for (const L of LAYERS){
-    const st = (data.layers || {})[L.key];
-    if (!st) continue;
-    layerPens[L.key] = (typeof st.pen === 'string' && PEN_LIBRARY.some(p => p.id === st.pen))
+  // The layer instances (with their texture stacks) come from the file —
+  // sceneLayers handles both format versions. Each layer's pen is resolved
+  // here, into the library just installed: a saved pen id that still
+  // exists is taken as is; an old scene's color/width is matched into the
+  // library (resolvePen may append a pen), which must happen BEFORE the
+  // rows' dropdowns are built, as a <select> can't take a value it has no
+  // <option> for yet.
+  replaceLayers(sceneLayers(data, (st, defaultPenId) =>
+    (typeof st.pen === 'string' && PEN_LIBRARY.some(p => p.id === st.pen))
       ? st.pen
-      : resolvePen({ color: st.color, width: st.width }, penById(L.pen));
-  }
+      : resolvePen({ color: st.color, width: st.width }, penById(defaultPenId))));
+  buildLayerRows();
   refreshPenSelects();
-  for (const L of LAYERS) applyLayerStyle(L.key);
-  for (const [key, st] of Object.entries(data.layers || {})){
-    const els = layerEls[key];
-    if (!els || !st) continue;
-    els.chk.checked = !!st.on;
-    els.pen.value = layerPens[key];
-    els.dash.value = st.dash;
-    applyLayerStyle(key);
-  }
-  // Layer checkboxes were just set by assignment, which fires no change event,
-  // so the sliders that fade with their own layer group need the same explicit
-  // nudge the toggles above get.
+  renderTextureStack();
+  // The rows were just built from the instances, which fires no change
+  // event, so the sliders that fade with their own layer group and the
+  // Circles gizmo need the same explicit nudge the toggles above get.
   syncLineLayerUI();
+  updateTextureGizmo();
   const cs = data.camera || {};
   setProjMode(cs.ortho ? 'ortho' : 'persp');
   if (Number.isFinite(cs.theta))  orbit.theta  = cs.theta;
@@ -294,7 +297,7 @@ export function applyImportedScene(data){
     b.overrideStyle = {};
     for (const key in src){
       const ov = src[key];
-      if (!layerEls[key] || !ov || typeof ov !== 'object') continue;
+      if (!layerById(key) || !ov || typeof ov !== 'object') continue;
       b.overrideStyle[key] = { pen: resolveOverridePen(ov, key, null), dash: ov.dash };
     }
   }
@@ -320,7 +323,7 @@ async function importScene(file){
   let data;
   try { data = JSON.parse(await file.text()); }
   catch (err){ $('statusL').textContent = 'invalid scene file'; return; }
-  if (!data || data.penumbraScene !== 1 || !data.model){
+  if (!data || !(data.penumbraScene >= 1 && data.penumbraScene <= SCENE_VERSION) || !data.model){
     $('statusL').textContent = 'unrecognized scene file';
     return;
   }
@@ -407,11 +410,9 @@ export function initSceneIO(){
     // While "Export one path per pen" is on, Split dashes is only shown ticked
     // (see syncPenPathsExportUI) — save the user's own choice instead.
     settings.splitDashBtn = splitDashChoice;
-    const layers = {};
-    for (const L of LAYERS){
-      const els = layerEls[L.key];
-      layers[L.key] = { on: els.chk.checked, pen: els.pen.value, dash: els.dash.value };
-    }
+    // The layer instances as they are, texture stacks included (a deep
+    // copy, so nothing in the file aliases live state).
+    const layersOut = layers.map(L => ({ ...L, texture: L.texture.map(f => ({ ...f })) }));
     const camState = {
       theta: orbit.theta, phi: orbit.phi, radius: orbit.radius,
       exactPole: orbit.exactPole,
@@ -429,8 +430,8 @@ export function initSceneIO(){
     // not carried through into the saved file at all — it's rebuilt fresh on
     // import anyway (renderLayoutCanvas hydrates DOM for any block missing it).
     const blocksOut = blocks.map(({ dom, ...rest }) => rest);
-    const scene = { penumbraScene: 1, appVersion: APP_VERSION, savedAt: new Date().toISOString(),
-      model: modelField, camera: camState, settings, layers,
+    const scene = { penumbraScene: SCENE_VERSION, appVersion: APP_VERSION, savedAt: new Date().toISOString(),
+      model: modelField, camera: camState, settings, layers: layersOut,
       pens: PEN_LIBRARY.map(p => ({ ...p })), penIdCounter,
       dashKeys: DASH_KEYS.slice(), savedViews, savedViewCounter, blocks: blocksOut, blockCounter };
     const base = (lastFileData ? lastFileData.name.replace(/\.(stl|obj)$/i, '') : modelName)

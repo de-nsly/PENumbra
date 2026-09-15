@@ -211,22 +211,6 @@
         </svg>
       </button>
     </div>
-    <!-- The hatching tab's own sub-tabs live up here in the pinned header rather
-         than inside #textureTab, so they don't scroll either; setPanelMode
-         (panel-controls.js) shows this wrapper only while that tab is active. -->
-    <div id="texSubTabsHead" style="display:none">
-      <div class="modeToggle textureSubTabs" id="texTopTabsNormal">
-        <button class="modeToggleBtn texTopTabBtn active" data-textop="general" type="button">General</button>
-        <button class="modeToggleBtn texTopTabBtn" data-textop="texture" type="button">Texture</button>
-      </div>
-      <div class="modeToggle textureSubTabs" id="texTopTabsIndividual" style="display:none">
-        <button class="modeToggleBtn texTopTabBtn" data-textop="general" type="button">G</button>
-        <button class="modeToggleBtn texTopTabBtn" data-textop="h1" type="button">H1</button>
-        <button class="modeToggleBtn texTopTabBtn" data-textop="h2" type="button">H2</button>
-        <button class="modeToggleBtn texTopTabBtn" data-textop="h3" type="button">H3</button>
-        <button class="modeToggleBtn texTopTabBtn" data-textop="cr" type="button">C</button>
-      </div>
-    </div>
     </div>
     <!-- Only this part scrolls — everything in #panelHead above stays pinned (see styles.css) -->
     <div id="panelScroll">
@@ -310,7 +294,6 @@
       </div>
     </div>
     <div id="textureTab" style="display:none">
-      <div id="texSubGeneral">
         <h2>Hatching</h2>
         <div class="sec">
           <div class="ctl">
@@ -379,155 +362,20 @@
           </div>
         </div>
 
-        <h2>Texture mode</h2>
+        <h2>Texture</h2>
         <div class="sec">
-          <label class="chk"><input type="checkbox" id="texIndividualOn">
-            Individual texture settings (per layer)</label>
-        </div>
-      </div>
-
-      <div id="texGeneralSettings">
-      <h2>Hatch Texture</h2>
-      <div class="sec">
-        <div class="textureGroup">
-          <label class="chk">
-            <input type="checkbox" id="texTrimOn">
-            <span>Trim / extend</span>
-          </label>
-          <div class="textureFieldsWrap ctlDisabled" id="texTrimFields">
-            <div class="ctl">
-              <label for="texTrimValue">Value</label>
-              <input type="range" id="texTrimValue" min="-10" max="10" step="0.1" value="0">
-              <span class="val" id="texTrimValueVal">0.0mm</span>
-            </div>
+          <!-- Per-layer texture stack (texture-stack.js): pick a fill layer, add
+               filters from TEXTURE_FILTERS (layers.js), edit each one's parameters. -->
+          <div class="ctl">
+            <label for="texLayerSelect">Layer</label>
+            <select id="texLayerSelect" aria-label="Layer whose texture is edited"></select>
+          </div>
+          <div id="texStackList"></div>
+          <div class="ctl">
+            <label for="texAddFilter">Filter</label>
+            <select id="texAddFilter" aria-label="Add a texture filter"></select>
           </div>
         </div>
-        <div class="textureGroup">
-          <label class="chk">
-            <input type="checkbox" id="texOvershootOn">
-            <span>Overshoot / undershoot</span>
-          </label>
-          <div class="textureFieldsWrap ctlDisabled" id="texOvershootFields">
-            <div class="ctl">
-              <label for="texOvershootMin">Min</label>
-              <input type="range" id="texOvershootMin" min="-10" max="10" step="0.1" value="-2">
-              <span class="val" id="texOvershootMinVal">-2.0mm</span>
-            </div>
-            <div class="ctl">
-              <label for="texOvershootMax">Max</label>
-              <input type="range" id="texOvershootMax" min="-10" max="10" step="0.1" value="1">
-              <span class="val" id="texOvershootMaxVal">1.0mm</span>
-            </div>
-          </div>
-        </div>
-        <div class="textureGroup">
-          <label class="chk">
-            <input type="checkbox" id="texSpacingOn">
-            <span>Spacing jitter</span>
-          </label>
-          <div class="textureFieldsWrap ctlDisabled" id="texSpacingFields">
-            <div class="ctl">
-              <label for="texSpacingMin">Min</label>
-              <input type="range" id="texSpacingMin" min="0" max="10" step="0.1" value="0">
-              <span class="val" id="texSpacingMinVal">0.0mm</span>
-            </div>
-            <div class="ctl">
-              <label for="texSpacingMax">Max</label>
-              <input type="range" id="texSpacingMax" min="0" max="10" step="0.1" value="0.5">
-              <span class="val" id="texSpacingMaxVal">0.5mm</span>
-            </div>
-          </div>
-        </div>
-        <div class="textureGroup" data-skipforcircles="1">
-          <label class="chk">
-            <input type="checkbox" id="texAngleOn">
-            <span>Angle jitter</span>
-          </label>
-          <div class="textureFieldsWrap ctlDisabled" id="texAngleFields">
-            <div class="ctl">
-              <label for="texAngleMin">Min</label>
-              <input type="range" id="texAngleMin" min="0" max="10" step="0.1" value="0">
-              <span class="val" id="texAngleMinVal">0.0°</span>
-            </div>
-            <div class="ctl">
-              <label for="texAngleMax">Max</label>
-              <input type="range" id="texAngleMax" min="0" max="10" step="0.1" value="0.5">
-              <span class="val" id="texAngleMaxVal">0.5°</span>
-            </div>
-          </div>
-        </div>
-        <div class="textureGroup">
-          <div class="rowSplit">
-            <label class="chk">
-              <input type="checkbox" id="texWobbleOn">
-              <span>Wobble</span>
-            </label>
-            <label class="chk chk-sub">
-              <input type="checkbox" id="texWobbleShared">
-              Same noise field per layer
-            </label>
-          </div>
-          <div class="textureFieldsWrap ctlDisabled" id="texWobbleFields">
-            <div class="ctl">
-              <label for="texWobbleSpacing">Spacing</label>
-              <input type="range" id="texWobbleSpacing" min="0.1" max="10" step="0.1" value="1">
-              <span class="val" id="texWobbleSpacingVal">1.0mm</span>
-            </div>
-            <div class="ctl">
-              <label for="texWobbleAmp">Amplitude</label>
-              <input type="range" id="texWobbleAmp" min="0" max="10" step="0.1" value="0.5">
-              <span class="val" id="texWobbleAmpVal">0.5mm</span>
-            </div>
-            <div class="ctl">
-              <label for="texWobbleVariation">Variation</label>
-              <input type="range" id="texWobbleVariation" min="0" max="1" step="0.1" value="0">
-              <span class="val" id="texWobbleVariationVal">0.0</span>
-            </div>
-            <div class="ctl">
-              <label for="texWobbleVarScale">Var. scale</label>
-              <input type="range" id="texWobbleVarScale" min="1" max="50" step="0.5" value="10">
-              <span class="val" id="texWobbleVarScaleVal">10.0mm</span>
-            </div>
-          </div>
-        </div>
-        <div class="textureGroup" data-skipforcircles="1">
-          <label class="chk">
-            <input type="checkbox" id="texRegWobbleOn">
-            <span>Regular wobble</span>
-          </label>
-          <div class="textureFieldsWrap ctlDisabled" id="texRegWobbleFields">
-            <div class="ctl">
-              <label for="texRegWobbleAmp">Amplitude</label>
-              <input type="range" id="texRegWobbleAmp" min="0" max="10" step="0.1" value="0.5">
-              <span class="val" id="texRegWobbleAmpVal">0.5mm</span>
-            </div>
-            <div class="ctl">
-              <label for="texRegWobbleWavelength">Wavelength</label>
-              <input type="range" id="texRegWobbleWavelength" min="0.5" max="50" step="0.5" value="5">
-              <span class="val" id="texRegWobbleWavelengthVal">5.0mm</span>
-            </div>
-          </div>
-        </div>
-        <div class="textureGroup">
-          <label class="chk">
-            <input type="checkbox" id="texGapsOn">
-            <span>Gaps</span>
-          </label>
-          <div class="textureFieldsWrap ctlDisabled" id="texGapsFields">
-            <div class="ctl">
-              <label for="texGapsSpacing">Avg. spacing</label>
-              <input type="range" id="texGapsSpacing" min="1" max="100" step="0.5" value="30">
-              <span class="val" id="texGapsSpacingVal">30.0mm</span>
-            </div>
-            <div class="ctl">
-              <label for="texGapsMax">Max gap</label>
-              <input type="range" id="texGapsMax" min="0.1" max="10" step="0.1" value="2">
-              <span class="val" id="texGapsMaxVal">2.0mm</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      </div>
     </div>
     <div id="settingsTab" style="display:none">
       <h2>Model</h2>
@@ -585,10 +433,10 @@
     <h2>Lines</h2>
     <div class="sec">
       <div class="rowsHead"><span></span><span></span><span>layer</span><span>pen</span><span>dash</span></div>
-      <!-- The edge layer rows are built from LAYERS (main.js) into these three
+      <!-- The layer rows are built from the layer instances (layers.js) into these
            hosts rather than one, so each group's own settings can sit directly
-           under the rows they affect. LAYERS' own order still decides what
-           lands where — see each entry's host field. -->
+           under the rows they affect. The instances' order still decides row
+           order; each layer type's host (LAYER_TYPES) decides the container. -->
       <div id="edgeLayersSil"></div>
       <div id="edgeLayersContour"></div>
       <div class="ctl" id="contourCleanupCtl">

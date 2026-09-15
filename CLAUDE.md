@@ -47,8 +47,10 @@ module script, `js/app.js`. Every other main-thread file is an ES module with ex
 
 ```
 js/app.js            - entry point: imports every module and calls their init functions in order, then boots
-js/main.js           - $, svgEl/SVG_NS, downloadFile, focus guards, LAYERS, PEN_LIBRARY/penById, DASH_*, the worker (bootWorker)
+js/main.js           - $, svgEl/SVG_NS, downloadFile, focus guards, PEN_LIBRARY/penById, DASH_*, the worker (bootWorker)
 js/settings.js       - SETTINGS registry: one entry per control (regen flag, label unit/decimals/presets, scene persistence, onRestore hook)
+js/layers.js         - layer instances (layers, LAYER_TYPES), TEXTURE_FILTERS schema, .pen v1/v2 layer loading (pure data, no DOM)
+js/texture-stack.js  - the Texture tab's per-layer stack editor
 js/viewport3d.js     - three.js scene/camera/orbit controls, gizmos, saved views, shading-buffer capture, onLoaded()
 js/paper-preview.js  - pan/zoom for the on-screen paper pane, rulers, circles-centre gizmo
 js/svg-export.js     - layer rows + dash editor, paper layout math, chaining, texture effects, onResult(), export
@@ -102,12 +104,15 @@ soft-shadow sampling -> per-face/per-edge visibility via ray occlusion (`occlude
 classify edges into silhouette/contour/crease, each split into visible/hidden -> generate hatch/crosshatch/
 circle fill patterns for shaded faces -> post back flat segment arrays per layer.
 
-**Layer model** (`LAYERS` in `main.js`): an ordered array of edge/fill layer definitions (`so` silhouette,
-`iv`/`ih` silhouette individual, `sv`/`sh` contour, `cv`/`ch` crease, `h1`/`h2`/`h3` hatch/crosshatch/deep
-shadow, `cr` circles). Order is the drawing-priority hierarchy: higher entries in the array win
-ink-avoidance against lower ones, and the array is walked in reverse when painting so the highest-priority
-layer ends up on top. Toggling any single layer can change what survives in every layer below it, so
-every layer checkbox re-runs the pipeline; there is no display-only toggle.
+**Layer model** (`layers` in `layers.js`): an ordered array of layer instances `{id, type, name, on, pen,
+dash, texture}`. Ids `so` silhouette, `iv`/`ih` silhouette individual, `sv`/`sh` contour (historically
+"silhouette visible/hidden"), `cv`/`ch` crease, `h1`/`h2`/`h3` hatch/crosshatch/deep shadow (type `hatch`),
+`cr` circles (type `circles`). The instance is the state; the Lines-tab rows (`layerEls`, `svg-export.js`)
+are a view of it. `texture` is an ordered stack of filter entries typed by `TEXTURE_FILTERS`; an empty
+stack is no texture, and only fill layers apply theirs today. Order is the drawing-priority hierarchy:
+higher entries win ink-avoidance against lower ones, and the array is walked in reverse when painting so
+the highest-priority layer ends up on top. Toggling any single layer can change what survives in every
+layer below it, so every layer checkbox re-runs the pipeline; there is no display-only toggle.
 
 **Pen library** (`PEN_LIBRARY` in `main.js`, UI in `pen-library.js`): an ordered list of `{id, name, color,
 width}` pens. Layers and Layout block overrides store only a pen id (plus their own dash) and resolve colour/
@@ -124,11 +129,14 @@ Dash patterns everywhere go through `dashPattern` (`main.js`): a pair whose dash
 
 **Layout tab vs. draw layers — a naming collision to watch for:** the Layout tab (`layout-canvas.js`)
 stacks frozen snapshots of past generations, called "blocks" internally but labeled "layers" in the UI.
-This is a *different* concept from the `LAYERS` edge/fill array above — don't conflate the two when reading
+This is a *different* concept from the `layers` instance array above — don't conflate the two when reading
 or writing code that touches either.
 
 **Scene files (`.pen`):** `scene-io.js` handles save/load of the entire app state (model geometry, camera,
-every setting, the pen library, layer pen/dash choices) as a single JSON-ish `.pen` file, with the model embedded as base64.
+every setting, the pen library, the layer instances with their texture stacks) as a single JSON-ish `.pen`
+file, with the model embedded as base64. It writes `penumbraScene: 2` (layers as the instance array) and
+loads version 1 too (`sceneLayers` in `layers.js` rebuilds each fill layer's stack from the old General /
+per-layer texture settings).
 
 ## Working in this codebase
 

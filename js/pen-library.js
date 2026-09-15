@@ -10,7 +10,8 @@
    path per pen" checkbox's tie to "Split dashes" (the export itself is
    buildPenPathsExport in svg-export.js).
    ================================================================ */
-import { $, LAYERS, PEN_LIBRARY, defaultPens, penById } from './main.js';
+import { $, PEN_LIBRARY, defaultPens, penById } from './main.js';
+import { layerById, layers } from './layers.js';
 import { applyLayerStyle, fillPenSelect, fmtWidth, layerEls } from './svg-export.js';
 import { makeNameEditable } from './panel-controls.js';
 import { blocks } from './layout-canvas.js';
@@ -29,13 +30,13 @@ const clampPenWidth = v => Math.min(6, Math.max(0.1, v || 0.1));
 // A pen edit can affect any layer (and any Layout block override), so every
 // layer is restyled — the same full sweep a dash-field edit already does.
 function restyleAllLayers(){
-  for (const L of LAYERS) applyLayerStyle(L.key);
+  for (const L of layers) applyLayerStyle(L.id);
 }
 // Refills every pen dropdown after the library's list itself changed (add,
 // rename, delete, import). References are always reassigned BEFORE this runs,
 // so a select only falls back when its pen is truly gone.
 export function refreshPenSelects(){
-  for (const L of LAYERS) fillPenSelect(layerEls[L.key].pen, L.pen);
+  for (const L of layers) fillPenSelect(layerEls[L.id].pen, L.pen);
   document.querySelectorAll('#layerContextMenuList select.penSelect').forEach(sel => fillPenSelect(sel));
 }
 export function syncPenLibraryUI(){
@@ -113,7 +114,7 @@ function deletePen(pen){
   const i = PEN_LIBRARY.indexOf(pen);
   if (i < 0 || PEN_LIBRARY.length <= 1) return;
   const fallback = PEN_LIBRARY.find(p => p !== pen);
-  const usedLayers = LAYERS.filter(L => layerEls[L.key].pen.value === pen.id);
+  const usedLayers = layers.filter(L => L.pen === pen.id);
   const usedOverrides = [];
   for (const b of blocks){
     for (const key in b.overrideStyle){
@@ -129,7 +130,7 @@ function deletePen(pen){
       '. Delete it and switch them to "' + fallback.name + '"?')) return;
   }
   PEN_LIBRARY.splice(i, 1);
-  for (const L of usedLayers) layerEls[L.key].pen.value = fallback.id;
+  for (const L of usedLayers) L.pen = fallback.id;
   for (const ov of usedOverrides) ov.pen = fallback.id;
   syncPenLibraryUI();
   restyleAllLayers();
@@ -169,7 +170,7 @@ export function resolvePen(src, fallbackPen){
 // is authoritative. An entry from before pens existed has color/width
 // instead of a pen. Anything unresolvable follows the layer's current pen.
 export function resolveOverridePen(ov, layerKey, srcPens){
-  const layerPen = penById(layerEls[layerKey].pen.value);
+  const layerPen = penById(layerById(layerKey).pen);
   if (typeof ov.pen === 'string'){
     const src = Array.isArray(srcPens) ? srcPens.find(p => p && p.id === ov.pen) : null;
     if (src) return resolvePen(src, layerPen);
