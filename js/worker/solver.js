@@ -127,6 +127,20 @@ function buildEdgeChains(mask, ne, ea, eb, pos){
   return chains;
 }
 
+/* Fill passes for a settings blob from before pass descriptors (no
+   S.passes): the classic Hatch / Crosshatch / Deep shadow passes at the
+   global angle + 0 / 90 / 45, and Circles, exactly as the worker built them
+   then. */
+function legacyFillPasses(S){
+  const h = S.hatch || {};
+  const out = [];
+  if (h.p1) out.push({ id:'h1', type:'hatch', angleDeg:h.ang,    thr:h.hatchThr });
+  if (h.p2) out.push({ id:'h2', type:'hatch', angleDeg:h.ang+90, thr:h.crossThr });
+  if (h.p3) out.push({ id:'h3', type:'hatch', angleDeg:h.ang+45, thr:h.deepThr });
+  if (S.circlesOn) out.push({ id:'cr', type:'circles', thr:S.circlesThr, centerX:S.groundPatternCenterX, centerY:S.groundPatternCenterY });
+  return out;
+}
+
 function generate(cam, S, shadingBuffer){
   if (!M){ post({ type:'error', msg:'No model loaded' }); return; }
   const t0ms = Date.now();
@@ -163,6 +177,13 @@ function generate(cam, S, shadingBuffer){
   // on thr===0, which a deliberately low slider could also produce.
   const SHADOW_ONLY_THR = 0.01;
   const castOnly = !!(S.shadow && S.shadow.on) && !S.hatch.softShadowsOn;
+  // Fill passes — one descriptor per enabled fill layer, in layer order (see
+  // fillPasses in js/panel-controls.js): hatch {id, type, angleDeg, thr},
+  // circles {id, type, thr, centerX, centerY}. Only the first circles pass is
+  // drawn: the result carries one circlePatternSegs list.
+  const fillPasses = Array.isArray(S.passes) ? S.passes : legacyFillPasses(S);
+  const hatchPasses = fillPasses.filter(p => p.type === 'hatch');
+  const circlesPass = fillPasses.find(p => p.type === 'circles') || null;
   // depth key, affine in screen space, bigger = closer:
   //   perspective → 1/dist   ·   orthographic → view-space z (negative dist)
   const { nv, nt, tri } = M;
@@ -312,7 +333,7 @@ function generate(cam, S, shadingBuffer){
      below the horizon (nothing can land on the plane) or when a projected
      point falls behind the camera's near plane (extreme perspective). */
   let GS = null;
-  gshadow: if (S.ground && S.ground.on && S.hatch && (S.hatch.p1 || S.hatch.p2 || S.hatch.p3)){
+  gshadow: if (S.ground && S.ground.on && S.hatch && hatchPasses.length){
     const L = S.light;
     if (L[1] <= 1e-6) break gshadow;                     // light at/below horizon
     const bb = M.bbox;
@@ -413,7 +434,7 @@ function generate(cam, S, shadingBuffer){
      needed its own copy, matching the union of their individual trigger
      conditions exactly. */
   const needSharedShadowMap = (S.shadow && S.shadow.on) ||
-    (S.circlesOn && S.ground && S.ground.on && Ly > 1e-6);
+    (circlesPass && S.ground && S.ground.on && Ly > 1e-6);
   const sharedShadowMap = needSharedShadowMap
     ? buildShadowMap(pos, tri, fn, nt, S.light, S.watertight, M.radius*2e-3)
     : null;
@@ -729,7 +750,10 @@ function generate(cam, S, shadingBuffer){
   }
 
   /* 6 · candidate edges → visible / hidden segments */
-  const groups={ sv:[], sh:[], cv:[], ch:[], h1:[], h2:[], h3:[], so:[], iv:[], ih:[] };
+  // One group per edge layer, plus one per hatch pass (keyed by its layer id).
+  const groups={ sv:[], sh:[], cv:[], ch:[] };
+  for (const p of hatchPasses) groups[p.id] = [];
+  groups.so = []; groups.iv = []; groups.ih = [];
   // Contour (sv/sh) chain identity. One runId/seq entry per segment pushed to
   // groups.sv/groups.sh, parallel to those arrays: runId names the Contour run
   // (6.7) a segment came from, seq its order within that run. No other layer
@@ -737,7 +761,8 @@ function generate(cam, S, shadingBuffer){
   // coordinates/array-adjacency instead.
   const runIds = { sv:[], sh:[] };
   const seqs = { sv:[], sh:[] };
-  const hatchCarrier={ h1:[], h2:[], h3:[] };
+  const hatchCarrier={};
+  for (const p of hatchPasses) hatchCarrier[p.id] = [];
   const counts={};
   const emit=(arr,x0,y0,x1,y1,tA,tB)=>{
     const ax=x0+(x1-x0)*tA, ay=y0+(y1-y0)*tA, bx=x0+(x1-x0)*tB, by=y0+(y1-y0)*tB;
@@ -771,9 +796,8 @@ function generate(cam, S, shadingBuffer){
   };
 
   const { ne, ea, eb, et0, et1, eang } = M;
-  const wantC=S.types.c;
-
-  const layerOn = S.layerOn || { so:false, iv:false, ih:false, sv:true, sh:false, cv:true, ch:false, h1:true, h2:true, h3:true };
+  const layerOn = S.layerOn || { so:false, iv:false, ih:false, sv:true, sh:false, cv:true, ch:false };
+  const wantC = !!(layerOn.cv || layerOn.ch);
   // Any silhouette-family layer wanting ink means a silhouette-classified
   // edge must be excluded from Crease topology ("silhouette wins overlaps",
   // same rule as before, just now covering all three silhouette layers
@@ -1917,13 +1941,13 @@ function generate(cam, S, shadingBuffer){
      purely boolean, always densest wherever the ground shadow test is
      true, matching the same override-only treatment. */
   let circlePatternSegs = null;
-  if (S.circlesOn){
+  if (circlesPass){
     const minS = Math.max(1, S.hatch.minS), maxS = Math.max(minS+0.5, S.hatch.maxS);
     // See SHADOW_ONLY_THR/castOnly at the top of generate() — automates
     // the "set every below slider to 0.01" manual trick for Cast-shadow-
     // only mode, now that buffer mode tests one combined threshold.
-    const circlesThr = castOnly ? SHADOW_ONLY_THR : (S.circlesThr || 0);   // zeroed by gatherSettings when Soft shadows is off
-    const cx5 = S.groundPatternCenterX || 0, cy5 = S.groundPatternCenterY || 0;
+    const circlesThr = castOnly ? SHADOW_ONLY_THR : (circlesPass.thr || 0);   // zeroed by gatherSettings when Soft shadows is off
+    const cx5 = circlesPass.centerX || 0, cy5 = circlesPass.centerY || 0;
     const segs = [];
 
     if (S.ground && S.ground.on && Ly > 1e-6){
@@ -2063,7 +2087,7 @@ function generate(cam, S, shadingBuffer){
   }
 
   /* 8 · hatching */
-  if (S.hatch && (S.hatch.p1||S.hatch.p2||S.hatch.p3)){
+  if (S.hatch && hatchPasses.length){
     // Invert shadows should be a no-op on the mesh's own surface when
     // neither Soft nor Cast shadows is active — normally (non-inverted)
     // neither produces any on-mesh hatch either, so without this guard
@@ -2255,10 +2279,9 @@ function generate(cam, S, shadingBuffer){
       };
       return refineSplits(u0, u1, pxPerU, testAt);
     };
-    const passes=[];
-    if (S.hatch.p1) passes.push({key:'h1', ang:S.hatch.ang,     thr: castOnly ? SHADOW_ONLY_THR : S.hatch.hatchThr});
-    if (S.hatch.p2) passes.push({key:'h2', ang:S.hatch.ang+90,  thr: castOnly ? SHADOW_ONLY_THR : S.hatch.crossThr});
-    if (S.hatch.p3) passes.push({key:'h3', ang:S.hatch.ang+45,  thr: castOnly ? SHADOW_ONLY_THR : S.hatch.deepThr});
+    // In the order the settings list them: hatchTotal/capped are shared
+    // across passes, so order decides which pass the cap cuts short.
+    const passes = hatchPasses.map(p => ({ key: p.id, ang: p.angleDeg, thr: castOnly ? SHADOW_ONLY_THR : p.thr }));
     // global screen bbox of projected verts (keeps hatch families aligned across faces)
     let gx0=1/0,gy0=1/0,gx1=-1/0,gy1=-1/0, any=false;
     for (let i=0;i<nv;i++) if (ok[i]){

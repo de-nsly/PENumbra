@@ -29,6 +29,11 @@
               classic Hatch / Crosshatch / Deep shadow). Becomes an
               absolute per-instance angleDeg once fill settings move onto
               the instance (refactor plan §4d).
+     thrControl   fill instances only, TRANSITIONAL: the id of the global
+              "below" threshold slider this instance follows (hatchThr /
+              crossThr / deepThr / texCirclesThr). Becomes a per-instance
+              threshold value in §4d, whose loader reads it from the
+              settings block through this id.
 
    Layer keys, for reading old code and .pen files: so = Silhouette,
    iv/ih = Silhouette individual visible/hidden, sv/sh = Contour
@@ -56,9 +61,13 @@ export const LAYER_TYPES = {
   sh: { kind:'edge', name:'· hidden',              chain:'contour',    host:'edgeLayersContour' },
   cv: { kind:'edge', name:'Crease',                chain:'crease',     host:'edgeLayersCrease' },
   ch: { kind:'edge', name:'· hidden',              chain:'crease',     host:'edgeLayersCrease' },
-  hatch:   { kind:'fill', name:'Hatch',   geometry:'lines', host:'hatchLayers', pen:'p5' },
-  circles: { kind:'fill', name:'Circles', geometry:'arcs',  host:'hatchLayers', pen:'p5' },
+  hatch:   { kind:'fill', name:'Hatch',   geometry:'lines', host:'hatchLayers', pen:'p5', thrControl:'hatchThr' },
+  // thrFallback: the threshold used when the slider holds no number (Circles
+  // always had one; Hatch reads an empty value as 0).
+  circles: { kind:'fill', name:'Circles', geometry:'arcs',  host:'hatchLayers', pen:'p5', thrControl:'texCirclesThr', thrFallback:0.92 },
 };
+// The global threshold sliders a fill instance's thrControl may name.
+const THR_CONTROLS = ['hatchThr', 'crossThr', 'deepThr', 'texCirclesThr'];
 
 // pen → the DEFAULT pen id (see PEN_LIBRARY in main.js) the row starts on.
 // A layer has no colour/width of its own, only a pen reference.
@@ -71,10 +80,10 @@ export function defaultLayers(){
     { id:'sh', type:'sh', name:'· hidden',              on:false, pen:'p4', dash:'D1',    texture:[] },
     { id:'cv', type:'cv', name:'Crease',                on:true,  pen:'p3', dash:'solid', texture:[] },
     { id:'ch', type:'ch', name:'· hidden',              on:false, pen:'p4', dash:'D1',    texture:[] },
-    { id:'h1', type:'hatch',   name:'Hatch',       on:true,  pen:'p5', dash:'solid', angleOffsetDeg:0,  texture:[] },
-    { id:'h2', type:'hatch',   name:'Crosshatch',  on:true,  pen:'p5', dash:'solid', angleOffsetDeg:90, texture:[] },
-    { id:'h3', type:'hatch',   name:'Deep shadow', on:false, pen:'p5', dash:'solid', angleOffsetDeg:45, texture:[] },
-    { id:'cr', type:'circles', name:'Circles',     on:false, pen:'p5', dash:'solid', texture:[] },
+    { id:'h1', type:'hatch',   name:'Hatch',       on:true,  pen:'p5', dash:'solid', angleOffsetDeg:0,  thrControl:'hatchThr', texture:[] },
+    { id:'h2', type:'hatch',   name:'Crosshatch',  on:true,  pen:'p5', dash:'solid', angleOffsetDeg:90, thrControl:'crossThr', texture:[] },
+    { id:'h3', type:'hatch',   name:'Deep shadow', on:false, pen:'p5', dash:'solid', angleOffsetDeg:45, thrControl:'deepThr',  texture:[] },
+    { id:'cr', type:'circles', name:'Circles',     on:false, pen:'p5', dash:'solid', thrControl:'texCirclesThr', texture:[] },
   ];
 }
 // The live list. Mutated in place (like PEN_LIBRARY/DASH_KEYS), never
@@ -224,9 +233,10 @@ export function sceneLayers(data, resolvePen){
       }
       if (out.some(e => e.id === s.id)) continue;
       const L = { id: s.id, type: s.type, name: (typeof s.name === 'string' && s.name.trim()) ? s.name : T.name,
-        on: !!s.on, pen: resolvePen(s, T.pen), dash: typeof s.dash === 'string' ? s.dash : 'solid',
-        texture: sanitizeStack(s.texture, T.geometry) };
+        on: !!s.on, pen: resolvePen(s, T.pen), dash: typeof s.dash === 'string' ? s.dash : 'solid' };
       if (s.type === 'hatch') L.angleOffsetDeg = Number.isFinite(+s.angleOffsetDeg) ? +s.angleOffsetDeg : 0;
+      L.thrControl = THR_CONTROLS.includes(s.thrControl) ? s.thrControl : T.thrControl;
+      L.texture = sanitizeStack(s.texture, T.geometry);
       out.push(L);
     }
     return out;

@@ -98,6 +98,9 @@ you're editing first.
 `self.onmessage`): `load`/`demo` (parse STL/OBJ, build mesh, reply `loaded`) -> `generate` (run the HLR
 solve, reply `result`) -> `recomputeSmoothAngle`, `debugRawEdges`, `testShadingSample` for narrower
 recompute/debug paths. The worker keeps mesh state in a module-level `M`, rebuilt only on `load`/`demo`.
+The `generate` settings (`gatherSettings`, `panel-controls.js`) carry the edge layers as `layerOn` and the
+fill layers as `passes`, one descriptor per enabled fill layer in layer order (`fillPasses`); the result's
+`groups` and `hatchCarrier` are keyed by layer id.
 
 **HLR pipeline** (inside the worker, see `generate()`): build mesh + adjacency -> compute a shadow map for
 soft-shadow sampling -> per-face/per-edge visibility via ray occlusion (`occlude`, `buildShadowMap`) ->

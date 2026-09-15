@@ -9,6 +9,7 @@
 import { $, APP_VERSION, isFormControlTarget, positionSegPill, worker } from './main.js';
 import { HATCH_CAP_PRESETS, SETTINGS, SHADOW_BUDGET_PRESETS, formatValue, settingById } from './settings.js';
 import { camera, captureShadingBuffer, clearActiveView, lightVec, modelMesh, modelPivot, syncGroundCatcher, syncShadowCasting, updateLight, updateLightGizmo, updateModelRotation, vp } from './viewport3d.js';
+import { layerType, layers } from './layers.js';
 import { computePaperLayout, layerStyle } from './svg-export.js';
 import { updateTextureGizmo } from './paper-preview.js';
 import { pendingSoIvExport } from './scene-io.js';
@@ -161,6 +162,39 @@ export function clearStale(){
   $('sheet').classList.remove('stale');
 }
 
+/* The worker's fill passes: one descriptor per enabled fill layer, in layer
+   order (the hatch cap is shared across hatch passes, so order matters).
+     hatch   { id, type, angleDeg, thr }
+     circles { id, type, thr, centerX, centerY }   (centre in worker px)
+   thr is the layer's "below" threshold. Soft shadows off → 0 for every
+   pass (unreachable since brightness is always >=0), disabling the ambient
+   brightness-based bands while leaving Cast/Ground shadow fills (which
+   don't go through this threshold) untouched; the sliders' own values are
+   left alone so re-enabling Soft shadows restores exactly what the user
+   had. Angle, threshold and centre still come from global controls, which
+   each instance references (angleOffsetDeg / thrControl, layers.js). */
+function fillPasses(layout, mmToPx){
+  const soft = $('softShadows').checked;
+  const out = [];
+  for (const L of layers){
+    const T = layerType(L);
+    if (T.kind !== 'fill' || !L.on) continue;
+    const v = +$(L.thrControl).value;
+    const thr = soft ? (T.thrFallback ? (v || T.thrFallback) : v) : 0;
+    if (L.type === 'hatch'){
+      out.push({ id: L.id, type: L.type, angleDeg: +$('hatchAng').value + L.angleOffsetDeg, thr });
+    } else {
+      out.push({ id: L.id, type: L.type, thr,
+        centerX: layout
+          ? mmToPx(layout.paperW/2 + (+$('texGroundPatternCenterX').value || 0) - layout.offX)
+          : (+$('texGroundPatternCenterX').value || 0),
+        centerY: layout
+          ? mmToPx(layout.paperH/2 + (+$('texGroundPatternCenterY').value || 0) - layout.offY)
+          : (+$('texGroundPatternCenterY').value || 0) });
+    }
+  }
+  return out;
+}
 export function gatherSettings(){
   // Hatch spacing is authored in mm (it's paper space now that the preview is a
   // real page), but the solver only ever works in viewport-pixel space — convert
@@ -190,39 +224,23 @@ export function gatherSettings(){
     smoothShading: $('smoothShading').checked,
     creaseDeg: +$('creaseDeg').value,
     light: lightVec(),
-    types: {
-      c: layerStyle('cv').on || layerStyle('ch').on,
-    },
-    // individual per-layer draw state — the full-hierarchy cascade needs to
-    // know whether EVERY individual layer will actually put ink on the page
-    // before using it to remove ink from a lower-priority layer. Silhouette
-    // (so), Silhouette individual (iv/ih), and Contour (sv/sh) are three
-    // fully independent layers now (Blender's GROUP/INDIVIDUAL/NONE
-    // silhouette filters, respectively) — no more single-layer-plus-toggle.
-    layerOn: {
-      so: layerStyle('so').on,
-      iv: layerStyle('iv').on, ih: layerStyle('ih').on,
-      sv: layerStyle('sv').on, sh: layerStyle('sh').on,
-      cv: layerStyle('cv').on, ch: layerStyle('ch').on,
-      h1: layerStyle('h1').on, h2: layerStyle('h2').on, h3: layerStyle('h3').on,
-    },
+    // Edge layers' draw state, keyed by layer id — the full-hierarchy cascade
+    // needs to know whether EVERY individual layer will actually put ink on
+    // the page before using it to remove ink from a lower-priority layer.
+    // Silhouette (so), Silhouette individual (iv/ih), and Contour (sv/sh) are
+    // three fully independent layers (Blender's GROUP/INDIVIDUAL/NONE
+    // silhouette filters, respectively).
+    layerOn: Object.fromEntries(layers.filter(L => layerType(L).kind === 'edge').map(L => [L.id, L.on])),
+    // One descriptor per ENABLED fill layer, in layer order (fillPasses).
+    passes: fillPasses(layout, mmToPx),
+    // Fill settings still shared by every pass (they move onto the
+    // instances in refactor plan §4d).
     hatch: {
-      p1: layerStyle('h1').on, p2: layerStyle('h2').on, p3: layerStyle('h3').on,
-      ang: +$('hatchAng').value,
       minS: mmToPx(+$('hatchMin').value), maxS: mmToPx(+$('hatchMax').value),
-      // Soft shadows off → every face fails these thresholds (0 is
-      // unreachable since brightness is always >=0), disabling the ambient
-      // brightness-based hatch bands while leaving Cast/Ground shadow
-      // hatching (which doesn't go through this threshold at all) untouched.
-      // The sliders' own stored values are left alone so re-enabling Soft
-      // shadows restores exactly what the user had.
       // softShadowsOn is sent explicitly (not inferred from thr===0) so the
       // worker can tell "soft shadows genuinely off" apart from "a
       // threshold slider just happens to be low" — see castOnly /
       // SHADOW_ONLY_THR at the top of generate().
-      crossThr: $('softShadows').checked ? +$('crossThr').value : 0,
-      deepThr:  $('softShadows').checked ? +$('deepThr').value  : 0,
-      hatchThr: $('softShadows').checked ? +$('hatchThr').value : 0,
       softShadowsOn: $('softShadows').checked,
       cap: HATCH_CAP_PRESETS[+$('hatchCap').value],
     },
@@ -253,14 +271,6 @@ export function gatherSettings(){
       const y0 = -(availH/layout.scale - vp.clientHeight) / 2;
       return { x0, x1: x0 + availW/layout.scale, y0, y1: y0 + availH/layout.scale };
     })(),
-    circlesOn: layerStyle('cr').on,
-    circlesThr: $('softShadows').checked ? (+$('texCirclesThr').value || 0.92) : 0,
-    groundPatternCenterX: layout
-      ? mmToPx(layout.paperW/2 + (+$('texGroundPatternCenterX').value || 0) - layout.offX)
-      : (+$('texGroundPatternCenterX').value || 0),
-    groundPatternCenterY: layout
-      ? mmToPx(layout.paperH/2 + (+$('texGroundPatternCenterY').value || 0) - layout.offY)
-      : (+$('texGroundPatternCenterY').value || 0),
     // Rotate-model panel: 3x3 rotation (column-major — matches THREE.Matrix4's
     // own element layout, so the worker's math lines up exactly with
     // modelPivot's) applied around the model's own center. The worker rotates
@@ -327,7 +337,7 @@ export function syncShadowUI(){
 // rather than merely hidden: Contour Cleanup and Max hops feed
 // buildContourDrops, which does nothing unless layerOn.sv || layerOn.sh, and
 // Crease angle is only read inside the worker's own `wantC` guard, which is
-// this same cv || ch test arriving as gatherSettings' types.c.
+// this same cv || ch test on gatherSettings' layerOn.
 //
 // Never clears or rewrites a slider's value — re-enabling a layer resumes
 // whatever was set before, exactly as syncShadowUI leaves Invert shadows

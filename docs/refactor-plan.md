@@ -228,7 +228,25 @@ export const layers = [ /* ordered, highest priority first — the LAYERS order 
 - Keep `layerEls` (the row DOM) but key it by instance id; `layerStyle(id)` keeps returning
   `{on, color, width, dash}`.
 
-### 4c. Worker input as pass descriptors
+### 4c. Worker input as pass descriptors — DONE 2026-09-15
+
+Done as specified, with these details:
+- `passes` holds only ENABLED fill layers (a pass is work to do), built by `fillPasses` in
+  panel-controls.js: hatch `{id, type, angleDeg, thr}`, circles `{id, type, thr, centerX, centerY}` (centre
+  already in worker px). `S.hatch` keeps only what every pass still shares: `minS, maxS, softShadowsOn,
+  cap`. `types`, `circlesOn`, `circlesThr`, `groundPatternCenterX/Y` and `layerOn.h1…h3` are gone.
+- Thresholds are still the global sliders: each fill instance names its slider in a transitional
+  `thrControl` (layers.js, saved in v2 files and validated on load), beside 4b's `angleOffsetDeg`. The
+  4d loader turns both into per-instance values.
+- Worker: `groups`/`hatchCarrier` get one key per hatch pass (a disabled hatch layer no longer has an
+  empty group in the result); the hatch loop maps `hatchPasses` to its old internal `{key, ang, thr}`
+  shape, so the loop body is untouched. Circles draws the FIRST circles pass only — the result still
+  has one `circlePatternSegs` list; 4d must key it by id before allowing a second circles instance.
+  `legacyFillPasses(S)` rebuilds the classic passes for a blob without `passes`.
+- Verified: verify-golden identical; a scratch script ran the old gatherSettings + old worker against
+  the new ones over 72 random configurations (layer subsets, soft/cast/ground/invert, angle, thresholds,
+  spacing, centre, cap presets, forced low caps; arches + demo) and also fed the old settings shape to
+  the new worker: 144/144 identical results (groups, carriers, runIds/seqs, circle pieces, counts).
 
 Today `gatherSettings` sends four overlapping encodings (`types.c`, `layerOn`, `hatch.p1/p2/p3`,
 `circlesOn`) and the worker hard-codes three passes (`solver.js`: `passes.push({key:'h1', ang:S.hatch.ang,
