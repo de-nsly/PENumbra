@@ -9,12 +9,16 @@
    scene-io.js, clipboard paste in layout-canvas.js). Also the "Export one
    path per pen" checkbox's tie to "Split dashes" (the export itself is
    buildPenPathsExport in svg-export.js).
-   Loads after svg-export.js (layerEls, fillPenSelect, applyLayerStyle,
-   fmtWidth) and panel-controls.js (makeNameEditable). `blocks` and the
-   Layout context menu belong to layout-canvas.js, which loads later —
-   only touched from click handlers, long after both are loaded.
    ================================================================ */
+import { $, LAYERS, PEN_LIBRARY, defaultPens, penById } from './main.js';
+import { applyLayerStyle, fillPenSelect, fmtWidth, layerEls } from './svg-export.js';
+import { makeNameEditable } from './panel-controls.js';
+import { blocks } from './layout-canvas.js';
 
+
+// Next pen id — only ever climbs (see newPenId), replaced wholesale by a
+// scene import (setPenLibrary), saved in the scene alongside the pens.
+export let penIdCounter = PEN_LIBRARY.length;
 // Same stroke treatment as a layer row's own swatch (see applyLayerStyle),
 // minus the dash — a pen has none of its own.
 function paintPenSwatch(sw, pen){
@@ -30,16 +34,16 @@ function restyleAllLayers(){
 // Refills every pen dropdown after the library's list itself changed (add,
 // rename, delete, import). References are always reassigned BEFORE this runs,
 // so a select only falls back when its pen is truly gone.
-function refreshPenSelects(){
+export function refreshPenSelects(){
   for (const L of LAYERS) fillPenSelect(layerEls[L.key].pen, L.pen);
   document.querySelectorAll('#layerContextMenuList select.penSelect').forEach(sel => fillPenSelect(sel));
 }
-function syncPenLibraryUI(){
+export function syncPenLibraryUI(){
   renderPenLibrary();
   refreshPenSelects();
 }
 
-function renderPenLibrary(){
+export function renderPenLibrary(){
   const list = $('penLibList');
   list.innerHTML = '';
   for (const pen of PEN_LIBRARY){
@@ -100,7 +104,6 @@ function addPen(){
   PEN_LIBRARY.push({ id: newPenId(), name: 'Pen ' + (PEN_LIBRARY.length + 1), color: last.color, width: last.width });
   syncPenLibraryUI();
 }
-$('addPenBtn').addEventListener('click', addPen);
 
 // Deleting a pen that's in use — by a line layer, or by any Layout block's
 // override entry (counted whether that block's Override is currently on or
@@ -149,7 +152,7 @@ function normPenWidth(w){
 // with the same values. Widths compare exactly, not rounded, so a migrated
 // layer renders with precisely the width it was saved with. A missing or
 // invalid color/width takes fallbackPen's.
-function resolvePen(src, fallbackPen){
+export function resolvePen(src, fallbackPen){
   const color = normPenColor(src.color) || fallbackPen.color;
   const width = normPenWidth(src.width) ?? fallbackPen.width;
   const same = p => p.color === color && p.width === width;
@@ -165,7 +168,7 @@ function resolvePen(src, fallbackPen){
 // the library has already been replaced by the scene's own, so a plain id
 // is authoritative. An entry from before pens existed has color/width
 // instead of a pen. Anything unresolvable follows the layer's current pen.
-function resolveOverridePen(ov, layerKey, srcPens){
+export function resolveOverridePen(ov, layerKey, srcPens){
   const layerPen = penById(layerEls[layerKey].pen.value);
   if (typeof ov.pen === 'string'){
     const src = Array.isArray(srcPens) ? srcPens.find(p => p && p.id === ov.pen) : null;
@@ -178,7 +181,7 @@ function resolveOverridePen(ov, layerKey, srcPens){
 // scene with no usable pens (every scene saved before pens existed) restarts
 // from the built-in set, which its per-layer colours then match into.
 // Does not touch the UI — the caller syncs once everything is resolved.
-function setPenLibrary(srcPens, srcCounter){
+export function setPenLibrary(srcPens, srcCounter){
   const pens = [];
   if (Array.isArray(srcPens)){
     for (const p of srcPens){
@@ -193,22 +196,32 @@ function setPenLibrary(srcPens, srcCounter){
   penIdCounter = Math.max(Number.isFinite(srcCounter) ? srcCounter : 0, ...idNums);
 }
 
-/* ================= "Export one path per pen" =================
-   While on, Export SVG builds one path per pen (buildPenPathsExport in
-   svg-export.js), which always splits dashes — so "Split dashes" is shown
-   ticked and locked. The user's own choice is remembered separately in
-   splitDashChoice and put back when this is switched off; that remembered
-   value, not the forced tick, is also what a scene saves (scene-io.js). */
-let splitDashChoice = $('splitDashBtn').checked;
-$('splitDashBtn').addEventListener('change', () => { splitDashChoice = $('splitDashBtn').checked; });
-function syncPenPathsExportUI(){
+export let splitDashChoice;
+// Scene import sets the checkbox by assignment (no change event), so it
+// re-syncs the remembered choice explicitly.
+export function syncSplitDashChoiceFromDom(){ splitDashChoice = $('splitDashBtn').checked; }
+export function syncPenPathsExportUI(){
   const on = $('penPathsExport').checked;
   const split = $('splitDashBtn');
   split.checked = on ? true : splitDashChoice;
   split.disabled = on;
   split.closest('.chk').classList.toggle('ctlDisabled', on);
 }
-$('penPathsExport').addEventListener('change', syncPenPathsExportUI);
-syncPenPathsExportUI();
 
-renderPenLibrary();
+/* ================= init =================
+   Everything above only declares. This wires the DOM and starts the
+   module's live behaviour — called once by app.js, in script order. */
+export function initPenLibrary(){
+  $('addPenBtn').addEventListener('click', addPen);
+  /* ================= "Export one path per pen" =================
+     While on, Export SVG builds one path per pen (buildPenPathsExport in
+     svg-export.js), which always splits dashes — so "Split dashes" is shown
+     ticked and locked. The user's own choice is remembered separately in
+     splitDashChoice and put back when this is switched off; that remembered
+     value, not the forced tick, is also what a scene saves (scene-io.js). */
+  splitDashChoice = $('splitDashBtn').checked;
+  $('splitDashBtn').addEventListener('change', () => { splitDashChoice = $('splitDashBtn').checked; });
+  $('penPathsExport').addEventListener('change', syncPenPathsExportUI);
+  syncPenPathsExportUI();
+  renderPenLibrary();
+}

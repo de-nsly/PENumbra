@@ -419,8 +419,8 @@ network access once; after that the browser cache covers it.
 
 ## Tech & architecture
 
-- **Vanilla JavaScript**, no framework, no bundler, no `package.json`. Plain global-scope scripts
-  loaded in order at the bottom of `index.html`.
+- **Vanilla JavaScript**, no framework, no bundler, no `package.json`. Native ES modules: `index.html`
+  loads one entry module, `js/app.js`, which imports the rest.
 - **One dependency:** three.js r128 (CDN), used only for the 3D viewport.
 - **The solver** (`js/worker/*.js`) runs in a module Web Worker and is dependency-free. It communicates
   with the main thread by `postMessage` only.
@@ -434,7 +434,8 @@ pipeline stages, the file map and the load-order rules.
 
 There's no build step. Edit a file, reload the page (served over HTTP), and exercise the change — load a
 model, toggle layers, Generate, export. Each source file has a header comment describing its
-responsibilities and its cross-file dependencies; read that before reordering the `<script>` tags.
+responsibilities; `CLAUDE.md` describes the module layout and the one rule that keeps the modules
+importable headlessly (side effects live in each module's `init…()`, not at its top level).
 
 For anything that should not change the output, `tools/harness` runs the real solver headlessly in
 Node and compares against committed golden fingerprints:

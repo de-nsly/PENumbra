@@ -22,16 +22,17 @@
    block's node. The selection overlay (dashed rect, corner handles,
    snap guides) is a separate top-level layer, updated independently, so
    selecting/dragging never touches block content nodes and vice versa.
-
-   Load order: after panel-controls.js (needs markStale/activeTab) and
-   svg-export.js (needs applyLayerStyle/computePaperLayout/
-   baseSheetSize/PAPERS/LAYERS/layerEls/scaledDash), before scene-io.js
-   (which calls renderBlocksList/renderLayoutCanvas on scene import).
    ================================================================ */
+import { $, DASH_KEYS, LAYERS, PEN_LIBRARY, dashOnFraction, isFormControlTarget, isTextEntryTarget, penById, positionSegPill, scaledDash, svgEl } from './main.js';
+import { PAPERS, buildTrimMaskGroup, computeDStats, computePaperLayout, dashOptionsHtml, fillPenSelect, getMargins, layerEls, refreshStatusR, renderPaper, syncPreviewTrimMask } from './svg-export.js';
+import { activeTab, setActiveTab, lastGen, makeNameEditable, markStale } from './panel-controls.js';
+import { setActiveSheet, applyPv, resetPvFitWithRulers, updateRuler } from './paper-preview.js';
+import { resolveOverridePen, syncPenLibraryUI } from './pen-library.js';
+import { saveCurrentView } from './viewport3d.js';
 
 
-let blocks = [];
-let blockCounter = 0;                 // names only ever climb, never renumbered (same policy as Saved Views)
+export let blocks = [];
+export let blockCounter = 0;                 // names only ever climb, never renumbered (same policy as Saved Views)
 // A block's OWN identity for lookups (row <-> block, e.g. refreshSelectionHighlight)
 // — separate from blockCounter/name because name is user-editable and, since
 // duplicating a block deliberately doesn't advance blockCounter (see
@@ -49,7 +50,7 @@ let blockIdCounter = 0;
 // This is the LIST-level selection and holds any block at all, hidden and
 // locked ones included; the canvas acts on the interactive subset of it
 // instead — see the two-tier note above interactiveSelection().
-let selectedBlocks = new Set();
+export let selectedBlocks = new Set();
 // The block a Shift+click range extends FROM (Windows Explorer's "anchor").
 // Deliberately NOT bookkept when blocks are deleted or the
 // selection is cleared/replaced (marquee, scene import, Delete All) — it's
@@ -85,7 +86,7 @@ const MIN_BLOCK_SCALE = 0.05;
 // viewport to fit here (a block isn't sized to any particular generation
 // the way the live preview's content is), just the current paper size,
 // orientation and margin as plain physical dimensions in mm.
-function computeLayoutPaperDims(){
+export function computeLayoutPaperDims(){
   const [pl, ps] = PAPERS[$('paperSize').value];
   const landscape = $('orient').value === 'landscape';
   const paperW = landscape ? pl : ps, paperH = landscape ? ps : pl;
@@ -99,7 +100,7 @@ function computeLayoutPaperDims(){
 // computeScaleSnap add these alongside the existing page-edge/margin/
 // center reference lines) so the two can never disagree about where a
 // guide actually sits.
-function gridGuidePositions(dims){
+export function gridGuidePositions(dims){
   if (!$('gridGuideEnabled').checked) return { xs: [], ys: [] };
   const nx = Math.max(0, Math.round(+$('gridGuideX').value || 0));
   const ny = Math.max(0, Math.round(+$('gridGuideY').value || 0));
@@ -184,12 +185,11 @@ function initLayoutPlot(){
   axisGuides.id = 'layoutAxisGuides';
   svg.appendChild(axisGuides);
 }
-initLayoutPlot();
 
 // Updates the viewBox + margin guide from the current paper settings —
 // cheap, safe to call any time paper size/orientation/margin might have
 // changed, or when switching into the Layout tab.
-function syncLayoutPaperFrame(){
+export function syncLayoutPaperFrame(){
   const dims = computeLayoutPaperDims();
   $('layoutPlot').setAttribute('viewBox', '0 0 ' + dims.paperW.toFixed(3) + ' ' + dims.paperH.toFixed(3));
   const hitBg = $('layoutHitBg');
@@ -208,7 +208,7 @@ function syncLayoutPaperFrame(){
 // shared builder). Blocks keep their full geometry underneath: a block
 // dragged half off the margin is still whole, still draggable back, just
 // not visible (and not exported) past the margin.
-function syncLayoutTrimMask(dims){
+export function syncLayoutTrimMask(dims){
   const slot = document.getElementById('layoutTrimMaskSlot');
   if (!slot) return;
   slot.innerHTML = '';
@@ -235,51 +235,6 @@ function syncLayoutGridGuides(dims){
     g.appendChild(line);
   }
 }
-['gridGuideEnabled','gridGuideX','gridGuideY'].forEach(id =>
-  $(id).addEventListener('input', () => {
-    syncLayoutPaperFrame();
-    // Preview draws the same guides (display-only there, see renderPaper in
-    // svg-export.js) — keep it in step even while Layout is the active tab.
-    if (typeof renderPaper === 'function') renderPaper();
-  }));
-
-/* ================= tab switching =================
-   Preview and Layout are mutually exclusive — only one sheet is ever
-   visible, and the live 3D->SVG pipeline is fully paused while Layout is
-   active (see activeTab / markStale gating in panel-controls.js). Coming
-   back to Preview calls markStale() once to catch up on anything changed
-   while paused, rather than leaving stale output on screen. Block DOM is
-   persistent (see renderLayoutCanvas), so switching to Layout is just a
-   paper-frame sync, never a rebuild. */
-document.querySelectorAll('.paperTab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab;
-    if (tab === activeTab) return;
-    activeTab = tab;
-    document.querySelectorAll('.paperTab').forEach(b => b.classList.toggle('active', b === btn));
-    document.body.classList.toggle('layoutMode', tab === 'layout');
-    closeLayerContextMenu();
-    $('sheet').style.display = tab === 'preview' ? '' : 'none';
-    $('layoutSheet').style.display = tab === 'layout' ? '' : 'none';
-    $('layoutOverlaySvg').style.display = tab === 'layout' ? '' : 'none';
-    $('previewOverlaySvg').style.display = tab === 'preview' ? '' : 'none';
-    $('addToLayoutFloat').style.display = tab === 'preview' ? '' : 'none';
-    $('addToLayoutMsg').style.display = tab === 'preview' ? '' : 'none';
-    $('genRow').style.display = tab === 'preview' ? '' : 'none';
-    syncBlocksFloatVisibility();
-    activeSheetId = tab === 'preview' ? 'sheet' : 'layoutSheet';
-    if (tab === 'preview'){ $('paperPane').style.cursor = ''; lastCursor = null; }
-    resetPvFitWithRulers(); applyPv();
-    if (tab === 'layout') renderLayoutCanvas();
-    else markStale();
-    // Blocks can only ever change while Layout is active — refresh the
-    // Preview-tab overlay here so it's never stale after editing blocks,
-    // even if Auto-generate is off and markStale() above doesn't trigger an
-    // actual regenerate (which would otherwise be the only other refresh).
-    renderPreviewLayoutOverlay();
-    refreshStatusR();
-  });
-});
 
 /* ================= add current generation to the layout =================
    Called from #addToLayoutBtn, which only exists in Preview mode — this is
@@ -501,12 +456,9 @@ function syncDuplicateBlockBtn(){
   btn.style.display = blocks.length ? '' : 'none';
   btn.disabled = selectedBlocks.size === 0;
 }
-$('duplicateBlockBtn').addEventListener('click', () => {
-  if (selectedBlocks.size) duplicateBlocks([...selectedBlocks]);
-});
 
 /* ================= persistent per-block DOM ================= */
-function createBlockDom(block){
+export function createBlockDom(block){
   // Older .pen files (or in-memory blocks from before this field existed)
   // won't have layerVisible at all — default to all-visible rather than
   // letting updateBlockStyle below throw on a missing lookup.
@@ -558,7 +510,7 @@ function updateBlockTransform(block){
   block.dom.outer.setAttribute('transform', blockTransformAttr(block));
   block.dom.outer.style.display = block.visible ? '' : 'none';
 }
-function updateBlockStyle(block){
+export function updateBlockStyle(block){
   if (!block.dom) return;
   const combinedScale = Math.max(1e-6, block.scale * block.freezeScale);
   for (const L of LAYERS){
@@ -601,17 +553,33 @@ function updateBlockStyle(block){
 // Override is on, the live panel's otherwise. Shared by updateBlockStyle
 // and the one-path-per-pen export (buildPenPathsExport, svg-export.js), so
 // the file can never group a layer under a different pen than it shows.
-function blockLayerPenId(block, key){
+export function blockLayerPenId(block, key){
   const ov = block.override && block.overrideStyle ? block.overrideStyle[key] : null;
   return ov ? ov.pen : layerEls[key].pen.value;
 }
-function removeBlockDom(block){
+export function removeBlockDom(block){
   if (block.dom){ block.dom.outer.remove(); block.dom = null; }
 }
-function refreshAllBlockStyles(){
+// Scene import: the incoming list REPLACES every block. The outgoing blocks'
+// persistent DOM and any selection referencing them are torn down first —
+// reassigning `blocks` alone would orphan their <g> trees in
+// #layoutBlocksLayer (renderLayoutCanvas creates DOM for blocks that lack
+// one, it never removes DOM for blocks no longer in the array). Ids are
+// reassigned fresh: older scenes predate the id field, and a scene can be
+// re-imported twice in one session, so only the live counter keeps them
+// unique. The caller then resolves override pens and re-renders the list.
+export function replaceBlocks(list, counter){
+  clearSelection();
+  closeLayerContextMenu();
+  for (const b of blocks) removeBlockDom(b);
+  blocks = list;
+  for (const b of blocks) b.id = ++blockIdCounter;
+  blockCounter = counter;
+}
+export function refreshAllBlockStyles(){
   for (const b of blocks) updateBlockStyle(b);
 }
-function renderLayoutCanvas(){
+export function renderLayoutCanvas(){
   syncLayoutPaperFrame();
   for (const b of blocks){
     if (!b.dom) createBlockDom(b);
@@ -647,7 +615,7 @@ function renderLayoutCanvas(){
 // paperW/paperH/margin source of truth — no extra coordinate conversion
 // needed, only a shared viewBox (both #plot and #layoutPlot use
 // "0 0 paperW paperH").
-function renderPreviewLayoutOverlay(){
+export function renderPreviewLayoutOverlay(){
   const plot = document.getElementById('plot');
   if (!plot) return;
   const old = document.getElementById('previewLayoutOverlay');
@@ -674,7 +642,7 @@ function renderPreviewLayoutOverlay(){
   else plot.insertBefore(g, content);
   // The trim mask has to stay the last child of #plot to cover everything,
   // and the append above just moved this overlay past it.
-  if (typeof syncPreviewTrimMask === 'function') syncPreviewTrimMask();
+  syncPreviewTrimMask();
 }
 // Feeds refreshStatusR() (svg-export.js) — sums computeDStats() over every
 // visible layer of every visible block, skipping a hidden block entirely
@@ -682,7 +650,7 @@ function renderPreviewLayoutOverlay(){
 // the right-click layer menu (block.layerVisible). freezeScale (px->mm at
 // freeze time) combined with the block's own current on-page scale is the
 // same combinedScale math updateBlockTransform already uses.
-function computeLayoutStats(){
+export function computeLayoutStats(){
   const out = { segments: 0, paths: 0, closedPaths: 0, lenMm: 0 };
   for (const block of blocks){
     if (!block.visible) continue;
@@ -747,9 +715,6 @@ function rotateBlocksForOrientationFlip(){
   if (selectionFrame) selectionFrame.corners = selectionFrame.corners.map(([x,y]) => rotatePoint(x,y));
   updateSelectionOverlay();
 }
-$('orient').addEventListener('input', () => {
-  if ($('rotateBlocksWithPage').checked) rotateBlocksForOrientationFlip();
-});
 
 /* ================= geometry helpers =================
    Transform model: world = (x,y) + R(rotationDeg) * S(scale) * (local - center),
@@ -840,7 +805,7 @@ function refreshInteractiveSelection(){
 // Ctrl there would toggle the selection AND open a context menu from one
 // click (the per-block layer menu on the canvas, the browser's own on a
 // list row).
-const IS_MAC = /Mac|iPhone|iPad|iPod/.test(
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(
   (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent);
 function multiSelectKey(e){ return IS_MAC ? e.metaKey : e.ctrlKey; }
 // Union of every INTERACTIVE selected block's own world-space envelope —
@@ -906,7 +871,7 @@ function setSelection(blocksArr){
   refreshSelectionHighlight();
   syncDuplicateBlockBtn();
 }
-function clearSelection(){ if (selectedBlocks.size) setSelection([]); }
+export function clearSelection(){ if (selectedBlocks.size) setSelection([]); }
 // Ctrl/Cmd+click: add or remove one block, leaving the rest of the
 // selection alone. Explorer moves the anchor to whatever was just
 // Ctrl+clicked (so a following Shift+click extends from there), including
@@ -955,7 +920,7 @@ function extendSelectionTo(block, additive){
 function rowActionScope(block){
   return selectedBlocks.has(block) ? blocks.filter(b => selectedBlocks.has(b)) : [block];
 }
-function updateSelectionOverlay(){
+export function updateSelectionOverlay(){
   const ov = $('layoutOverlaySvg');
   ov.innerHTML = '';
   updateRuler();   // this wipe just took the ruler out with it — put it back before any of the early returns below
@@ -1469,137 +1434,6 @@ function updateHoverCursor(wx, wy, altKey){
    (which is what this would be, since paper-preview.js loads first) can't
    achieve that; only capture-phase priority can. */
 const LAYOUT_UI_CHROME_SELECTOR = '#paperPanelStack, #paperTabs, #reset2dBtn, #layerContextMenu';
-$('paperPane').addEventListener('pointerdown', e => {
-  if (activeTab !== 'layout') return;
-  if (e.button !== 0) return;      // left-click only — right-click is handled separately by the contextmenu listener
-  // Floating UI panels sit visually on top of the canvas but hit-testing
-  // below is purely mm-coordinate-based, with no notion of DOM z-order —
-  // without this check, a block positioned underneath one of these panels
-  // could swallow a click meant for the panel's own button.
-  if (e.target.closest(LAYOUT_UI_CHROME_SELECTOR)) return;
-  const [wx, wy] = screenToCanvasMm(e.clientX, e.clientY);
-  const hit = hitTest(wx, wy);
-  if (!hit){
-    // Marquee-select: deferred entirely to pointermove/pointerup below — a
-    // plain click with no drag still needs to behave as "clear selection
-    // unless shift", but that's only knowable once the gesture ends up
-    // without ever crossing the move threshold (see endInteraction).
-    e.preventDefault();
-    $('paperPane').setPointerCapture(e.pointerId);
-    interaction = { mode: 'marquee', startWorld: [wx, wy], curWorld: [wx, wy],
-      preSelection: new Set(selectedBlocks), moved: false };
-    return;
-  }
-  e.stopPropagation();
-  e.preventDefault();
-  $('paperPane').setPointerCapture(e.pointerId);
-  pendingCollapseTo = null;
-
-  if (hit.type === 'move'){
-    const block = hit.block;
-    // Ctrl/Cmd toggles, same as in the list. Shift ALSO toggles here rather
-    // than extending a range: the canvas has no linear order for a range to
-    // run along (that's a list-only notion — see extendSelectionTo), and
-    // Shift already carries several drag-time meanings on this canvas
-    // (axis-lock while moving, 5-degree rotate steps, additive marquee), so
-    // it keeps its existing click meaning here unchanged.
-    if (e.shiftKey || multiSelectKey(e)){
-      toggleSelection(block);
-    } else if (selectedBlocks.has(block)){
-      // Already part of the current selection — don't collapse to just this
-      // one yet. If a drag actually happens, the whole group should move;
-      // collapsing immediately would make it impossible to drag a group by
-      // grabbing one of its own members. Only resolved at pointerup, and
-      // only if no drag occurred (see endInteraction).
-      pendingCollapseTo = block;
-    } else {
-      setSelection([block]);
-    }
-    // Only the interactive members come along for the drag — a hidden or
-    // locked block that's also selected in the list stays exactly where it
-    // is, and doesn't contribute to the group's envelope or snapping.
-    const active = interactiveSelection();
-    if (active.length){
-      const startEnv = selectionEnvelope();
-      const members = active.map(b => ({ block: b, startX: b.x, startY: b.y }));
-      interaction = { mode: 'move', members, startEnv, startWorld: [wx, wy], moved: false,
-        // Alt held at pointerdown arms duplicate-instead-of-move; it can
-        // also be pressed later, mid-drag (see startAltDuplicate).
-        altDuplicate: e.altKey, altDone: false,
-        startFrameCorners: active.length > 1 ? selectionFrame.corners.map(c => c.slice()) : null };
-    }
-  } else if (hit.type === 'scale'){
-    const corners = blockCorners(hit.block);
-    const localCorners = [
-      [hit.block.bboxLocal.x0, hit.block.bboxLocal.y0], [hit.block.bboxLocal.x1, hit.block.bboxLocal.y0],
-      [hit.block.bboxLocal.x1, hit.block.bboxLocal.y1], [hit.block.bboxLocal.x0, hit.block.bboxLocal.y1],
-    ];
-    const anchorIdx = (hit.cornerIndex + 2) % 4;
-    const anchorWorld = corners[anchorIdx], anchorLocal = localCorners[anchorIdx];
-    const draggedWorld = corners[hit.cornerIndex];
-    const startDist = Math.max(1e-6, Math.hypot(draggedWorld[0]-anchorWorld[0], draggedWorld[1]-anchorWorld[1]));
-    // With the anchor fixed and rotation fixed for the duration of the
-    // drag, EVERY corner's world position is an affine function of scale s:
-    // worldCorner_i(s) = anchorWorld + s*V_i, where V_i is this fixed,
-    // rotated offset from the anchor to corner i. That makes each envelope
-    // edge (the min/max of these over the 4 corners) ALSO linear in s —
-    // which is what lets computeScaleSnap solve directly for the scale
-    // that puts a given edge exactly on a snap target, rather than just
-    // measuring distance the way move-snapping does. Verified numerically
-    // against a direct forward-transform computation, including on a
-    // rotated block, before wiring this in.
-    // Scaled by the block's CURRENT scale here so V ends up in the same
-    // world-space-offset units computeScaleSnap expects (worldCorner_i(k) =
-    // anchorWorld + k*V_i) — matching how the scaleGroup path below builds
-    // its corners from blockCorners(), which already bakes in each block's
-    // own scale. Omitting this only breaks once block.scale != 1, i.e. from
-    // a block's second scale drag onward, since the first drag starts at
-    // scale 1 where the missing factor doesn't matter.
-    const rad = hit.block.rotationDeg * Math.PI/180, cos = Math.cos(rad), sin = Math.sin(rad);
-    const V = localCorners.map(([lx, ly]) => {
-      const dx = (lx - anchorLocal[0]) * hit.block.scale, dy = (ly - anchorLocal[1]) * hit.block.scale;
-      return [dx*cos - dy*sin, dx*sin + dy*cos];
-    });
-    // corners here (world-space, anchor-relative) feed the same
-    // computeScaleSnap() a multi-block scale uses — see its own comment for
-    // why a single block is just the N=1 case of that same function.
-    interaction = { mode: 'scale', anchorWorld, anchorLocal, startDist,
-      startScale: hit.block.scale, rotationDeg: hit.block.rotationDeg,
-      corners: V, minStartScale: hit.block.scale, excludeSet: new Set([hit.block]),
-      members: [{ block: hit.block, startX: hit.block.x, startY: hit.block.y, startScale: hit.block.scale }] };
-  } else if (hit.type === 'rotate'){
-    const startAngle = Math.atan2(wy - hit.block.y, wx - hit.block.x) * 180/Math.PI;
-    interaction = { mode: 'rotate', block: hit.block, startAngle, startRotation: hit.block.rotationDeg };
-    $('paperPane').style.cursor = 'grabbing';
-    lastCursor = 'grabbing';
-  } else if (hit.type === 'scaleGroup'){
-    const envCorners = selectionFrame.corners;
-    const anchorIdx = (hit.cornerIndex + 2) % 4;
-    const anchorWorld = envCorners[anchorIdx];
-    const draggedWorld = envCorners[hit.cornerIndex];
-    const startDist = Math.max(1e-6, Math.hypot(draggedWorld[0]-anchorWorld[0], draggedWorld[1]-anchorWorld[1]));
-    const active = interactiveSelection();
-    const members = active.map(b => ({ block: b, startX: b.x, startY: b.y, startScale: b.scale }));
-    // Every corner of every interactive member, as an offset from the SAME
-    // shared group anchor — this is what makes computeScaleSnap solve for
-    // one shared k that keeps the whole group rigid (see its own comment).
-    const corners = [];
-    for (const b of active) for (const c of blockCorners(b)) corners.push([c[0]-anchorWorld[0], c[1]-anchorWorld[1]]);
-    const minStartScale = Math.min(...members.map(m => m.startScale));
-    interaction = { mode: 'scaleGroup', anchorWorld, startDist, members,
-      corners, minStartScale, excludeSet: new Set(active),
-      startFrameCorners: envCorners.map(c => c.slice()) };
-  } else if (hit.type === 'rotateGroup'){
-    const c = selectionFrame.corners;
-    const pivot = [(c[0][0]+c[2][0])/2, (c[0][1]+c[2][1])/2];   // diagonal midpoint — the frame's own center, rotated or not
-    const startAngle = Math.atan2(wy - pivot[1], wx - pivot[0]) * 180/Math.PI;
-    const members = interactiveSelection().map(b => ({ block: b, startX: b.x, startY: b.y, startRotationDeg: b.rotationDeg }));
-    interaction = { mode: 'rotateGroup', pivot, startAngle, members,
-      startFrameCorners: c.map(pt => pt.slice()) };
-    $('paperPane').style.cursor = 'grabbing';
-    lastCursor = 'grabbing';
-  }
-}, { capture: true });
 /* Alt+drag duplicates instead of moving (Illustrator's gesture): the
    ORIGINALS stay exactly where they were and the copies become what's being
    dragged. Called from the move handler below, at most once per gesture.
@@ -1631,133 +1465,6 @@ function startAltDuplicate(interaction){
   $('paperPane').style.cursor = 'copy';
   lastCursor = 'copy';
 }
-$('paperPane').addEventListener('pointermove', e => {
-  if (activeTab !== 'layout') return;
-  const [wx, wy] = screenToCanvasMm(e.clientX, e.clientY);
-  if (!interaction){
-    if (e.target.closest(LAYOUT_UI_CHROME_SELECTOR)){
-      if (lastCursor !== null){ $('paperPane').style.cursor = ''; lastCursor = null; }
-      return;
-    }
-    updateHoverCursor(wx, wy, e.altKey);
-    return;
-  }
-  if (interaction.mode === 'move'){
-    let dx = wx - interaction.startWorld[0], dy = wy - interaction.startWorld[1];
-    if (Math.hypot(dx, dy) > 1e-6) interaction.moved = true;
-    // Gated on a real screen-px drag, not on `moved` above (which trips on
-    // any sub-pixel jitter) — an Alt+click that never actually drags must
-    // leave no stray copy sitting on top of the original.
-    if ((interaction.altDuplicate || e.altKey) && !interaction.altDone &&
-        Math.hypot(dx, dy) / mmPerScreenPx() > DRAG_THRESHOLD_PX){
-      startAltDuplicate(interaction);
-    }
-    if (e.shiftKey){
-      // Constrain to whichever axis has the larger total drag delta from
-      // the start — re-evaluated every frame (not locked to whichever was
-      // dominant when shift was first pressed), so it can flip near the
-      // diagonal the same way Illustrator/Figma's does.
-      if (Math.abs(dx) >= Math.abs(dy)) dy = 0; else dx = 0;
-    }
-    const excludeSet = new Set(interaction.members.map(m => m.block));
-    const snap = computeMoveSnap(interaction.startEnv, excludeSet, dx, dy);
-    let { dx: finalDx, dy: finalDy, guideX, guideY, guideXRange, guideYRange } = snap;
-    if (e.shiftKey){
-      // Re-apply the axis lock AFTER snapping too — snapping alone could
-      // otherwise reintroduce a small amount of cross-axis movement.
-      if (dy === 0){ finalDy = 0; guideY = null; guideXRange = null; }
-      else { finalDx = 0; guideX = null; guideYRange = null; }
-    }
-    for (const m of interaction.members){
-      m.block.x = m.startX + finalDx;
-      m.block.y = m.startY + finalDy;
-      updateBlockTransform(m.block);
-    }
-    if (interaction.startFrameCorners){
-      selectionFrame.corners = interaction.startFrameCorners.map(([x,y]) => [x+finalDx, y+finalDy]);
-    }
-    drawSnapGuides({ guideX, guideY, guideXRange, guideYRange });
-    if (e.shiftKey){
-      const cx = (interaction.startEnv.x0 + interaction.startEnv.x1) / 2 + finalDx;
-      const cy = (interaction.startEnv.y0 + interaction.startEnv.y1) / 2 + finalDy;
-      // dy===0 means the drag is constrained to move along the X axis
-      // (horizontal), so the indicator is a horizontal line through the
-      // selection's center — and the mirror for dx===0/Y.
-      drawAxisLockGuide(dy === 0 ? 'x' : 'y', cx, cy);
-    } else {
-      clearAxisLockGuide();
-    }
-  } else if (interaction.mode === 'rotate'){
-    const b = interaction.block;
-    const curAngle = Math.atan2(wy - b.y, wx - b.x) * 180/Math.PI;
-    const raw = interaction.startRotation + (curAngle - interaction.startAngle);
-    const rotateStep = e.shiftKey ? 5 : 1;
-    const snapped = Math.round(raw / rotateStep) * rotateStep;
-    b.rotationDeg = ((snapped % 360) + 360) % 360;
-    updateBlockTransform(b);
-    showRotateLabel(b.rotationDeg, e.clientX, e.clientY);
-  } else if (interaction.mode === 'rotateGroup'){
-    // The snapped DELTA is what gets shared across every member — not each
-    // one's own absolute resulting rotation snapped independently, which
-    // (since members can start at different rotations) would give each
-    // block a different actual delta and break the group's rigidity. See
-    // the spec discussion this was built from.
-    const curAngle = Math.atan2(wy - interaction.pivot[1], wx - interaction.pivot[0]) * 180/Math.PI;
-    const rawDelta = curAngle - interaction.startAngle;
-    const rotateStep = e.shiftKey ? 5 : 1;
-    const snappedDelta = Math.round(rawDelta / rotateStep) * rotateStep;
-    const rad = snappedDelta * Math.PI/180, cos = Math.cos(rad), sin = Math.sin(rad);
-    const [px, py] = interaction.pivot;
-    for (const m of interaction.members){
-      m.block.rotationDeg = ((m.startRotationDeg + snappedDelta) % 360 + 360) % 360;
-      const dx = m.startX - px, dy = m.startY - py;
-      m.block.x = px + (dx*cos - dy*sin);
-      m.block.y = py + (dx*sin + dy*cos);
-      updateBlockTransform(m.block);
-    }
-    // The selection box itself rotates rigidly right along with the group
-    // — not recomputed as a fresh axis-aligned union — and this rotated
-    // shape is what persists in selectionFrame for subsequent gestures,
-    // until the selected SET itself changes (see resetSelectionFrame).
-    selectionFrame.corners = interaction.startFrameCorners.map(([x,y]) => {
-      const dx = x - px, dy = y - py;
-      return [px + (dx*cos - dy*sin), py + (dx*sin + dy*cos)];
-    });
-    showRotateLabel(((snappedDelta % 360) + 360) % 360, e.clientX, e.clientY);
-  } else if (interaction.mode === 'scale' || interaction.mode === 'scaleGroup'){
-    const curDist = Math.hypot(wx - interaction.anchorWorld[0], wy - interaction.anchorWorld[1]);
-    const minK = MIN_BLOCK_SCALE / interaction.minStartScale;
-    const naturalK = Math.max(minK, curDist / interaction.startDist);
-    const scaleSnap = computeScaleSnap(interaction, naturalK);
-    const k = scaleSnap.k;
-    drawSnapGuides(scaleSnap);
-    const [ax, ay] = interaction.anchorWorld;
-    for (const m of interaction.members){
-      m.block.scale = m.startScale * k;
-      m.block.x = ax + (m.startX - ax) * k;
-      m.block.y = ay + (m.startY - ay) * k;
-      updateBlockTransform(m.block);
-      updateBlockStyle(m.block);
-      updateDimensionLabels(m.block);
-    }
-    if (interaction.mode === 'scaleGroup'){
-      selectionFrame.corners = interaction.startFrameCorners.map(([x,y]) => [ax + (x-ax)*k, ay + (y-ay)*k]);
-    }
-  } else if (interaction.mode === 'marquee'){
-    interaction.curWorld = [wx, wy];
-    if (!interaction.moved){
-      // Small screen-px move threshold (not a raw mm one, so it stays
-      // consistent across zoom levels) — below it, this still reads as a
-      // plain click rather than a drag, same idea as every other
-      // interaction mode's own .moved flag.
-      const dragPx = Math.hypot(wx - interaction.startWorld[0], wy - interaction.startWorld[1]) / mmPerScreenPx();
-      if (dragPx > DRAG_THRESHOLD_PX) interaction.moved = true;
-    }
-    if (interaction.moved) updateMarqueeSelection(interaction, e.shiftKey || multiSelectKey(e));
-  }
-  updateSelectionOverlay();
-  if (interaction.mode === 'marquee' && interaction.moved) drawMarqueeRect(interaction);
-});
 function endInteraction(e){
   // Resolved independent of whether an interaction/drag was actually
   // created — clicking an already-selected member of a group that also
@@ -1790,8 +1497,6 @@ function endInteraction(e){
   hideDimensionLabels();
   if (hadInteraction) refreshStatusR();
 }
-$('paperPane').addEventListener('pointerup', endInteraction);
-$('paperPane').addEventListener('pointercancel', endInteraction);
 
 /* ================= per-block layer visibility context menu =================
    Right-clicking a block overrides the browser's default context menu with
@@ -1874,110 +1579,11 @@ function openLayerContextMenu(block, clientX, clientY){
   menu.style.left = Math.max(8, x) + 'px';
   menu.style.top = Math.max(8, y) + 'px';
 }
-$('layerContextOverrideChk').addEventListener('change', e => {
-  if (!contextMenuBlock) return;
-  contextMenuBlock.override = e.target.checked;
-  updateBlockStyle(contextMenuBlock);
-  refreshStatusR();   // switches which dash (live panel vs. this block's own override) governs the ink length
-  openLayerContextMenu(contextMenuBlock, contextMenuPos.x, contextMenuPos.y);   // rebuild to show/hide the expanded controls
-});
-function closeLayerContextMenu(){
+export function closeLayerContextMenu(){
   contextMenuBlock = null;
   $('layerContextMenu').style.display = 'none';
 }
-$('paperPane').addEventListener('contextmenu', e => {
-  if (activeTab !== 'layout') return;
-  if (e.target.closest(LAYOUT_UI_CHROME_SELECTOR)) return;
-  const [wx, wy] = screenToCanvasMm(e.clientX, e.clientY);
-  const hit = hitTestBlockBody(wx, wy);
-  if (!hit){ closeLayerContextMenu(); return; }   // let the browser's default menu show over empty canvas
-  e.preventDefault();
-  // Deliberately does NOT change the current selection — right-click edits
-  // whichever block is under the cursor, independent of a broader multi-
-  // selection, so you can peek at one layer's overrides without losing it.
-  openLayerContextMenu(hit, e.clientX, e.clientY);
-}, { capture: true });
-document.addEventListener('pointerdown', e => {
-  if (contextMenuBlock && !$('layerContextMenu').contains(e.target)) closeLayerContextMenu();
-});
-/* Every shortcut below (and both clipboard handlers further down) keeps out
-   of the way of whatever the focused element does with that same key — see
-   isTextEntryTarget / isFormControlTarget in main.js for the two different
-   questions that involves. */
-/* Restores the blur the browser would have done on its own. Clicking a
-   slider or checkbox in a settings panel leaves it focused; this file's own
-   pointerdown handlers then call preventDefault (to stop text selection and
-   native drags), and preventDefault on pointerdown ALSO suppresses the
-   focus change the browser would otherwise make. So the control stays
-   focused indefinitely — through clicking the canvas, dragging a block,
-   selecting rows — and every shortcut above keeps deferring to a control
-   the user stopped touching several clicks ago: arrows adjust the slider
-   instead of nudging blocks, Ctrl+A selects the whole page's text.
-   Capture phase, so it runs before any of those preventDefaults. Nothing is
-   focused in its place: activeElement falls back to <body>, exactly the
-   state a plain click on non-focusable chrome would have produced anyway. */
-document.addEventListener('pointerdown', e => {
-  if (!isFormControlTarget()) return;   // nothing focused that could swallow a shortcut
-  // Clicking a control (or the still-open rename field) must let it keep or
-  // take focus — this only fires for clicks on everything else.
-  if (e.target.closest && e.target.closest('input, select, textarea, [contenteditable="true"]')) return;
-  document.activeElement.blur();
-}, { capture: true });
 const NUDGE_KEYS = { ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0] };
-document.addEventListener('keydown', e => {
-  if (contextMenuBlock && e.key === 'Escape') closeLayerContextMenu();
-  if (NUDGE_KEYS[e.key] && activeTab === 'layout' && interactiveSelection().length){
-    // The WIDE guard — an arrow key belongs to any focused form control,
-    // a slider or <select> included, not just a text field.
-    if (!isFormControlTarget()){
-      e.preventDefault();
-      const amount = e.shiftKey ? 5 : 0.5;
-      const [dx, dy] = NUDGE_KEYS[e.key];
-      // Interactive members only — a selected but hidden/locked block is
-      // inert on the canvas, arrow keys included.
-      for (const b of interactiveSelection()){
-        b.x += dx * amount;
-        b.y += dy * amount;
-        updateBlockTransform(b);
-      }
-      // The group box is persistent state, NOT recomputed from the blocks on
-      // every draw (see selectionFrame's own comment) — so it has to be
-      // translated by the same delta here, exactly as a move drag, a group
-      // rotate/scale and an orientation flip already do. Without this the
-      // box and its handles sit still while the blocks walk out from under
-      // them. A single selected block was never affected: its overlay is
-      // drawn straight from its own live corners, with no frame involved.
-      if (selectionFrame){
-        selectionFrame.corners = selectionFrame.corners.map(([x, y]) => [x + dx * amount, y + dy * amount]);
-      }
-      updateSelectionOverlay();
-    }
-  }
-  if ((e.key === 'Delete' || e.key === 'Backspace') && activeTab === 'layout' && selectedBlocks.size){
-    // Routes through the same deleteBlocks() a row's own X button uses —
-    // see there for why there's no confirmation dialog.
-    // Deletes only the INTERACTIVE members, unlike the list's own delete
-    // buttons, which delete everything selected: a keystroke shouldn't be
-    // able to destroy a layer that was deliberately locked (or hidden, and
-    // so not even on screen to be missed) — protecting it from the canvas
-    // is the entire point of locking it.
-    if (!isTextEntryTarget()){
-      e.preventDefault();
-      deleteBlocks(interactiveSelection());
-    }
-  }
-  // Ctrl/Cmd+A — select every block, hidden and locked included (the list
-  // selection has no eligibility rule; only the canvas does). Leaves the
-  // anchor alone: it's validated at use anyway, and whatever was last
-  // clicked stays the natural origin for a following Shift+click.
-  if (multiSelectKey(e) && (e.key === 'a' || e.key === 'A') && activeTab === 'layout' && blocks.length){
-    if (!isTextEntryTarget()){
-      e.preventDefault();
-      setSelection(blocks.slice());
-    }
-  }
-});
-['pointerdown','wheel'].forEach(t => $('layerContextMenu').addEventListener(t, e => e.stopPropagation()));
 
 /* ================= clipboard (copy / paste layers) =================
    Ctrl/Cmd+C copies the interactive part of the selection to the SYSTEM
@@ -2107,30 +1713,6 @@ function blocksFromClipboardText(text){
 function clipboardShortcutsActive(){
   return activeTab === 'layout' && !isTextEntryTarget() && !interaction;
 }
-document.addEventListener('copy', e => {
-  if (!clipboardShortcutsActive() || !e.clipboardData) return;
-  // A real text selection wins — selecting a label and hitting Ctrl+C should
-  // still copy that text rather than silently copying layers instead.
-  const sel = window.getSelection();
-  if (sel && !sel.isCollapsed) return;
-  const active = interactiveSelection();
-  if (!active.length) return;   // nothing copyable — let the browser's own copy proceed untouched
-  e.clipboardData.setData('text/plain', blocksToClipboardText(active));
-  e.preventDefault();   // without this the browser's own (empty) copy overwrites what was just set
-  $('statusL').textContent = 'copied ' + blockCountLabel(active);
-});
-document.addEventListener('paste', e => {
-  if (!clipboardShortcutsActive() || !e.clipboardData) return;
-  const pasted = blocksFromClipboardText(e.clipboardData.getData('text/plain'));
-  if (!pasted.length) return;
-  e.preventDefault();
-  syncPenLibraryUI();   // matching the pasted overrides' pens may have appended some
-  // Placed verbatim — same position, rotation, scale and overrides as when
-  // copied, with no offset nudge. Pasting into the source document lands the
-  // copy exactly on top of the original; addBlocks selects it, which is what
-  // makes it immediately draggable (or nudgeable) off.
-  addBlocks(pasted, 'pasted');
-});
 
 /* ================= block list UI ================= */
 /* ================= block list drag-reorder =================
@@ -2174,67 +1756,6 @@ function startBlockDrag(e, block, row){
   blockDragState = { moving, movingRows, others, insertLine, target: null, moved: false };
   e.target.setPointerCapture(e.pointerId);
 }
-document.addEventListener('pointermove', e => {
-  if (!blockDragState) return;
-  const { others, insertLine } = blockDragState;
-  const list = $('blocksList');
-  blockDragState.moved = true;
-  let target = null;
-  for (const r of others){
-    const rect = r.getBoundingClientRect();
-    if (e.clientY < rect.top + rect.height/2){ target = r; break; }
-  }
-  blockDragState.target = target;   // null means "after every other row"
-  if (!insertLine.parentNode) list.appendChild(insertLine);
-  // Positioned via absolute top offset (see .svInsertLine — out of normal
-  // flow entirely) rather than DOM insertion order, specifically so it
-  // never adds to the list's own content height: inserting it as a real
-  // flow element was occasionally enough to tip the list over its
-  // max-height and pop the scrollbar open mid-drag.
-  const listRect = list.getBoundingClientRect();
-  const INSERT_LINE_HEIGHT = 2;   // keep in sync with .svInsertLine's own height in styles.css
-  let lineTop;
-  if (target) lineTop = target.getBoundingClientRect().top - listRect.top + list.scrollTop;
-  else if (others.length){
-    // Bottom-of-list case — anchor the line's BOTTOM edge (not top) to the
-    // last row's bottom, so the line's own height stays within the
-    // existing content bounds instead of extending past it. Anchoring by
-    // top here (matching the target case above) would put the line's
-    // bottom 2px beyond the true content edge — even fully absolutely-
-    // positioned, that still counts toward the list's scrollable overflow,
-    // which was popping the scrollbar open specifically in this one case.
-    lineTop = others[others.length-1].getBoundingClientRect().bottom - listRect.top + list.scrollTop - INSERT_LINE_HEIGHT;
-  }
-  else lineTop = 0;
-  insertLine.style.top = lineTop + 'px';
-});
-document.addEventListener('pointerup', () => {
-  if (!blockDragState) return;
-  const { moving, movingRows, others, insertLine, target, moved } = blockDragState;
-  insertLine.remove();
-  for (const r of movingRows) r.classList.remove('svDragging');
-  blockDragState = null;
-  if (!moved) return;   // grip clicked but never dragged — see startBlockDrag
-
-  // insertAt indexes into `others` — the rows that AREN'T moving — and
-  // `rest` below is that exact same sequence as blocks, so the index carries
-  // over directly with no adjustment for how many blocks were lifted out.
-  const insertAt = target ? others.indexOf(target) : others.length;
-
-  const visualOrder = blocks.slice().reverse();
-  const lifted = visualOrder.filter(b => moving.has(b));
-  if (!lifted.length) return;   // every dragged block was deleted mid-drag — nothing to do
-  const rest = visualOrder.filter(b => !moving.has(b));
-  rest.splice(insertAt, 0, ...lifted);   // `lifted` keeps its own visual order, so the group stays internally stacked as it was
-  blocks = rest.slice().reverse();
-
-  // Sync actual SVG paint order to match — re-appending an already-present
-  // child moves it to the end, so appending every block in the new array
-  // order, in sequence, reproduces that order in the DOM.
-  const blocksLayer = $('layoutBlocksLayer');
-  for (const b of blocks) if (b.dom) blocksLayer.appendChild(b.dom.outer);
-  renderBlocksList();
-});
 
 // Whether the Layers panel itself should be on screen at all — both that
 // the Layout tab is even active AND that there's at least one block to
@@ -2250,7 +1771,7 @@ function syncBlocksFloatVisibility(){
   // described in one place, in CSS.
   document.body.classList.toggle('blocksPanelOpen', show);
 }
-function renderBlocksList(){
+export function renderBlocksList(){
   const list = $('blocksList');
   list.innerHTML = '';
   syncBlocksFloatVisibility();
@@ -2351,36 +1872,19 @@ function renderBlocksList(){
   // own, so this pass is what gives them one.
   refreshSelectionHighlight();
 }
-renderBlocksList();   // sets the panel's initial hidden/shown state — no other call site runs unconditionally at load
 
 // Off by default — saving a view is an explicit opt-in, not something
 // "+ Add to layout" should do as a side effect unless asked.
 let addToLayoutSaveView = false;
-$('addToLayoutSaveViewBtn').addEventListener('click', () => {
-  addToLayoutSaveView = !addToLayoutSaveView;
-  $('addToLayoutSaveViewBtn').setAttribute('aria-checked', String(addToLayoutSaveView));
-  $('addToLayoutSaveViewBtn').classList.toggle('active', addToLayoutSaveView);
-});
-$('addToLayoutBtn').addEventListener('click', () => {
-  freezeCurrentGeneration();
-  if (addToLayoutSaveView) saveCurrentView();
-});
 
 // Layout overlay — static, non-interactive rendering of every saved block
 // on top of (or behind) the live Preview drawing, for live-compositing
 // reference. Off by default, session-only (not saved to .pen scenes, same
 // as addToLayoutSaveView/blendMultiplyOn above/elsewhere) — see
 // renderPreviewLayoutOverlay for the actual drawing logic.
-let layoutOverlayOn = false;
+export let layoutOverlayOn = false;
 let layoutOverlayFront = false;   // false = behind (default), true = in front
 let layoutOverlayOpacity = 1;     // 0..1 — the slider below is 0-100
-$('layoutOverlayBtn').addEventListener('click', () => {
-  layoutOverlayOn = !layoutOverlayOn;
-  $('layoutOverlayBtn').setAttribute('aria-checked', String(layoutOverlayOn));
-  $('layoutOverlayBtn').classList.toggle('active', layoutOverlayOn);
-  $('layoutOverlayControls').style.display = layoutOverlayOn ? '' : 'none';
-  renderPreviewLayoutOverlay();
-});
 function setLayoutOverlayOrder(front){
   layoutOverlayFront = front;
   $('layoutOverlayOrderBtn').dataset.mode = front ? 'front' : 'back';
@@ -2391,28 +1895,544 @@ function setLayoutOverlayOrder(front){
   positionSegPill($('layoutOverlayOrderBtn').parentElement);
   renderPreviewLayoutOverlay();
 }
-$('layoutOverlayOrderBtn').addEventListener('click', () => setLayoutOverlayOrder(!layoutOverlayFront));
-for (const [id, front] of [['layoutOverlayLblBack', false], ['layoutOverlayLblFront', true]])
-  $(id).addEventListener('click', () => setLayoutOverlayOrder(front));
-$('layoutOverlayOpacity').addEventListener('input', () => {
-  layoutOverlayOpacity = +$('layoutOverlayOpacity').value / 100;
-  $('layoutOverlayOpacityVal').textContent = $('layoutOverlayOpacity').value + '%';
-  renderPreviewLayoutOverlay();
-});
 
-$('clearBlocksBtn').addEventListener('click', () => {
-  if (!blocks.length) return;
-  if (!confirm('Delete all ' + blocks.length + ' layer(s)? This cannot be undone.')) return;
-  for (const b of blocks) removeBlockDom(b);
-  blocks = [];
-  clearSelection();
-  closeLayerContextMenu();
-  refreshStatusR();
-  renderBlocksList();
-});
+/* ================= init =================
+   Everything above only declares. This wires the DOM and starts the
+   module's live behaviour — called once by app.js, in script order. */
+export function initLayoutCanvas(){
+  initLayoutPlot();
+  ['gridGuideEnabled','gridGuideX','gridGuideY'].forEach(id =>
+    $(id).addEventListener('input', () => {
+      syncLayoutPaperFrame();
+      // Preview draws the same guides (display-only there, see renderPaper in
+      // svg-export.js) — keep it in step even while Layout is the active tab.
+      renderPaper();
+    }));
+  /* ================= tab switching =================
+     Preview and Layout are mutually exclusive — only one sheet is ever
+     visible, and the live 3D->SVG pipeline is fully paused while Layout is
+     active (see activeTab / markStale gating in panel-controls.js). Coming
+     back to Preview calls markStale() once to catch up on anything changed
+     while paused, rather than leaving stale output on screen. Block DOM is
+     persistent (see renderLayoutCanvas), so switching to Layout is just a
+     paper-frame sync, never a rebuild. */
+  document.querySelectorAll('.paperTab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tab = btn.dataset.tab;
+      if (tab === activeTab) return;
+      setActiveTab(tab);
+      document.querySelectorAll('.paperTab').forEach(b => b.classList.toggle('active', b === btn));
+      document.body.classList.toggle('layoutMode', tab === 'layout');
+      closeLayerContextMenu();
+      $('sheet').style.display = tab === 'preview' ? '' : 'none';
+      $('layoutSheet').style.display = tab === 'layout' ? '' : 'none';
+      $('layoutOverlaySvg').style.display = tab === 'layout' ? '' : 'none';
+      $('previewOverlaySvg').style.display = tab === 'preview' ? '' : 'none';
+      $('addToLayoutFloat').style.display = tab === 'preview' ? '' : 'none';
+      $('addToLayoutMsg').style.display = tab === 'preview' ? '' : 'none';
+      $('genRow').style.display = tab === 'preview' ? '' : 'none';
+      syncBlocksFloatVisibility();
+      setActiveSheet(tab === 'preview' ? 'sheet' : 'layoutSheet');
+      if (tab === 'preview'){ $('paperPane').style.cursor = ''; lastCursor = null; }
+      resetPvFitWithRulers(); applyPv();
+      if (tab === 'layout') renderLayoutCanvas();
+      else markStale();
+      // Blocks can only ever change while Layout is active — refresh the
+      // Preview-tab overlay here so it's never stale after editing blocks,
+      // even if Auto-generate is off and markStale() above doesn't trigger an
+      // actual regenerate (which would otherwise be the only other refresh).
+      renderPreviewLayoutOverlay();
+      refreshStatusR();
+    });
+  });
+  $('duplicateBlockBtn').addEventListener('click', () => {
+    if (selectedBlocks.size) duplicateBlocks([...selectedBlocks]);
+  });
+  $('orient').addEventListener('input', () => {
+    if ($('rotateBlocksWithPage').checked) rotateBlocksForOrientationFlip();
+  });
+  $('paperPane').addEventListener('pointerdown', e => {
+    if (activeTab !== 'layout') return;
+    if (e.button !== 0) return;      // left-click only — right-click is handled separately by the contextmenu listener
+    // Floating UI panels sit visually on top of the canvas but hit-testing
+    // below is purely mm-coordinate-based, with no notion of DOM z-order —
+    // without this check, a block positioned underneath one of these panels
+    // could swallow a click meant for the panel's own button.
+    if (e.target.closest(LAYOUT_UI_CHROME_SELECTOR)) return;
+    const [wx, wy] = screenToCanvasMm(e.clientX, e.clientY);
+    const hit = hitTest(wx, wy);
+    if (!hit){
+      // Marquee-select: deferred entirely to pointermove/pointerup below — a
+      // plain click with no drag still needs to behave as "clear selection
+      // unless shift", but that's only knowable once the gesture ends up
+      // without ever crossing the move threshold (see endInteraction).
+      e.preventDefault();
+      $('paperPane').setPointerCapture(e.pointerId);
+      interaction = { mode: 'marquee', startWorld: [wx, wy], curWorld: [wx, wy],
+        preSelection: new Set(selectedBlocks), moved: false };
+      return;
+    }
+    e.stopPropagation();
+    e.preventDefault();
+    $('paperPane').setPointerCapture(e.pointerId);
+    pendingCollapseTo = null;
 
-['pointerdown','wheel'].forEach(t => {
-  $('blocksFloat').addEventListener(t, e => e.stopPropagation());
-  $('paperTabs').addEventListener(t, e => e.stopPropagation());
-  $('addToLayoutFloat').addEventListener(t, e => e.stopPropagation());
-});
+    if (hit.type === 'move'){
+      const block = hit.block;
+      // Ctrl/Cmd toggles, same as in the list. Shift ALSO toggles here rather
+      // than extending a range: the canvas has no linear order for a range to
+      // run along (that's a list-only notion — see extendSelectionTo), and
+      // Shift already carries several drag-time meanings on this canvas
+      // (axis-lock while moving, 5-degree rotate steps, additive marquee), so
+      // it keeps its existing click meaning here unchanged.
+      if (e.shiftKey || multiSelectKey(e)){
+        toggleSelection(block);
+      } else if (selectedBlocks.has(block)){
+        // Already part of the current selection — don't collapse to just this
+        // one yet. If a drag actually happens, the whole group should move;
+        // collapsing immediately would make it impossible to drag a group by
+        // grabbing one of its own members. Only resolved at pointerup, and
+        // only if no drag occurred (see endInteraction).
+        pendingCollapseTo = block;
+      } else {
+        setSelection([block]);
+      }
+      // Only the interactive members come along for the drag — a hidden or
+      // locked block that's also selected in the list stays exactly where it
+      // is, and doesn't contribute to the group's envelope or snapping.
+      const active = interactiveSelection();
+      if (active.length){
+        const startEnv = selectionEnvelope();
+        const members = active.map(b => ({ block: b, startX: b.x, startY: b.y }));
+        interaction = { mode: 'move', members, startEnv, startWorld: [wx, wy], moved: false,
+          // Alt held at pointerdown arms duplicate-instead-of-move; it can
+          // also be pressed later, mid-drag (see startAltDuplicate).
+          altDuplicate: e.altKey, altDone: false,
+          startFrameCorners: active.length > 1 ? selectionFrame.corners.map(c => c.slice()) : null };
+      }
+    } else if (hit.type === 'scale'){
+      const corners = blockCorners(hit.block);
+      const localCorners = [
+        [hit.block.bboxLocal.x0, hit.block.bboxLocal.y0], [hit.block.bboxLocal.x1, hit.block.bboxLocal.y0],
+        [hit.block.bboxLocal.x1, hit.block.bboxLocal.y1], [hit.block.bboxLocal.x0, hit.block.bboxLocal.y1],
+      ];
+      const anchorIdx = (hit.cornerIndex + 2) % 4;
+      const anchorWorld = corners[anchorIdx], anchorLocal = localCorners[anchorIdx];
+      const draggedWorld = corners[hit.cornerIndex];
+      const startDist = Math.max(1e-6, Math.hypot(draggedWorld[0]-anchorWorld[0], draggedWorld[1]-anchorWorld[1]));
+      // With the anchor fixed and rotation fixed for the duration of the
+      // drag, EVERY corner's world position is an affine function of scale s:
+      // worldCorner_i(s) = anchorWorld + s*V_i, where V_i is this fixed,
+      // rotated offset from the anchor to corner i. That makes each envelope
+      // edge (the min/max of these over the 4 corners) ALSO linear in s —
+      // which is what lets computeScaleSnap solve directly for the scale
+      // that puts a given edge exactly on a snap target, rather than just
+      // measuring distance the way move-snapping does. Verified numerically
+      // against a direct forward-transform computation, including on a
+      // rotated block, before wiring this in.
+      // Scaled by the block's CURRENT scale here so V ends up in the same
+      // world-space-offset units computeScaleSnap expects (worldCorner_i(k) =
+      // anchorWorld + k*V_i) — matching how the scaleGroup path below builds
+      // its corners from blockCorners(), which already bakes in each block's
+      // own scale. Omitting this only breaks once block.scale != 1, i.e. from
+      // a block's second scale drag onward, since the first drag starts at
+      // scale 1 where the missing factor doesn't matter.
+      const rad = hit.block.rotationDeg * Math.PI/180, cos = Math.cos(rad), sin = Math.sin(rad);
+      const V = localCorners.map(([lx, ly]) => {
+        const dx = (lx - anchorLocal[0]) * hit.block.scale, dy = (ly - anchorLocal[1]) * hit.block.scale;
+        return [dx*cos - dy*sin, dx*sin + dy*cos];
+      });
+      // corners here (world-space, anchor-relative) feed the same
+      // computeScaleSnap() a multi-block scale uses — see its own comment for
+      // why a single block is just the N=1 case of that same function.
+      interaction = { mode: 'scale', anchorWorld, anchorLocal, startDist,
+        startScale: hit.block.scale, rotationDeg: hit.block.rotationDeg,
+        corners: V, minStartScale: hit.block.scale, excludeSet: new Set([hit.block]),
+        members: [{ block: hit.block, startX: hit.block.x, startY: hit.block.y, startScale: hit.block.scale }] };
+    } else if (hit.type === 'rotate'){
+      const startAngle = Math.atan2(wy - hit.block.y, wx - hit.block.x) * 180/Math.PI;
+      interaction = { mode: 'rotate', block: hit.block, startAngle, startRotation: hit.block.rotationDeg };
+      $('paperPane').style.cursor = 'grabbing';
+      lastCursor = 'grabbing';
+    } else if (hit.type === 'scaleGroup'){
+      const envCorners = selectionFrame.corners;
+      const anchorIdx = (hit.cornerIndex + 2) % 4;
+      const anchorWorld = envCorners[anchorIdx];
+      const draggedWorld = envCorners[hit.cornerIndex];
+      const startDist = Math.max(1e-6, Math.hypot(draggedWorld[0]-anchorWorld[0], draggedWorld[1]-anchorWorld[1]));
+      const active = interactiveSelection();
+      const members = active.map(b => ({ block: b, startX: b.x, startY: b.y, startScale: b.scale }));
+      // Every corner of every interactive member, as an offset from the SAME
+      // shared group anchor — this is what makes computeScaleSnap solve for
+      // one shared k that keeps the whole group rigid (see its own comment).
+      const corners = [];
+      for (const b of active) for (const c of blockCorners(b)) corners.push([c[0]-anchorWorld[0], c[1]-anchorWorld[1]]);
+      const minStartScale = Math.min(...members.map(m => m.startScale));
+      interaction = { mode: 'scaleGroup', anchorWorld, startDist, members,
+        corners, minStartScale, excludeSet: new Set(active),
+        startFrameCorners: envCorners.map(c => c.slice()) };
+    } else if (hit.type === 'rotateGroup'){
+      const c = selectionFrame.corners;
+      const pivot = [(c[0][0]+c[2][0])/2, (c[0][1]+c[2][1])/2];   // diagonal midpoint — the frame's own center, rotated or not
+      const startAngle = Math.atan2(wy - pivot[1], wx - pivot[0]) * 180/Math.PI;
+      const members = interactiveSelection().map(b => ({ block: b, startX: b.x, startY: b.y, startRotationDeg: b.rotationDeg }));
+      interaction = { mode: 'rotateGroup', pivot, startAngle, members,
+        startFrameCorners: c.map(pt => pt.slice()) };
+      $('paperPane').style.cursor = 'grabbing';
+      lastCursor = 'grabbing';
+    }
+  }, { capture: true });
+  $('paperPane').addEventListener('pointermove', e => {
+    if (activeTab !== 'layout') return;
+    const [wx, wy] = screenToCanvasMm(e.clientX, e.clientY);
+    if (!interaction){
+      if (e.target.closest(LAYOUT_UI_CHROME_SELECTOR)){
+        if (lastCursor !== null){ $('paperPane').style.cursor = ''; lastCursor = null; }
+        return;
+      }
+      updateHoverCursor(wx, wy, e.altKey);
+      return;
+    }
+    if (interaction.mode === 'move'){
+      let dx = wx - interaction.startWorld[0], dy = wy - interaction.startWorld[1];
+      if (Math.hypot(dx, dy) > 1e-6) interaction.moved = true;
+      // Gated on a real screen-px drag, not on `moved` above (which trips on
+      // any sub-pixel jitter) — an Alt+click that never actually drags must
+      // leave no stray copy sitting on top of the original.
+      if ((interaction.altDuplicate || e.altKey) && !interaction.altDone &&
+          Math.hypot(dx, dy) / mmPerScreenPx() > DRAG_THRESHOLD_PX){
+        startAltDuplicate(interaction);
+      }
+      if (e.shiftKey){
+        // Constrain to whichever axis has the larger total drag delta from
+        // the start — re-evaluated every frame (not locked to whichever was
+        // dominant when shift was first pressed), so it can flip near the
+        // diagonal the same way Illustrator/Figma's does.
+        if (Math.abs(dx) >= Math.abs(dy)) dy = 0; else dx = 0;
+      }
+      const excludeSet = new Set(interaction.members.map(m => m.block));
+      const snap = computeMoveSnap(interaction.startEnv, excludeSet, dx, dy);
+      let { dx: finalDx, dy: finalDy, guideX, guideY, guideXRange, guideYRange } = snap;
+      if (e.shiftKey){
+        // Re-apply the axis lock AFTER snapping too — snapping alone could
+        // otherwise reintroduce a small amount of cross-axis movement.
+        if (dy === 0){ finalDy = 0; guideY = null; guideXRange = null; }
+        else { finalDx = 0; guideX = null; guideYRange = null; }
+      }
+      for (const m of interaction.members){
+        m.block.x = m.startX + finalDx;
+        m.block.y = m.startY + finalDy;
+        updateBlockTransform(m.block);
+      }
+      if (interaction.startFrameCorners){
+        selectionFrame.corners = interaction.startFrameCorners.map(([x,y]) => [x+finalDx, y+finalDy]);
+      }
+      drawSnapGuides({ guideX, guideY, guideXRange, guideYRange });
+      if (e.shiftKey){
+        const cx = (interaction.startEnv.x0 + interaction.startEnv.x1) / 2 + finalDx;
+        const cy = (interaction.startEnv.y0 + interaction.startEnv.y1) / 2 + finalDy;
+        // dy===0 means the drag is constrained to move along the X axis
+        // (horizontal), so the indicator is a horizontal line through the
+        // selection's center — and the mirror for dx===0/Y.
+        drawAxisLockGuide(dy === 0 ? 'x' : 'y', cx, cy);
+      } else {
+        clearAxisLockGuide();
+      }
+    } else if (interaction.mode === 'rotate'){
+      const b = interaction.block;
+      const curAngle = Math.atan2(wy - b.y, wx - b.x) * 180/Math.PI;
+      const raw = interaction.startRotation + (curAngle - interaction.startAngle);
+      const rotateStep = e.shiftKey ? 5 : 1;
+      const snapped = Math.round(raw / rotateStep) * rotateStep;
+      b.rotationDeg = ((snapped % 360) + 360) % 360;
+      updateBlockTransform(b);
+      showRotateLabel(b.rotationDeg, e.clientX, e.clientY);
+    } else if (interaction.mode === 'rotateGroup'){
+      // The snapped DELTA is what gets shared across every member — not each
+      // one's own absolute resulting rotation snapped independently, which
+      // (since members can start at different rotations) would give each
+      // block a different actual delta and break the group's rigidity. See
+      // the spec discussion this was built from.
+      const curAngle = Math.atan2(wy - interaction.pivot[1], wx - interaction.pivot[0]) * 180/Math.PI;
+      const rawDelta = curAngle - interaction.startAngle;
+      const rotateStep = e.shiftKey ? 5 : 1;
+      const snappedDelta = Math.round(rawDelta / rotateStep) * rotateStep;
+      const rad = snappedDelta * Math.PI/180, cos = Math.cos(rad), sin = Math.sin(rad);
+      const [px, py] = interaction.pivot;
+      for (const m of interaction.members){
+        m.block.rotationDeg = ((m.startRotationDeg + snappedDelta) % 360 + 360) % 360;
+        const dx = m.startX - px, dy = m.startY - py;
+        m.block.x = px + (dx*cos - dy*sin);
+        m.block.y = py + (dx*sin + dy*cos);
+        updateBlockTransform(m.block);
+      }
+      // The selection box itself rotates rigidly right along with the group
+      // — not recomputed as a fresh axis-aligned union — and this rotated
+      // shape is what persists in selectionFrame for subsequent gestures,
+      // until the selected SET itself changes (see resetSelectionFrame).
+      selectionFrame.corners = interaction.startFrameCorners.map(([x,y]) => {
+        const dx = x - px, dy = y - py;
+        return [px + (dx*cos - dy*sin), py + (dx*sin + dy*cos)];
+      });
+      showRotateLabel(((snappedDelta % 360) + 360) % 360, e.clientX, e.clientY);
+    } else if (interaction.mode === 'scale' || interaction.mode === 'scaleGroup'){
+      const curDist = Math.hypot(wx - interaction.anchorWorld[0], wy - interaction.anchorWorld[1]);
+      const minK = MIN_BLOCK_SCALE / interaction.minStartScale;
+      const naturalK = Math.max(minK, curDist / interaction.startDist);
+      const scaleSnap = computeScaleSnap(interaction, naturalK);
+      const k = scaleSnap.k;
+      drawSnapGuides(scaleSnap);
+      const [ax, ay] = interaction.anchorWorld;
+      for (const m of interaction.members){
+        m.block.scale = m.startScale * k;
+        m.block.x = ax + (m.startX - ax) * k;
+        m.block.y = ay + (m.startY - ay) * k;
+        updateBlockTransform(m.block);
+        updateBlockStyle(m.block);
+        updateDimensionLabels(m.block);
+      }
+      if (interaction.mode === 'scaleGroup'){
+        selectionFrame.corners = interaction.startFrameCorners.map(([x,y]) => [ax + (x-ax)*k, ay + (y-ay)*k]);
+      }
+    } else if (interaction.mode === 'marquee'){
+      interaction.curWorld = [wx, wy];
+      if (!interaction.moved){
+        // Small screen-px move threshold (not a raw mm one, so it stays
+        // consistent across zoom levels) — below it, this still reads as a
+        // plain click rather than a drag, same idea as every other
+        // interaction mode's own .moved flag.
+        const dragPx = Math.hypot(wx - interaction.startWorld[0], wy - interaction.startWorld[1]) / mmPerScreenPx();
+        if (dragPx > DRAG_THRESHOLD_PX) interaction.moved = true;
+      }
+      if (interaction.moved) updateMarqueeSelection(interaction, e.shiftKey || multiSelectKey(e));
+    }
+    updateSelectionOverlay();
+    if (interaction.mode === 'marquee' && interaction.moved) drawMarqueeRect(interaction);
+  });
+  $('paperPane').addEventListener('pointerup', endInteraction);
+  $('paperPane').addEventListener('pointercancel', endInteraction);
+  $('layerContextOverrideChk').addEventListener('change', e => {
+    if (!contextMenuBlock) return;
+    contextMenuBlock.override = e.target.checked;
+    updateBlockStyle(contextMenuBlock);
+    refreshStatusR();   // switches which dash (live panel vs. this block's own override) governs the ink length
+    openLayerContextMenu(contextMenuBlock, contextMenuPos.x, contextMenuPos.y);   // rebuild to show/hide the expanded controls
+  });
+  $('paperPane').addEventListener('contextmenu', e => {
+    if (activeTab !== 'layout') return;
+    if (e.target.closest(LAYOUT_UI_CHROME_SELECTOR)) return;
+    const [wx, wy] = screenToCanvasMm(e.clientX, e.clientY);
+    const hit = hitTestBlockBody(wx, wy);
+    if (!hit){ closeLayerContextMenu(); return; }   // let the browser's default menu show over empty canvas
+    e.preventDefault();
+    // Deliberately does NOT change the current selection — right-click edits
+    // whichever block is under the cursor, independent of a broader multi-
+    // selection, so you can peek at one layer's overrides without losing it.
+    openLayerContextMenu(hit, e.clientX, e.clientY);
+  }, { capture: true });
+  document.addEventListener('pointerdown', e => {
+    if (contextMenuBlock && !$('layerContextMenu').contains(e.target)) closeLayerContextMenu();
+  });
+  /* Every shortcut below (and both clipboard handlers further down) keeps out
+     of the way of whatever the focused element does with that same key — see
+     isTextEntryTarget / isFormControlTarget in main.js for the two different
+     questions that involves. */
+  /* Restores the blur the browser would have done on its own. Clicking a
+     slider or checkbox in a settings panel leaves it focused; this file's own
+     pointerdown handlers then call preventDefault (to stop text selection and
+     native drags), and preventDefault on pointerdown ALSO suppresses the
+     focus change the browser would otherwise make. So the control stays
+     focused indefinitely — through clicking the canvas, dragging a block,
+     selecting rows — and every shortcut above keeps deferring to a control
+     the user stopped touching several clicks ago: arrows adjust the slider
+     instead of nudging blocks, Ctrl+A selects the whole page's text.
+     Capture phase, so it runs before any of those preventDefaults. Nothing is
+     focused in its place: activeElement falls back to <body>, exactly the
+     state a plain click on non-focusable chrome would have produced anyway. */
+  document.addEventListener('pointerdown', e => {
+    if (!isFormControlTarget()) return;   // nothing focused that could swallow a shortcut
+    // Clicking a control (or the still-open rename field) must let it keep or
+    // take focus — this only fires for clicks on everything else.
+    if (e.target.closest && e.target.closest('input, select, textarea, [contenteditable="true"]')) return;
+    document.activeElement.blur();
+  }, { capture: true });
+  document.addEventListener('keydown', e => {
+    if (contextMenuBlock && e.key === 'Escape') closeLayerContextMenu();
+    if (NUDGE_KEYS[e.key] && activeTab === 'layout' && interactiveSelection().length){
+      // The WIDE guard — an arrow key belongs to any focused form control,
+      // a slider or <select> included, not just a text field.
+      if (!isFormControlTarget()){
+        e.preventDefault();
+        const amount = e.shiftKey ? 5 : 0.5;
+        const [dx, dy] = NUDGE_KEYS[e.key];
+        // Interactive members only — a selected but hidden/locked block is
+        // inert on the canvas, arrow keys included.
+        for (const b of interactiveSelection()){
+          b.x += dx * amount;
+          b.y += dy * amount;
+          updateBlockTransform(b);
+        }
+        // The group box is persistent state, NOT recomputed from the blocks on
+        // every draw (see selectionFrame's own comment) — so it has to be
+        // translated by the same delta here, exactly as a move drag, a group
+        // rotate/scale and an orientation flip already do. Without this the
+        // box and its handles sit still while the blocks walk out from under
+        // them. A single selected block was never affected: its overlay is
+        // drawn straight from its own live corners, with no frame involved.
+        if (selectionFrame){
+          selectionFrame.corners = selectionFrame.corners.map(([x, y]) => [x + dx * amount, y + dy * amount]);
+        }
+        updateSelectionOverlay();
+      }
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && activeTab === 'layout' && selectedBlocks.size){
+      // Routes through the same deleteBlocks() a row's own X button uses —
+      // see there for why there's no confirmation dialog.
+      // Deletes only the INTERACTIVE members, unlike the list's own delete
+      // buttons, which delete everything selected: a keystroke shouldn't be
+      // able to destroy a layer that was deliberately locked (or hidden, and
+      // so not even on screen to be missed) — protecting it from the canvas
+      // is the entire point of locking it.
+      if (!isTextEntryTarget()){
+        e.preventDefault();
+        deleteBlocks(interactiveSelection());
+      }
+    }
+    // Ctrl/Cmd+A — select every block, hidden and locked included (the list
+    // selection has no eligibility rule; only the canvas does). Leaves the
+    // anchor alone: it's validated at use anyway, and whatever was last
+    // clicked stays the natural origin for a following Shift+click.
+    if (multiSelectKey(e) && (e.key === 'a' || e.key === 'A') && activeTab === 'layout' && blocks.length){
+      if (!isTextEntryTarget()){
+        e.preventDefault();
+        setSelection(blocks.slice());
+      }
+    }
+  });
+  ['pointerdown','wheel'].forEach(t => $('layerContextMenu').addEventListener(t, e => e.stopPropagation()));
+  document.addEventListener('copy', e => {
+    if (!clipboardShortcutsActive() || !e.clipboardData) return;
+    // A real text selection wins — selecting a label and hitting Ctrl+C should
+    // still copy that text rather than silently copying layers instead.
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    const active = interactiveSelection();
+    if (!active.length) return;   // nothing copyable — let the browser's own copy proceed untouched
+    e.clipboardData.setData('text/plain', blocksToClipboardText(active));
+    e.preventDefault();   // without this the browser's own (empty) copy overwrites what was just set
+    $('statusL').textContent = 'copied ' + blockCountLabel(active);
+  });
+  document.addEventListener('paste', e => {
+    if (!clipboardShortcutsActive() || !e.clipboardData) return;
+    const pasted = blocksFromClipboardText(e.clipboardData.getData('text/plain'));
+    if (!pasted.length) return;
+    e.preventDefault();
+    syncPenLibraryUI();   // matching the pasted overrides' pens may have appended some
+    // Placed verbatim — same position, rotation, scale and overrides as when
+    // copied, with no offset nudge. Pasting into the source document lands the
+    // copy exactly on top of the original; addBlocks selects it, which is what
+    // makes it immediately draggable (or nudgeable) off.
+    addBlocks(pasted, 'pasted');
+  });
+  document.addEventListener('pointermove', e => {
+    if (!blockDragState) return;
+    const { others, insertLine } = blockDragState;
+    const list = $('blocksList');
+    blockDragState.moved = true;
+    let target = null;
+    for (const r of others){
+      const rect = r.getBoundingClientRect();
+      if (e.clientY < rect.top + rect.height/2){ target = r; break; }
+    }
+    blockDragState.target = target;   // null means "after every other row"
+    if (!insertLine.parentNode) list.appendChild(insertLine);
+    // Positioned via absolute top offset (see .svInsertLine — out of normal
+    // flow entirely) rather than DOM insertion order, specifically so it
+    // never adds to the list's own content height: inserting it as a real
+    // flow element was occasionally enough to tip the list over its
+    // max-height and pop the scrollbar open mid-drag.
+    const listRect = list.getBoundingClientRect();
+    const INSERT_LINE_HEIGHT = 2;   // keep in sync with .svInsertLine's own height in styles.css
+    let lineTop;
+    if (target) lineTop = target.getBoundingClientRect().top - listRect.top + list.scrollTop;
+    else if (others.length){
+      // Bottom-of-list case — anchor the line's BOTTOM edge (not top) to the
+      // last row's bottom, so the line's own height stays within the
+      // existing content bounds instead of extending past it. Anchoring by
+      // top here (matching the target case above) would put the line's
+      // bottom 2px beyond the true content edge — even fully absolutely-
+      // positioned, that still counts toward the list's scrollable overflow,
+      // which was popping the scrollbar open specifically in this one case.
+      lineTop = others[others.length-1].getBoundingClientRect().bottom - listRect.top + list.scrollTop - INSERT_LINE_HEIGHT;
+    }
+    else lineTop = 0;
+    insertLine.style.top = lineTop + 'px';
+  });
+  document.addEventListener('pointerup', () => {
+    if (!blockDragState) return;
+    const { moving, movingRows, others, insertLine, target, moved } = blockDragState;
+    insertLine.remove();
+    for (const r of movingRows) r.classList.remove('svDragging');
+    blockDragState = null;
+    if (!moved) return;   // grip clicked but never dragged — see startBlockDrag
+
+    // insertAt indexes into `others` — the rows that AREN'T moving — and
+    // `rest` below is that exact same sequence as blocks, so the index carries
+    // over directly with no adjustment for how many blocks were lifted out.
+    const insertAt = target ? others.indexOf(target) : others.length;
+
+    const visualOrder = blocks.slice().reverse();
+    const lifted = visualOrder.filter(b => moving.has(b));
+    if (!lifted.length) return;   // every dragged block was deleted mid-drag — nothing to do
+    const rest = visualOrder.filter(b => !moving.has(b));
+    rest.splice(insertAt, 0, ...lifted);   // `lifted` keeps its own visual order, so the group stays internally stacked as it was
+    blocks = rest.slice().reverse();
+
+    // Sync actual SVG paint order to match — re-appending an already-present
+    // child moves it to the end, so appending every block in the new array
+    // order, in sequence, reproduces that order in the DOM.
+    const blocksLayer = $('layoutBlocksLayer');
+    for (const b of blocks) if (b.dom) blocksLayer.appendChild(b.dom.outer);
+    renderBlocksList();
+  });
+  renderBlocksList();   // sets the panel's initial hidden/shown state — no other call site runs unconditionally at load
+  $('addToLayoutSaveViewBtn').addEventListener('click', () => {
+    addToLayoutSaveView = !addToLayoutSaveView;
+    $('addToLayoutSaveViewBtn').setAttribute('aria-checked', String(addToLayoutSaveView));
+    $('addToLayoutSaveViewBtn').classList.toggle('active', addToLayoutSaveView);
+  });
+  $('addToLayoutBtn').addEventListener('click', () => {
+    freezeCurrentGeneration();
+    if (addToLayoutSaveView) saveCurrentView();
+  });
+  $('layoutOverlayBtn').addEventListener('click', () => {
+    layoutOverlayOn = !layoutOverlayOn;
+    $('layoutOverlayBtn').setAttribute('aria-checked', String(layoutOverlayOn));
+    $('layoutOverlayBtn').classList.toggle('active', layoutOverlayOn);
+    $('layoutOverlayControls').style.display = layoutOverlayOn ? '' : 'none';
+    renderPreviewLayoutOverlay();
+  });
+  $('layoutOverlayOrderBtn').addEventListener('click', () => setLayoutOverlayOrder(!layoutOverlayFront));
+  for (const [id, front] of [['layoutOverlayLblBack', false], ['layoutOverlayLblFront', true]])
+    $(id).addEventListener('click', () => setLayoutOverlayOrder(front));
+  $('layoutOverlayOpacity').addEventListener('input', () => {
+    layoutOverlayOpacity = +$('layoutOverlayOpacity').value / 100;
+    $('layoutOverlayOpacityVal').textContent = $('layoutOverlayOpacity').value + '%';
+    renderPreviewLayoutOverlay();
+  });
+  $('clearBlocksBtn').addEventListener('click', () => {
+    if (!blocks.length) return;
+    if (!confirm('Delete all ' + blocks.length + ' layer(s)? This cannot be undone.')) return;
+    for (const b of blocks) removeBlockDom(b);
+    blocks = [];
+    clearSelection();
+    closeLayerContextMenu();
+    refreshStatusR();
+    renderBlocksList();
+  });
+  ['pointerdown','wheel'].forEach(t => {
+    $('blocksFloat').addEventListener(t, e => e.stopPropagation());
+    $('paperTabs').addEventListener(t, e => e.stopPropagation());
+    $('addToLayoutFloat').addEventListener(t, e => e.stopPropagation());
+  });
+}

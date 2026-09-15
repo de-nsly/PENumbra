@@ -5,23 +5,20 @@
    view presets, lighting + shadow sync, and onLoaded() which wires a
    freshly parsed mesh (from the worker) into the live 3D scene.
    ================================================================ */
+import { $, onMiddleDblClick, positionSegPill, svgEl, worker } from './main.js';
+import { activeTab, doGenerate, makeNameEditable, markStale, refreshValLabel } from './panel-controls.js';
+import { computePaperLayout } from './svg-export.js';
+import { applyPv } from './paper-preview.js';
+import { applyImportedScene, takePendingSceneImport } from './scene-io.js';
+
 /* ================= three.js viewport ================= */
-const vp = $('viewport3d');
-const renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-// Enabled once, unconditionally, at startup — toggling this flag later would
-// force a shader recompile on every material in the scene. Actual shadow
-// presence is controlled per-light/per-mesh instead (cheap to flip), driven
-// by the Cast shadows / Ground shadow checkboxes.
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-vp.appendChild(renderer.domElement);
+export const vp = $('viewport3d');
+let renderer;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x353c47);
-const perspCam = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
-const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
-let camera = perspCam;
-function updateFrustum(){
+export const perspCam = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
+export const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
+export let camera = perspCam;
+export function updateFrustum(){
   const w = vp.clientWidth || 1, h = vp.clientHeight || 1, aspect = w / h;
   perspCam.aspect = aspect;
   perspCam.fov = +$('fovDeg').value;
@@ -47,10 +44,8 @@ function updateFrustum(){
   orthoCam.updateProjectionMatrix();
 }
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
-dirLight.shadow.mapSize.set(2048, 2048);
-scene.add(dirLight, dirLight.target, new THREE.AmbientLight(0xffffff, 0.45));
-let modelMesh = null, gridHelper = null, groundCatcher = null;
-let modelCenter = new THREE.Vector3(), modelRadius = 1, modelBboxMinY = 0, modelName = 'demo scene';
+export let modelMesh = null, gridHelper = null, groundCatcher = null;
+export let modelCenter = new THREE.Vector3(), modelRadius = 1, modelBboxMinY = 0, modelName = 'demo scene';
 // Rotate-model feature: modelMesh is a CHILD of modelPivot (not added to
 // `scene` directly), positioned at -modelCenter in the pivot's local space;
 // modelPivot itself sits AT modelCenter. Rotating modelPivot therefore
@@ -59,11 +54,10 @@ let modelCenter = new THREE.Vector3(), modelRadius = 1, modelBboxMinY = 0, model
 // as (0,0,0). gridHelper/groundCatcher/dirLight stay direct children of
 // `scene` (not the pivot) — the ground plane and lighting are a world-space
 // reference frame that deliberately does NOT tip along with the model.
-const modelPivot = new THREE.Object3D();
-scene.add(modelPivot);
+export const modelPivot = new THREE.Object3D();
 
 /* --- minimal orbit controls (rotate / pan / dolly) --- */
-const orbit = {
+export const orbit = {
   theta: 0.7, phi: 1.12, radius: 5,
   target: new THREE.Vector3(),
   // 0 = normal (theta,phi) orbit; +1/-1 = locked exactly to the top/bottom
@@ -118,39 +112,6 @@ function fovPanScale(){ return Math.tan(perspCam.fov * Math.PI / 360); }
 const PAN_DRAG_RATE = 0.00098484;
 const PAN_KEY_STEP  = 0.019818;
 let dragBtn = -1, lastX = 0, lastY = 0;
-renderer.domElement.addEventListener('pointerdown', e => {
-  dragBtn = (e.button === 2 || e.shiftKey) ? 2 : 0;
-  lastX = e.clientX; lastY = e.clientY;
-  renderer.domElement.setPointerCapture(e.pointerId);
-});
-renderer.domElement.addEventListener('pointermove', e => {
-  if (dragBtn < 0) return;
-  const dx = e.clientX - lastX, dy = e.clientY - lastY;
-  lastX = e.clientX; lastY = e.clientY;
-  if (dragBtn === 0){
-    const poleEps = 0.001 * Math.PI / 180;
-    if (orbit.exactPole){
-      orbit.phi = orbit.exactPole > 0 ? poleEps : Math.PI - poleEps;
-      orbit.exactPole = 0;
-    }
-    orbit.theta -= dx * 0.006;
-    orbit.phi = Math.min(Math.PI - poleEps, Math.max(poleEps, orbit.phi - dy * 0.006));
-  } else {
-    const k = orbit.radius * PAN_DRAG_RATE * fovPanScale();
-    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
-    const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
-    orbit.target.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
-  }
-  orbit.apply(); markStale(); clearActiveView();
-});
-renderer.domElement.addEventListener('pointerup', () => dragBtn = -1);
-renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
-renderer.domElement.addEventListener('wheel', e => {
-  e.preventDefault();
-  orbit.radius = Math.min(modelRadius * 40, Math.max(modelRadius * 0.2,
-    orbit.radius * Math.exp(e.deltaY * 0.0012)));
-  orbit.apply(); markStale(); clearActiveView();
-}, { passive:false });
 
 // Arrow keys pan the camera along its OWN local axes (up/down/left/right
 // on screen, not world axes) — only while the mouse is over the 3D
@@ -160,20 +121,7 @@ renderer.domElement.addEventListener('wheel', e => {
 // target-shift the existing Shift+drag pan gesture already uses above,
 // just a fixed step per keypress instead of following mouse delta.
 let vpHover = false;
-vp.addEventListener('pointerenter', () => { vpHover = true; });
-vp.addEventListener('pointerleave', () => { vpHover = false; });
 const ARROW_PAN_KEYS = { ArrowUp:[0,1], ArrowDown:[0,-1], ArrowRight:[1,0], ArrowLeft:[-1,0] };
-document.addEventListener('keydown', e => {
-  if (!vpHover) return;
-  const dir = ARROW_PAN_KEYS[e.key];
-  if (!dir) return;
-  e.preventDefault();
-  const step = orbit.radius * PAN_KEY_STEP * fovPanScale();
-  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
-  const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
-  orbit.target.addScaledVector(right, dir[0] * step).addScaledVector(up, dir[1] * step);
-  orbit.apply(); markStale(); clearActiveView();
-});
 
 function resize(){
   const w = vp.clientWidth, h = vp.clientHeight;
@@ -181,21 +129,6 @@ function resize(){
   renderer.setSize(w, h);
   updateFrustum();
 }
-// Guarded against an early/spurious first notification: ResizeObserver
-// callbacks are queued asynchronously and normally only run once the whole
-// page (all <script src> tags) has finished loading — by which point
-// markStale/computePaperLayout (defined in panel-controls.js/paper-
-// preview.js, which load AFTER this file) already exist as globals. But the
-// very first notification can occasionally get queued and fire in the gap
-// between two script tags loading from disk, before those files have run —
-// harmless (every REAL resize afterward works normally), but throws if
-// called unguarded. typeof-checking here no-ops that one early call instead.
-new ResizeObserver(() => { resize(); if (typeof markStale === 'function') markStale(); }).observe(vp);
-resize();
-new ResizeObserver(() => {
-  if (typeof computePaperLayout !== 'function') return;
-  const layout = computePaperLayout(); if (layout) applyPv(layout);
-}).observe($('paperPane'));
 /* ================= axis gizmo =================
    Blender-style orientation gizmo: the three world axes projected through the
    live camera rotation into a small SVG overlay — no second WebGL pass, just
@@ -217,64 +150,7 @@ const GIZMO_AXES = [   // theta/phi in degrees (internal orbit convention)
   { d:[0,0, 1], c:'#6fbf3f', l:'',  theta:0,   phi:90       },   // CAD −Y
 ];
 const gizmoSvg = $('axisGizmo');
-const gizmoParts = GIZMO_AXES.map(ax => {
-  const positive = ax.l !== '';
-  let line = null;
-  if (positive){                          // stem only on positive halves, like Blender
-    line = svgEl('line');
-    line.setAttribute('stroke', ax.c);
-    line.setAttribute('stroke-width', '1.8');
-    gizmoSvg.appendChild(line);
-  }
-  const g = svgEl('g');
-  g.setAttribute('class', 'ball');
-  const c = svgEl('circle');
-  c.setAttribute('r', positive ? 9 : 7);
-  c.setAttribute('fill', ax.c);
-  if (!positive){ c.setAttribute('fill-opacity', '0.25'); c.setAttribute('stroke', ax.c); c.setAttribute('stroke-width', '1.4'); }
-  g.appendChild(c);
-  let t = null;
-  if (positive){
-    t = svgEl('text');
-    t.setAttribute('text-anchor', 'middle');
-    t.setAttribute('dy', '3.4');
-    t.setAttribute('fill', '#10141a');
-    t.textContent = ax.l;
-    g.appendChild(t);
-  }
-  // pointerdown, not click: drawGizmo re-inserts these nodes for depth
-  // sorting, and a DOM re-insertion between mousedown and mouseup makes the
-  // browser drop the click event entirely — pointerdown always fires
-  g.addEventListener('pointerdown', ev => {
-    ev.preventDefault(); ev.stopPropagation();
-    const isZAxis = ax.d[0]===0 && ax.d[2]===0;   // CAD +Z or -Z (top/bottom)
-    // if the view is already snapped to this exact axis, clicking again
-    // flips to the opposite pole (Blender-style toggle) instead of no-op
-    const eps = 0.5 * Math.PI / 180;
-    const curTheta = orbit.theta, curPhi = orbit.phi;
-    const wrap = a => ((a % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
-    const closeAngle = (a,b) => {
-      const d = Math.abs(wrap(a) - wrap(b));
-      return Math.min(d, 2*Math.PI - d) < eps;
-    };
-    const isCurrent = isZAxis
-      ? orbit.exactPole === Math.sign(ax.d[1])
-      : orbit.exactPole === 0 &&
-        closeAngle(curTheta, ax.theta*Math.PI/180) &&
-        Math.abs(curPhi - Math.min(Math.PI-1e-6, Math.max(1e-6, ax.phi*Math.PI/180))) < eps;
-    let target = ax;
-    if (isCurrent){
-      const opp = GIZMO_AXES.find(o => o.d[0]===-ax.d[0] && o.d[1]===-ax.d[1] && o.d[2]===-ax.d[2]);
-      if (opp) target = opp;
-    }
-    orbit.theta = target.theta * Math.PI / 180;
-    orbit.phi = Math.min(Math.PI - 1e-6, Math.max(1e-6, target.phi * Math.PI / 180));
-    orbit.exactPole = (target.d[0]===0 && target.d[2]===0) ? Math.sign(target.d[1]) : 0;
-    orbit.apply(); markStale(); clearActiveView();
-  });
-  gizmoSvg.appendChild(g);
-  return { line, g, c, t };
-});
+let gizmoParts;
 const gizmoOrder = [0,1,2,3,4,5];
 let gizmoLastOrder = '';
 function drawGizmo(){
@@ -317,12 +193,6 @@ function drawGizmo(){
     p.g.setAttribute('opacity', pz[i] >= 0 ? '1' : '0.5');
   }
 }
-
-/* the floating export panel sits ON the pannable/zoomable 2D pane — swallow
-   its pointer/wheel events so adjusting a dropdown never pans the paper */
-['pointerdown','wheel','dblclick'].forEach(t => {
-  $('genExportFloat').addEventListener(t, e => e.stopPropagation());
-});
 
 /* ================= light direction gizmo =================
    Static compass ring (azimuth, 0°=top, clockwise) + a separate vertical
@@ -369,7 +239,7 @@ function lgSetLight(az, el){
     $('lightEl').dispatchEvent(new Event('input', { bubbles:true }));
   }
 }
-function updateLightGizmo(){
+export function updateLightGizmo(){
   const az = +$('lightAz').value, el = +$('lightEl').value;
   const [sx, sy] = lgAzToXY(az);
   lgAzNeedle.setAttribute('x2', sx); lgAzNeedle.setAttribute('y2', sy);
@@ -379,59 +249,8 @@ function updateLightGizmo(){
   lgElSun.setAttribute('transform', `translate(${LG.tx} ${ey})`);
 }
 let lgAzNeedle, lgAzSun, lgElFill, lgElSun;
-(function buildLightGizmo(){
-  const sun = cls => {
-    const g = svgEl('g', { class: cls });
-    g.appendChild(svgEl('circle', { r:8 }));
-    return g;
-  };
-  // azimuth ring
-  lgSvg.appendChild(svgEl('text', { class:'lgLbl', x:LG.cx, y:25, 'text-anchor':'middle' })).textContent = 'Azimuth';
-  lgSvg.appendChild(svgEl('circle', { class:'lgRing', cx:LG.cx, cy:LG.cy, r:LG.r }));
-  lgAzNeedle = lgSvg.appendChild(svgEl('line', { class:'lgNeedle', x1:LG.cx, y1:LG.cy, x2:LG.cx, y2:LG.cy+LG.r }));
-  const lgAzHit = lgSvg.appendChild(svgEl('circle', { class:'lgHit', cx:LG.cx, cy:LG.cy, r:LG.r+9 }));
-  lgAzSun = lgSvg.appendChild(sun('lgSun'));
-  // elevation gauge
-  lgSvg.appendChild(svgEl('text', { class:'lgLbl', x:LG.tx, y:25, 'text-anchor':'middle' })).textContent = 'Elev.';
-  lgSvg.appendChild(svgEl('line', { class:'lgTrackBg', x1:LG.tx, y1:LG.ty0, x2:LG.tx, y2:LG.ty1 }));
-  lgElFill = lgSvg.appendChild(svgEl('line', { class:'lgTrackFill', x1:LG.tx, y1:LG.ty1, x2:LG.tx, y2:LG.ty1 }));
-  const lgElHit = lgSvg.appendChild(svgEl('rect', { class:'lgHit', x:LG.tx-15, y:LG.ty0-12, width:30, height:LG.ty1-LG.ty0+24 }));
-  lgElSun = lgSvg.appendChild(sun('lgSun'));
 
-  let azDrag = false, elDrag = false;
-  const azMove = e => {
-    const p = lgToSvgPoint(e.clientX, e.clientY);
-    const az = Math.atan2(p.x - LG.cx, p.y - LG.cy) * 180 / Math.PI;
-    lgSetLight(az, null);
-  };
-  lgAzHit.addEventListener('pointerdown', e => {
-    azDrag = true; lgAzHit.setPointerCapture(e.pointerId); azMove(e);
-  });
-  lgAzHit.addEventListener('pointermove', e => { if (azDrag) azMove(e); });
-  lgAzHit.addEventListener('pointerup', () => azDrag = false);
-
-  const elMove = e => {
-    const p = lgToSvgPoint(e.clientX, e.clientY);
-    const f = Math.min(1, Math.max(0, (LG.ty1 - p.y) / (LG.ty1 - LG.ty0)));
-    lgSetLight(null, LG.elMin + f*(LG.elMax - LG.elMin));
-  };
-  lgElHit.addEventListener('pointerdown', e => {
-    elDrag = true; lgElHit.setPointerCapture(e.pointerId); elMove(e);
-  });
-  lgElHit.addEventListener('pointermove', e => { if (elDrag) elMove(e); });
-  lgElHit.addEventListener('pointerup', () => elDrag = false);
-})();
-updateLightGizmo();
-
-(function loop(){
-  requestAnimationFrame(loop);
-  if (typeof activeTab === 'undefined' || activeTab === 'preview'){
-    renderer.render(scene, camera);
-    drawGizmo();
-  }
-})();
-
-function setProjMode(mode){
+export function setProjMode(mode){
   const ortho = mode === 'ortho';
   $('projMode').dataset.mode = mode;
   $('projMode').classList.toggle('active', ortho);   // knob right = ortho
@@ -442,19 +261,6 @@ function setProjMode(mode){
   $('fovDeg').disabled = mode === 'ortho';
   positionSegPill($('projMode').parentElement);
 }
-$('projMode').addEventListener('click', () => {
-  setProjMode($('projMode').dataset.mode === 'ortho' ? 'persp' : 'ortho');
-  orbit.apply(); markStale(); clearActiveView();
-});
-// the flanking mode names select their side directly (no-op if already there)
-for (const [id, mode] of [['projLblPersp','persp'], ['projLblOrtho','ortho']])
-  $(id).addEventListener('click', () => {
-    if ($('projMode').dataset.mode === mode) return;
-    setProjMode(mode); orbit.apply(); markStale(); clearActiveView();
-  });
-$('fovDeg').addEventListener('input', updateFrustum);
-$('camShiftX').addEventListener('input', updateFrustum);
-$('camShiftY').addEventListener('input', updateFrustum);
 // canonical CAD views. These set the ANGLE only and respect whichever
 // projection is active — in perspective you get the same viewpoint with
 // depth convergence, in orthographic the true measured view. Toggle the
@@ -463,15 +269,6 @@ const VIEW_PRESETS = {
   nw: { theta:135, phi:54.7356 }, ne: { theta:45,  phi:54.7356 },
   sw: { theta:225, phi:54.7356 }, se: { theta:315, phi:54.7356 },
 };
-document.querySelectorAll('.vpBtn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const v = VIEW_PRESETS[btn.dataset.view];
-    orbit.theta = v.theta * Math.PI / 180;
-    orbit.phi = v.phi * Math.PI / 180;
-    orbit.exactPole = 0;
-    orbit.apply(); markStale(); clearActiveView();
-  });
-});
 
 // Recenters the model in the viewport by moving the orbit PIVOT to the
 // model's center — theta/phi/radius (view angle and zoom) are deliberately
@@ -482,12 +279,8 @@ function recenter3dView(){
   markStale();
   clearActiveView();
 }
-$('recenter3dBtn').addEventListener('click', recenter3dView);
-// same reset via a double middle-click anywhere on the 3D canvas
-onMiddleDblClick(renderer.domElement, recenter3dView);
 
-
-function updateLight(){
+export function updateLight(){
   const L = lightVec();   // viewport light mirrors the hatch light exactly
   dirLight.position.set(
     modelCenter.x + L[0]*modelRadius*4,
@@ -522,7 +315,7 @@ function fitShadowFrustum(){
 // runs for this light regardless of any mesh's own flags. Also set the mesh
 // flags explicitly (rather than relying on the light alone) since a fresh
 // mesh from onLoaded starts with both false by default.
-function syncShadowCasting(){
+export function syncShadowCasting(){
   const cast = $('castShadows').checked, ground = $('groundShadow').checked;
   // The light's own master switch, and whether the model casts a shadow at
   // all, must be on for EITHER feature — Ground shadow needs the model to
@@ -557,7 +350,7 @@ function rotatedMeshMinY(geometry, center, rotMat4){
 // fixed approximation of "always maximum darkness" (see the fixed value
 // set below), since the plotted result's actual darkness is governed
 // entirely by Min spacing now, not a separate darkness slider.
-function syncGroundCatcher(){
+export function syncGroundCatcher(){
   if (!groundCatcher) return;
   const on = $('groundShadow').checked;
   groundCatcher.visible = on;
@@ -573,7 +366,7 @@ function syncGroundCatcher(){
   // without looking like a flat black shape the real output never is.
   groundCatcher.material.opacity = 0.35;
 }
-function lightVec(){
+export function lightVec(){
   const az = +$('lightAz').value * Math.PI/180, el = +$('lightEl').value * Math.PI/180;
   return [Math.cos(el)*Math.sin(az), Math.sin(el), Math.cos(el)*Math.cos(az)];
 }
@@ -589,7 +382,7 @@ function lightVec(){
 // explicitly here (rather than waiting for the next render frame) so
 // gatherSettings() always reads the CURRENT rotation, never a frame-stale
 // one, even if doGenerate() runs synchronously right after a slider drag.
-function updateModelRotation(){
+export function updateModelRotation(){
   const rx = +$('rotX').value * Math.PI/180;
   const ry = +$('rotY').value * Math.PI/180;
   const rz = +$('rotZ').value * Math.PI/180;
@@ -622,10 +415,12 @@ function updateModelRotation(){
    isometric presets, recenter, rotation sliders/resets, FOV, or light. See
    clearActiveView() calls scattered through this file and the generic
    [data-regen] listener in panel-controls.js for the actual hookup. */
-let savedViews = [];
-let savedViewCounter = 0;
+export let savedViews = [];
+export let savedViewCounter = 0;
+// Scene import replaces the whole list (older .pen files have none).
+export function setSavedViews(list, counter){ savedViews = list; savedViewCounter = counter; }
 let activeViewRef = null;
-function renderSavedViews(){
+export function renderSavedViews(){
   const list = $('viewsList');
   list.innerHTML = '';
   $('viewsFloat').classList.toggle('svEmpty', savedViews.length === 0);
@@ -655,7 +450,6 @@ function renderSavedViews(){
     list.appendChild(row);
   }
 }
-renderSavedViews();   // sets the initial empty-state class — no other call site runs unconditionally at load
 // Toggles the selection-highlight class on the matching row without
 // rebuilding the list — used by activateView/updateSavedView, neither of
 // which changes the list's item count, only which view is active. A full
@@ -681,7 +475,7 @@ function captureCurrentViewState(){
     rotX: +$('rotX').value, rotY: +$('rotY').value, rotZ: +$('rotZ').value,
   };
 }
-function saveCurrentView(){
+export function saveCurrentView(){
   savedViewCounter++;
   const view = Object.assign(
     { name: 'View ' + String(savedViewCounter).padStart(2, '0') },
@@ -729,16 +523,15 @@ function activateView(view){
 }
 // Called from every interaction elsewhere in this file that can change a
 // setting a saved view captures — see the big comment above.
-function clearActiveView(){
+export function clearActiveView(){
   if (activeViewRef){ activeViewRef = null; renderSavedViews(); }
 }
-$('saveViewBtn').addEventListener('click', saveCurrentView);
 
 /* ================= model loaded =================
    Called from scene-io.js's worker.onmessage when the worker reports a
    freshly parsed/loaded mesh. */
 let modelGeo = null, flatNormalAttr = null, smoothNormalAttr = null;
-function onLoaded(m){
+export function onLoaded(m){
   modelName = m.name;
   if (modelMesh) modelPivot.remove(modelMesh);
   if (modelGeo) modelGeo.dispose();
@@ -827,9 +620,9 @@ function onLoaded(m){
   // once, directly, rather than through the debounced auto-regenerate path
   // (which would otherwise fire once on default settings and again once
   // per restored control, however harmlessly that resolves in the end).
-  if (importingScene){
-    applyImportedScene(pendingSceneRestore);
-    importingScene = false; pendingSceneRestore = null;
+  const pendingScene = takePendingSceneImport();
+  if (pendingScene){
+    applyImportedScene(pendingScene);
     $('statusL').textContent = 'imported scene · ' + modelName;
     doGenerate();
     return;
@@ -847,7 +640,7 @@ function onLoaded(m){
 // attribute, pure visual, instant) and the solver's shading source for
 // Hatch/Circles (the captured shading buffer instead of per-face
 // brightness — needs a regenerate to take effect).
-function applySmoothShadingToggle(){
+export function applySmoothShadingToggle(){
   if (!modelMesh || !modelGeo || !flatNormalAttr || !smoothNormalAttr) return;
   const useSmooth = $('smoothShading').checked;
   modelGeo.setAttribute('normal', useSmooth ? smoothNormalAttr : flatNormalAttr);
@@ -856,33 +649,26 @@ function applySmoothShadingToggle(){
 // The smooth-angle slider only applies to Smooth Shading — always visible,
 // just disabled (same treatment as Shadow budg. under Cast shadows) for
 // Flat Shading, where it's not relevant.
-function syncSmoothAngleVisibility(){
+export function syncSmoothAngleVisibility(){
   const on = $('smoothShading').checked;
   $('smoothAngleRow').classList.toggle('ctlDisabled', !on);
 }
-$('smoothShading').addEventListener('change', () => {
-  applySmoothShadingToggle();
-  syncSmoothAngleVisibility();
-  markStale();
-});
-syncSmoothAngleVisibility();   // sets the initial visibility at load — no other call site runs unconditionally at load
 
 // Re-runs just the corner-normal fan grouping in the worker with a new
 // hard-edge threshold (see computeCornerNormals's own comment for why this
 // is cheap — no weld/adjacency/shell recompute needed) rather than a full
 // model reload. markStale() alongside it because the normals change the
 // shading buffer the next generate captures, not just the live display.
-function applySmoothAngleChange(){
+export function applySmoothAngleChange(){
   if (!modelMesh) return;
   worker.postMessage({ type:'recomputeSmoothAngle', hardEdgeDeg: +$('smoothAngleDeg').value });
   markStale();
 }
-$('smoothAngleDeg').addEventListener('input', applySmoothAngleChange);
 // Worker's reply to the message just above — swaps in the freshly computed
 // normals and, if Smooth Shading is currently the active display mode,
 // pushes the change to screen immediately rather than waiting on the next
 // regenerate.
-function onSmoothAngleResult(m){
+export function onSmoothAngleResult(m){
   if (!modelGeo) return;
   smoothNormalAttr = new THREE.BufferAttribute(m.cornerNormals, 3);
   if ($('smoothShading').checked){
@@ -984,7 +770,7 @@ function makeShadingMaterialFrom(sourceMaterial){
   };
   return mat;
 }
-function captureShadingBuffer(){
+export function captureShadingBuffer(){
   if (!modelMesh){ console.warn('[shadingCapture] no model loaded'); return null; }
   const w = Math.max(1, vp.clientWidth), h = Math.max(1, vp.clientHeight);
   const target = ensureShadingCaptureTarget(w, h);
@@ -1022,4 +808,221 @@ function captureShadingBuffer(){
   const pixels = new Float32Array(w*h*4);
   renderer.readRenderTargetPixels(target, 0, 0, w, h, pixels);
   return { pixels, w, h };
+}
+
+/* ================= init =================
+   Everything above only declares. This wires the DOM and starts the
+   module's live behaviour — called once by app.js, in script order. */
+export function initViewport3d(){
+  renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // Enabled once, unconditionally, at startup — toggling this flag later would
+  // force a shader recompile on every material in the scene. Actual shadow
+  // presence is controlled per-light/per-mesh instead (cheap to flip), driven
+  // by the Cast shadows / Ground shadow checkboxes.
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  vp.appendChild(renderer.domElement);
+  scene.background = new THREE.Color(0x353c47);
+  dirLight.shadow.mapSize.set(2048, 2048);
+  scene.add(dirLight, dirLight.target, new THREE.AmbientLight(0xffffff, 0.45));
+  scene.add(modelPivot);
+  renderer.domElement.addEventListener('pointerdown', e => {
+    dragBtn = (e.button === 2 || e.shiftKey) ? 2 : 0;
+    lastX = e.clientX; lastY = e.clientY;
+    renderer.domElement.setPointerCapture(e.pointerId);
+  });
+  renderer.domElement.addEventListener('pointermove', e => {
+    if (dragBtn < 0) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    if (dragBtn === 0){
+      const poleEps = 0.001 * Math.PI / 180;
+      if (orbit.exactPole){
+        orbit.phi = orbit.exactPole > 0 ? poleEps : Math.PI - poleEps;
+        orbit.exactPole = 0;
+      }
+      orbit.theta -= dx * 0.006;
+      orbit.phi = Math.min(Math.PI - poleEps, Math.max(poleEps, orbit.phi - dy * 0.006));
+    } else {
+      const k = orbit.radius * PAN_DRAG_RATE * fovPanScale();
+      const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+      const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+      orbit.target.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
+    }
+    orbit.apply(); markStale(); clearActiveView();
+  });
+  renderer.domElement.addEventListener('pointerup', () => dragBtn = -1);
+  renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+  renderer.domElement.addEventListener('wheel', e => {
+    e.preventDefault();
+    orbit.radius = Math.min(modelRadius * 40, Math.max(modelRadius * 0.2,
+      orbit.radius * Math.exp(e.deltaY * 0.0012)));
+    orbit.apply(); markStale(); clearActiveView();
+  }, { passive:false });
+  vp.addEventListener('pointerenter', () => { vpHover = true; });
+  vp.addEventListener('pointerleave', () => { vpHover = false; });
+  document.addEventListener('keydown', e => {
+    if (!vpHover) return;
+    const dir = ARROW_PAN_KEYS[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    const step = orbit.radius * PAN_KEY_STEP * fovPanScale();
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+    const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+    orbit.target.addScaledVector(right, dir[0] * step).addScaledVector(up, dir[1] * step);
+    orbit.apply(); markStale(); clearActiveView();
+  });
+  new ResizeObserver(() => { resize(); markStale(); }).observe(vp);
+  resize();
+  new ResizeObserver(() => {
+    const layout = computePaperLayout(); if (layout) applyPv(layout);
+  }).observe($('paperPane'));
+  gizmoParts = GIZMO_AXES.map(ax => {
+    const positive = ax.l !== '';
+    let line = null;
+    if (positive){                          // stem only on positive halves, like Blender
+      line = svgEl('line');
+      line.setAttribute('stroke', ax.c);
+      line.setAttribute('stroke-width', '1.8');
+      gizmoSvg.appendChild(line);
+    }
+    const g = svgEl('g');
+    g.setAttribute('class', 'ball');
+    const c = svgEl('circle');
+    c.setAttribute('r', positive ? 9 : 7);
+    c.setAttribute('fill', ax.c);
+    if (!positive){ c.setAttribute('fill-opacity', '0.25'); c.setAttribute('stroke', ax.c); c.setAttribute('stroke-width', '1.4'); }
+    g.appendChild(c);
+    let t = null;
+    if (positive){
+      t = svgEl('text');
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('dy', '3.4');
+      t.setAttribute('fill', '#10141a');
+      t.textContent = ax.l;
+      g.appendChild(t);
+    }
+    // pointerdown, not click: drawGizmo re-inserts these nodes for depth
+    // sorting, and a DOM re-insertion between mousedown and mouseup makes the
+    // browser drop the click event entirely — pointerdown always fires
+    g.addEventListener('pointerdown', ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      const isZAxis = ax.d[0]===0 && ax.d[2]===0;   // CAD +Z or -Z (top/bottom)
+      // if the view is already snapped to this exact axis, clicking again
+      // flips to the opposite pole (Blender-style toggle) instead of no-op
+      const eps = 0.5 * Math.PI / 180;
+      const curTheta = orbit.theta, curPhi = orbit.phi;
+      const wrap = a => ((a % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+      const closeAngle = (a,b) => {
+        const d = Math.abs(wrap(a) - wrap(b));
+        return Math.min(d, 2*Math.PI - d) < eps;
+      };
+      const isCurrent = isZAxis
+        ? orbit.exactPole === Math.sign(ax.d[1])
+        : orbit.exactPole === 0 &&
+          closeAngle(curTheta, ax.theta*Math.PI/180) &&
+          Math.abs(curPhi - Math.min(Math.PI-1e-6, Math.max(1e-6, ax.phi*Math.PI/180))) < eps;
+      let target = ax;
+      if (isCurrent){
+        const opp = GIZMO_AXES.find(o => o.d[0]===-ax.d[0] && o.d[1]===-ax.d[1] && o.d[2]===-ax.d[2]);
+        if (opp) target = opp;
+      }
+      orbit.theta = target.theta * Math.PI / 180;
+      orbit.phi = Math.min(Math.PI - 1e-6, Math.max(1e-6, target.phi * Math.PI / 180));
+      orbit.exactPole = (target.d[0]===0 && target.d[2]===0) ? Math.sign(target.d[1]) : 0;
+      orbit.apply(); markStale(); clearActiveView();
+    });
+    gizmoSvg.appendChild(g);
+    return { line, g, c, t };
+  });
+  /* the floating export panel sits ON the pannable/zoomable 2D pane — swallow
+     its pointer/wheel events so adjusting a dropdown never pans the paper */
+  ['pointerdown','wheel','dblclick'].forEach(t => {
+    $('genExportFloat').addEventListener(t, e => e.stopPropagation());
+  });
+  (function buildLightGizmo(){
+    const sun = cls => {
+      const g = svgEl('g', { class: cls });
+      g.appendChild(svgEl('circle', { r:8 }));
+      return g;
+    };
+    // azimuth ring
+    lgSvg.appendChild(svgEl('text', { class:'lgLbl', x:LG.cx, y:25, 'text-anchor':'middle' })).textContent = 'Azimuth';
+    lgSvg.appendChild(svgEl('circle', { class:'lgRing', cx:LG.cx, cy:LG.cy, r:LG.r }));
+    lgAzNeedle = lgSvg.appendChild(svgEl('line', { class:'lgNeedle', x1:LG.cx, y1:LG.cy, x2:LG.cx, y2:LG.cy+LG.r }));
+    const lgAzHit = lgSvg.appendChild(svgEl('circle', { class:'lgHit', cx:LG.cx, cy:LG.cy, r:LG.r+9 }));
+    lgAzSun = lgSvg.appendChild(sun('lgSun'));
+    // elevation gauge
+    lgSvg.appendChild(svgEl('text', { class:'lgLbl', x:LG.tx, y:25, 'text-anchor':'middle' })).textContent = 'Elev.';
+    lgSvg.appendChild(svgEl('line', { class:'lgTrackBg', x1:LG.tx, y1:LG.ty0, x2:LG.tx, y2:LG.ty1 }));
+    lgElFill = lgSvg.appendChild(svgEl('line', { class:'lgTrackFill', x1:LG.tx, y1:LG.ty1, x2:LG.tx, y2:LG.ty1 }));
+    const lgElHit = lgSvg.appendChild(svgEl('rect', { class:'lgHit', x:LG.tx-15, y:LG.ty0-12, width:30, height:LG.ty1-LG.ty0+24 }));
+    lgElSun = lgSvg.appendChild(sun('lgSun'));
+
+    let azDrag = false, elDrag = false;
+    const azMove = e => {
+      const p = lgToSvgPoint(e.clientX, e.clientY);
+      const az = Math.atan2(p.x - LG.cx, p.y - LG.cy) * 180 / Math.PI;
+      lgSetLight(az, null);
+    };
+    lgAzHit.addEventListener('pointerdown', e => {
+      azDrag = true; lgAzHit.setPointerCapture(e.pointerId); azMove(e);
+    });
+    lgAzHit.addEventListener('pointermove', e => { if (azDrag) azMove(e); });
+    lgAzHit.addEventListener('pointerup', () => azDrag = false);
+
+    const elMove = e => {
+      const p = lgToSvgPoint(e.clientX, e.clientY);
+      const f = Math.min(1, Math.max(0, (LG.ty1 - p.y) / (LG.ty1 - LG.ty0)));
+      lgSetLight(null, LG.elMin + f*(LG.elMax - LG.elMin));
+    };
+    lgElHit.addEventListener('pointerdown', e => {
+      elDrag = true; lgElHit.setPointerCapture(e.pointerId); elMove(e);
+    });
+    lgElHit.addEventListener('pointermove', e => { if (elDrag) elMove(e); });
+    lgElHit.addEventListener('pointerup', () => elDrag = false);
+  })();
+  updateLightGizmo();
+  (function loop(){
+    requestAnimationFrame(loop);
+    if (activeTab === 'preview'){
+      renderer.render(scene, camera);
+      drawGizmo();
+    }
+  })();
+  $('projMode').addEventListener('click', () => {
+    setProjMode($('projMode').dataset.mode === 'ortho' ? 'persp' : 'ortho');
+    orbit.apply(); markStale(); clearActiveView();
+  });
+  // the flanking mode names select their side directly (no-op if already there)
+  for (const [id, mode] of [['projLblPersp','persp'], ['projLblOrtho','ortho']])
+    $(id).addEventListener('click', () => {
+      if ($('projMode').dataset.mode === mode) return;
+      setProjMode(mode); orbit.apply(); markStale(); clearActiveView();
+    });
+  $('fovDeg').addEventListener('input', updateFrustum);
+  $('camShiftX').addEventListener('input', updateFrustum);
+  $('camShiftY').addEventListener('input', updateFrustum);
+  document.querySelectorAll('.vpBtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = VIEW_PRESETS[btn.dataset.view];
+      orbit.theta = v.theta * Math.PI / 180;
+      orbit.phi = v.phi * Math.PI / 180;
+      orbit.exactPole = 0;
+      orbit.apply(); markStale(); clearActiveView();
+    });
+  });
+  $('recenter3dBtn').addEventListener('click', recenter3dView);
+  // same reset via a double middle-click anywhere on the 3D canvas
+  onMiddleDblClick(renderer.domElement, recenter3dView);
+  renderSavedViews();   // sets the initial empty-state class — no other call site runs unconditionally at load
+  $('saveViewBtn').addEventListener('click', saveCurrentView);
+  $('smoothShading').addEventListener('change', () => {
+    applySmoothShadingToggle();
+    syncSmoothAngleVisibility();
+    markStale();
+  });
+  syncSmoothAngleVisibility();   // sets the initial visibility at load — no other call site runs unconditionally at load
+  $('smoothAngleDeg').addEventListener('input', applySmoothAngleChange);
 }

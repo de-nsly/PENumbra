@@ -6,6 +6,12 @@
    object for the worker), the Generate/Auto-generate buttons, and
    the shadow/soft-shadow UI sync helpers.
    ================================================================ */
+import { $, APP_VERSION, isFormControlTarget, positionSegPill, worker } from './main.js';
+import { camera, captureShadingBuffer, clearActiveView, lightVec, modelMesh, modelPivot, syncGroundCatcher, syncShadowCasting, updateLight, updateLightGizmo, updateModelRotation, vp } from './viewport3d.js';
+import { computePaperLayout, layerEls, layerStyle } from './svg-export.js';
+import { updateTextureGizmo } from './paper-preview.js';
+import { pendingSoIvExport } from './scene-io.js';
+
 /* ================= settings / staleness ================= */
 // Shadow budget is a discrete preset ladder (not a raw number slider) so the
 // wide useful range — from "fast preview" to "no cap, however long it takes"
@@ -14,10 +20,10 @@
 // finite (so it survives structured-clone/JSON round-trips as an ordinary
 // number, unlike literal Infinity, which JSON.stringify turns into `null`),
 // while being far larger than any real scene could ever exhaust.
-const SHADOW_BUDGET_PRESETS = [250000, 500000, 1000000, 2000000, 4000000, 8000000, 16000000, Number.MAX_SAFE_INTEGER];
+export const SHADOW_BUDGET_PRESETS = [250000, 500000, 1000000, 2000000, 4000000, 8000000, 16000000, Number.MAX_SAFE_INTEGER];
 // same idea for the hatch segment safety cap — default (index 2 → 80k)
 // matches the value this app always used before it became adjustable.
-const HATCH_CAP_PRESETS = [20000, 40000, 80000, 160000, 320000, 640000, 1280000, Number.MAX_SAFE_INTEGER];
+export const HATCH_CAP_PRESETS = [20000, 40000, 80000, 160000, 320000, 640000, 1280000, Number.MAX_SAFE_INTEGER];
 function fmtBigCount(n){
   if (n >= Number.MAX_SAFE_INTEGER) return 'unl.';
   if (n >= 1e6) return (n/1e6).toFixed(n % 1e6 === 0 ? 0 : 1) + 'M';
@@ -44,7 +50,7 @@ function valLabelId(id){
   const m = id.match(/^(.*)(_(?:h1|h2|h3|cr))$/);
   return m ? m[1] + 'Val' + m[2] : id + 'Val';
 }
-function refreshValLabel(el){
+export function refreshValLabel(el){
   const v = $(valLabelId(el.id));
   if (!v) return;
   const presets = PRESET_SLIDERS[el.id];
@@ -145,7 +151,6 @@ function makeSliderValueEditable(rangeEl){
     else if (e.key === 'Escape'){ cancelled = true; span.blur(); }
   });
 }
-document.querySelectorAll('input[type="range"]').forEach(makeSliderValueEditable);
 
 /* ================= double-click-to-edit names (layer/view lists) =================
    Same pattern as the slider-value editor above: contenteditable toggled
@@ -158,7 +163,7 @@ document.querySelectorAll('input[type="range"]').forEach(makeSliderValueEditable
    span's text (and anything else derived from the name, like a selection-
    highlight dataset attribute) in one place rather than two separate code
    paths that could drift out of sync. */
-function makeNameEditable(span, getCurrentName, onCommit){
+export function makeNameEditable(span, getCurrentName, onCommit){
   let editing = false, cancelled = false;
   function beginEdit(e){
     if (e) e.stopPropagation();
@@ -188,14 +193,6 @@ function makeNameEditable(span, getCurrentName, onCommit){
   });
 }
 
-document.querySelectorAll('[data-regen]').forEach(el =>
-  el.addEventListener('input', () => {
-    markStale();
-    if (el.dataset.light !== undefined){ updateLight(); updateLightGizmo(); }
-    if (el.dataset.rotAxis !== undefined){ updateModelRotation(); }
-    if (el.id === 'fovDeg' || el.dataset.light !== undefined || el.dataset.rotAxis !== undefined || el.dataset.camshift !== undefined) clearActiveView();
-    refreshValLabel(el);
-  }));
 let staleSeq = 0, genSeq = 0, autoTimer = null;
 // 'preview' | 'layout'. While 'layout', the live 3D->SVG pipeline is fully
 // paused — nothing in the 3D viewport (orbit, rotation sliders, light) is
@@ -203,15 +200,16 @@ let staleSeq = 0, genSeq = 0, autoTimer = null;
 // See layout-canvas.js for the tab-switch handler that flips this and
 // pauses/resumes accordingly (switching back to 'preview' calls markStale()
 // once, to catch up on anything changed while paused).
-let activeTab = 'preview';
-function markStale(){
+export let activeTab = 'preview';
+export function setActiveTab(tab){ activeTab = tab; }   // layout-canvas.js's tab switch
+export function markStale(){
   if (activeTab !== 'preview') return;
   staleSeq++;
   $('paperPane').classList.add('stale');
   $('sheet').classList.add('stale');
   scheduleAuto();
 }
-function scheduleAuto(){
+export function scheduleAuto(){
   if (activeTab !== 'preview') return;
   if (!autoGenOn || !modelMesh || genSeq === staleSeq) return;
   clearTimeout(autoTimer);
@@ -219,12 +217,12 @@ function scheduleAuto(){
   const wait = lastGen ? Math.min(2000, Math.max(280, lastGen.ms * 1.5)) : 280;
   autoTimer = setTimeout(() => { if (!busy) doGenerate(); }, wait);
 }
-function clearStale(){
+export function clearStale(){
   $('paperPane').classList.remove('stale');
   $('sheet').classList.remove('stale');
 }
 
-function gatherSettings(){
+export function gatherSettings(){
   // Hatch spacing is authored in mm (it's paper space now that the preview is a
   // real page), but the solver only ever works in viewport-pixel space — convert
   // here, once, using the paper scale for the viewport size this generate call
@@ -342,15 +340,32 @@ function gatherSettings(){
 }
 
 /* ================= generate ================= */
-let busy = false, lastGen = null;
-$('genBtn').addEventListener('click', doGenerate);
+let busy = false;
+export let lastGen = null;             // the worker's last 'result' message
+// Called by onResult (svg-export.js) with the worker's result: releases the
+// Generate button, records the result, and either clears the stale state or
+// re-arms auto-generate if the view moved while solving.
+export function generateFinished(m){
+  busy = false; $('genBtn').disabled = false;
+  $('paperPane').classList.remove('busy');
+  $('progressBar').style.width = '0';
+  lastGen = m;
+  if (genSeq === staleSeq) clearStale();
+  else scheduleAuto();               // view moved while solving — stays stale, auto retries
+}
+// The worker posted an error instead of a result.
+export function generateFailed(msg){
+  busy = false; $('genBtn').disabled = false;
+  $('paperPane').classList.remove('busy');
+  $('statusL').textContent = 'error: ' + msg;
+}
+// Records a result without the UI bookkeeping above (tools/harness).
+export function setLastGen(m){ lastGen = m; }
 let autoGenOn = true;                 // header toggle button; checked/pressed by default
-$('autoGenBtn').setAttribute('aria-checked', 'true');
-$('autoGenBtn').classList.add('active');
 // Ground shadow's plane offset only makes sense with its own toggle on;
 // shadow budget only bounds Cast shadow's sampling, so only that toggle
 // matters for it (see the function body below).
-function syncShadowUI(){
+export function syncShadowUI(){
   $('groundOffCtl').classList.toggle('ctlDisabled', !$('groundShadow').checked);
   // budget only bounds the light-space point-sampling used for object
   // self-shadow — Ground shadow is analytic (no sampling, no budget), so
@@ -366,10 +381,6 @@ function syncShadowUI(){
   $('invertShadowsRow').classList.toggle('ctlDisabled', !anyShadow);
   $('invertShadows').disabled = !anyShadow;
 }
-$('softShadows').addEventListener('change', syncShadowUI);
-$('castShadows').addEventListener('change', syncShadowUI);
-$('groundShadow').addEventListener('change', syncShadowUI);
-syncShadowUI();   // sets the initial disabled state at load
 // The three Lines-section sliders that belong to one layer group each, faded
 // out while that group draws nothing at all — the same treatment (and the same
 // .ctlDisabled class) the shadow controls above get. Each condition mirrors
@@ -385,20 +396,19 @@ syncShadowUI();   // sets the initial disabled state at load
 // ways: the user clicking one (svg-export.js's own change handler), a .pen
 // scene restoring them by assignment (scene-io.js — assignment fires no
 // change event), and here at load for the initial state.
-function syncLineLayerUI(){
+export function syncLineLayerUI(){
   const contourOn = layerStyle('sv').on || layerStyle('sh').on;
   const creaseOn  = layerStyle('cv').on || layerStyle('ch').on;
   $('contourCleanupCtl').classList.toggle('ctlDisabled', !contourOn);
   $('contourMaxHopsCtl').classList.toggle('ctlDisabled', !contourOn);
   $('creaseDegCtl').classList.toggle('ctlDisabled', !creaseOn);
 }
-syncLineLayerUI();
 // Circles pattern's Center X/Y/threshold now live in the always-visible
 // General sub-tab (moved there alongside Hatching/Shadows), so there's no
 // group visibility to toggle here anymore — only the gizmo, which still
 // depends on the Circles layer's own pen checkbox.
 function syncTexturePatternUI(){
-  if (typeof updateTextureGizmo === 'function') updateTextureGizmo();
+  updateTextureGizmo();
 }
 // Texture pattern's Center X/Y are offsets from the page's own center
 // (redefined from the solver's arbitrary origin — see groundPatternCenterX/Y
@@ -413,7 +423,7 @@ function syncTexturePatternUI(){
 // already means page center by definition now, so there's nothing left to
 // default away from.
 let _gpLastPaperW = null, _gpLastPaperH = null;
-function updateGroundPatternSliderRange(){
+export function updateGroundPatternSliderRange(){
   const layout = computePaperLayout();
   if (!layout) return;
   const xEl = $('texGroundPatternCenterX'), yEl = $('texGroundPatternCenterY');
@@ -429,23 +439,6 @@ function updateGroundPatternSliderRange(){
   _gpLastPaperW = layout.paperW; _gpLastPaperH = layout.paperH;
   refreshValLabel(xEl); refreshValLabel(yEl);
 }
-layerEls['cr'].chk.addEventListener('change', syncTexturePatternUI);
-syncTexturePatternUI();
-// previewOverlaySvg's visibility is normally kept in sync by the tab-switch
-// click handler in layout-canvas.js — but that handler has an early return
-// when the clicked tab is already the active one, so it never runs for
-// whichever tab starts active by default (here, 'preview'). Set it
-// explicitly here too, so the gizmo overlay's initial visibility doesn't
-// depend on the HTML's own default happening to match activeTab's actual
-// starting value.
-$('previewOverlaySvg').style.display = activeTab === 'preview' ? '' : 'none';
-// Live 3D-preview counterparts — these run regardless of Auto-regenerate,
-// since they're a pure viewport visual and don't depend on the solved SVG
-// output at all.
-$('castShadows').addEventListener('change', syncShadowCasting);
-$('groundShadow').addEventListener('change', syncShadowCasting);
-$('groundShadow').addEventListener('change', syncGroundCatcher);
-$('groundOff').addEventListener('input', syncGroundCatcher);
 // Soft shadows: the per-face ambient brightness bands (Hatch/Cross/Deep
 // below) that give gradual, soft-looking shading — distinct from Cast
 // shadows / Ground shadow, which are hard, occlusion-based shadows and stay
@@ -453,19 +446,12 @@ $('groundOff').addEventListener('input', syncGroundCatcher);
 // threshold sliders and (in gatherSettings) forces their effective value to
 // 0 so no face qualifies for ambient hatching, without touching the sliders'
 // own stored positions — turning Soft shadows back on restores them exactly.
-function syncSoftShadowsUI(){
+export function syncSoftShadowsUI(){
   const on = $('softShadows').checked;
   for (const id of ['hatchThrCtl','crossThrCtl','deepThrCtl'])
     $(id).classList.toggle('ctlDisabled', !on);
 }
-$('softShadows').addEventListener('change', syncSoftShadowsUI);
-$('autoGenBtn').addEventListener('click', () => {
-  autoGenOn = !autoGenOn;
-  $('autoGenBtn').setAttribute('aria-checked', String(autoGenOn));
-  $('autoGenBtn').classList.toggle('active', autoGenOn);
-  scheduleAuto();
-});
-function buildCamMessage(){
+export function buildCamMessage(){
   camera.updateMatrixWorld(true);
   const view = new THREE.Matrix4().copy(camera.matrixWorld).invert();
   return {
@@ -475,7 +461,7 @@ function buildCamMessage(){
     ortho: !!camera.isOrthographicCamera,
   };
 }
-function doGenerate(){
+export function doGenerate(){
   if (busy || !modelMesh || activeTab !== 'preview') return;
   busy = true;
   genSeq = staleSeq;                 // snapshot: did the view change mid-solve?
@@ -490,7 +476,7 @@ function doGenerate(){
   // surface rings) density decisions are driven entirely by this buffer.
   const transfer = [];
   let shadingBuffer = null;
-  if ($('smoothShading').checked && typeof captureShadingBuffer === 'function'){
+  if ($('smoothShading').checked){
     const cap = captureShadingBuffer();
     if (cap){ shadingBuffer = cap; transfer.push(cap.pixels.buffer); }
   }
@@ -519,15 +505,6 @@ function doGenerate(){
    and ignored with any modifier held so it doesn't fight a browser/OS
    shortcut that happens to share the key. */
 let panelsHidden = false;
-document.addEventListener('keydown', e => {
-  if (e.key !== 'h' && e.key !== 'H') return;
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (isFormControlTarget()) return;
-  panelsHidden = !panelsHidden;
-  $('camPanelStack').classList.toggle('panelsHidden', panelsHidden);
-  $('paperPanelStack').classList.toggle('panelsHidden', panelsHidden);
-  $('modelInfoFloat').style.display = panelsHidden ? 'none' : '';
-});
 
 /* ================= about / shortcuts modal =================
    Plain show/hide of a fixed-position overlay — no focus trap or
@@ -537,15 +514,8 @@ document.addEventListener('keydown', e => {
    since it must fire regardless of what's focused, including while
    the modal itself holds focus). */
 const aboutOverlay = $('aboutOverlay');
-$('appVersion').textContent = 'Version ' + APP_VERSION + ' ·';
 function openAbout(){ aboutOverlay.hidden = false; }
 function closeAbout(){ aboutOverlay.hidden = true; }
-$('aboutBtn').addEventListener('click', openAbout);
-$('aboutCloseBtn').addEventListener('click', closeAbout);
-aboutOverlay.addEventListener('click', e => { if (e.target === aboutOverlay) closeAbout(); });
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !aboutOverlay.hidden) closeAbout();
-});
 
 /* ================= settings panel tabs =================
    Five tabs for the same right-hand panel, one content div each; the
@@ -559,7 +529,7 @@ const PANEL_MODES = [
   { mode: 'page',    tab: 'pageTab',     btn: 'pageModeBtn' },
   { mode: 'cog',     tab: 'settingsTab', btn: 'cogModeBtn' },
 ];
-function setPanelMode(mode){
+export function setPanelMode(mode){
   for (const m of PANEL_MODES){
     $(m.tab).style.display = m.mode === mode ? '' : 'none';
     $(m.btn).classList.toggle('active', m.mode === mode);
@@ -571,7 +541,6 @@ function setPanelMode(mode){
   $('texSubTabsHead').style.display = mode === 'texture' ? '' : 'none';
   positionSegPill($('panelModeToggle'));
 }
-for (const m of PANEL_MODES) $(m.btn).addEventListener('click', () => setPanelMode(m.mode));
 
 /* ================= hatch texture enable checkboxes =================
    Each texture effect (Overshoot, Spacing jitter, Angle jitter, and
@@ -585,16 +554,6 @@ function syncTextureGroup(prefix, suffix){
   const onEl = $(prefix + 'On' + suffix), fieldsEl = $(prefix + 'Fields' + suffix);
   if (!onEl || !fieldsEl) return;   // e.g. texAngle/texRegWobble don't exist in the Circles clone
   fieldsEl.classList.toggle('ctlDisabled', !onEl.checked);
-}
-for (const prefix of TEXTURE_GROUPS){
-  syncTextureGroup(prefix, '');
-  $(prefix + 'On').addEventListener('change', () => syncTextureGroup(prefix, ''));
-  for (const key of TEXTURE_LAYER_KEYS){
-    const suffix = '_' + key;
-    syncTextureGroup(prefix, suffix);
-    const onEl = $(prefix + 'On' + suffix);
-    if (onEl) onEl.addEventListener('change', () => syncTextureGroup(prefix, suffix));
-  }
 }
 
 /* ================= texture tab: single-level tabs + per-layer individual mode =================
@@ -624,14 +583,11 @@ function selectTexTop(key){
   });
   document.querySelectorAll('.textureSubTabs').forEach(positionSegPill);
 }
-document.querySelectorAll('.texTopTabBtn').forEach(btn => {
-  btn.addEventListener('click', () => { selectTexTop(btn.dataset.textop); markStale(); });
-});
 // Only show tab buttons for currently-enabled layers (in the Individual
 // row); if every one of them happens to be off, fall back to showing H1
 // alone rather than leaving nothing to click. The General/"G" button is
 // never filtered.
-function updateTexLayerTabVisibility(){
+export function updateTexLayerTabVisibility(){
   const anyEnabled = TEXTURE_LAYER_KEYS.some(texLayerEnabled);
   document.querySelectorAll('#texTopTabsIndividual .texTopTabBtn').forEach(btn => {
     const key = btn.dataset.textop;
@@ -663,7 +619,7 @@ function seedLayerTextureSettings(key){
     layerEl.dispatchEvent(new Event('change'));
   });
 }
-function syncIndividualMode(){
+export function syncIndividualMode(){
   const on = $('texIndividualOn').checked;
   $('texTopTabsNormal').style.display = on ? 'none' : '';
   $('texTopTabsIndividual').style.display = on ? '' : 'none';
@@ -673,73 +629,149 @@ function syncIndividualMode(){
   selectTexTop(nextTop);
   if (on) updateTexLayerTabVisibility();
 }
-$('texIndividualOn').addEventListener('change', () => {
-  if ($('texIndividualOn').checked) TEXTURE_LAYER_KEYS.forEach(seedLayerTextureSettings);
+
+/* ================= init =================
+   Everything above only declares. This wires the DOM and starts the
+   module's live behaviour — called once by app.js, in script order. */
+export function initPanelControls(){
+  document.querySelectorAll('input[type="range"]').forEach(makeSliderValueEditable);
+  document.querySelectorAll('[data-regen]').forEach(el =>
+    el.addEventListener('input', () => {
+      markStale();
+      if (el.dataset.light !== undefined){ updateLight(); updateLightGizmo(); }
+      if (el.dataset.rotAxis !== undefined){ updateModelRotation(); }
+      if (el.id === 'fovDeg' || el.dataset.light !== undefined || el.dataset.rotAxis !== undefined || el.dataset.camshift !== undefined) clearActiveView();
+      refreshValLabel(el);
+    }));
+  $('genBtn').addEventListener('click', doGenerate);
+  $('autoGenBtn').setAttribute('aria-checked', 'true');
+  $('autoGenBtn').classList.add('active');
+  $('softShadows').addEventListener('change', syncShadowUI);
+  $('castShadows').addEventListener('change', syncShadowUI);
+  $('groundShadow').addEventListener('change', syncShadowUI);
+  syncShadowUI();   // sets the initial disabled state at load
+  syncLineLayerUI();
+  layerEls['cr'].chk.addEventListener('change', syncTexturePatternUI);
+  syncTexturePatternUI();
+  // previewOverlaySvg's visibility is normally kept in sync by the tab-switch
+  // click handler in layout-canvas.js — but that handler has an early return
+  // when the clicked tab is already the active one, so it never runs for
+  // whichever tab starts active by default (here, 'preview'). Set it
+  // explicitly here too, so the gizmo overlay's initial visibility doesn't
+  // depend on the HTML's own default happening to match activeTab's actual
+  // starting value.
+  $('previewOverlaySvg').style.display = activeTab === 'preview' ? '' : 'none';
+  // Live 3D-preview counterparts — these run regardless of Auto-regenerate,
+  // since they're a pure viewport visual and don't depend on the solved SVG
+  // output at all.
+  $('castShadows').addEventListener('change', syncShadowCasting);
+  $('groundShadow').addEventListener('change', syncShadowCasting);
+  $('groundShadow').addEventListener('change', syncGroundCatcher);
+  $('groundOff').addEventListener('input', syncGroundCatcher);
+  $('softShadows').addEventListener('change', syncSoftShadowsUI);
+  $('autoGenBtn').addEventListener('click', () => {
+    autoGenOn = !autoGenOn;
+    $('autoGenBtn').setAttribute('aria-checked', String(autoGenOn));
+    $('autoGenBtn').classList.toggle('active', autoGenOn);
+    scheduleAuto();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'h' && e.key !== 'H') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (isFormControlTarget()) return;
+    panelsHidden = !panelsHidden;
+    $('camPanelStack').classList.toggle('panelsHidden', panelsHidden);
+    $('paperPanelStack').classList.toggle('panelsHidden', panelsHidden);
+    $('modelInfoFloat').style.display = panelsHidden ? 'none' : '';
+  });
+  $('appVersion').textContent = 'Version ' + APP_VERSION + ' ·';
+  $('aboutBtn').addEventListener('click', openAbout);
+  $('aboutCloseBtn').addEventListener('click', closeAbout);
+  aboutOverlay.addEventListener('click', e => { if (e.target === aboutOverlay) closeAbout(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !aboutOverlay.hidden) closeAbout();
+  });
+  for (const m of PANEL_MODES) $(m.btn).addEventListener('click', () => setPanelMode(m.mode));
+  for (const prefix of TEXTURE_GROUPS){
+    syncTextureGroup(prefix, '');
+    $(prefix + 'On').addEventListener('change', () => syncTextureGroup(prefix, ''));
+    for (const key of TEXTURE_LAYER_KEYS){
+      const suffix = '_' + key;
+      syncTextureGroup(prefix, suffix);
+      const onEl = $(prefix + 'On' + suffix);
+      if (onEl) onEl.addEventListener('change', () => syncTextureGroup(prefix, suffix));
+    }
+  }
+  document.querySelectorAll('.texTopTabBtn').forEach(btn => {
+    btn.addEventListener('click', () => { selectTexTop(btn.dataset.textop); markStale(); });
+  });
+  $('texIndividualOn').addEventListener('change', () => {
+    if ($('texIndividualOn').checked) TEXTURE_LAYER_KEYS.forEach(seedLayerTextureSettings);
+    syncIndividualMode();
+    markStale();
+  });
+  selectTexTop('general');
   syncIndividualMode();
-  markStale();
-});
-selectTexTop('general');
-syncIndividualMode();
-TEXTURE_LAYER_KEYS.forEach(k => {
-  if (layerEls[k]) layerEls[k].chk.addEventListener('change', updateTexLayerTabVisibility);
-});
-updateTexLayerTabVisibility();
-
-/* ================= settings panel resize handle =================
-   Drag-to-resize for the right settings panel. 322px (this stylesheet's
-   own default column width) is both the starting width and the hard
-   minimum — "cannot be narrower than it is now" was the explicit ask.
-   The 3D viewport and 2D preview panes are the grid's first two `1fr`
-   tracks, so they always split whatever space remains 50/50 regardless
-   of how wide the panel gets; only the panel's own px track changes.
-
-   Below the layout's existing 1100px stacked-mobile breakpoint, the
-   handle is hidden (see CSS) and dragging is disabled — but an inline
-   style set here would otherwise permanently outrank that breakpoint's
-   own `main{grid-template-columns:...}` rule (inline always beats an
-   external stylesheet, media query or not), silently breaking the
-   responsive collapse the very first time someone resizes the panel and
-   THEN shrinks the window. Guarded by clearing the inline override
-   below the breakpoint and restoring it above, on every window resize. */
-(function(){
-  const MIN_PANEL_W = 322;
-  const MAX_PANEL_W = 640;
-  const STACK_BREAKPOINT = 1100;
-  const handle = $('panelResizeHandle');
-  const mainEl = document.querySelector('main');
-  if (!handle || !mainEl) return;
-  let panelW = MIN_PANEL_W;
-  let dragging = false, startX = 0, startW = MIN_PANEL_W;
-
-  function applyWidth(){
-    if (window.innerWidth <= STACK_BREAKPOINT){ mainEl.style.gridTemplateColumns = ''; return; }
-    mainEl.style.gridTemplateColumns = `1fr 1fr ${panelW}px`;
-    handle.style.right = (panelW - 4) + 'px';   // center the 8px handle on the column boundary
-  }
-  window.addEventListener('resize', applyWidth);
-
-  handle.addEventListener('pointerdown', e => {
-    if (window.innerWidth <= STACK_BREAKPOINT) return;   // stacked layout — handle is hidden here anyway
-    dragging = true;
-    startX = e.clientX;
-    startW = panelW;
-    handle.classList.add('dragging');
-    document.body.classList.add('resizingPanel');
-    handle.setPointerCapture(e.pointerId);
-    e.preventDefault();
+  TEXTURE_LAYER_KEYS.forEach(k => {
+    if (layerEls[k]) layerEls[k].chk.addEventListener('change', updateTexLayerTabVisibility);
   });
-  handle.addEventListener('pointermove', e => {
-    if (!dragging) return;
-    const dx = startX - e.clientX;      // dragging left (negative clientX delta) widens the panel
-    panelW = Math.max(MIN_PANEL_W, Math.min(MAX_PANEL_W, startW + dx));
-    applyWidth();
-  });
-  function endDrag(){
-    if (!dragging) return;
-    dragging = false;
-    handle.classList.remove('dragging');
-    document.body.classList.remove('resizingPanel');
-  }
-  handle.addEventListener('pointerup', endDrag);
-  handle.addEventListener('pointercancel', endDrag);
-})();
+  updateTexLayerTabVisibility();
+  /* ================= settings panel resize handle =================
+     Drag-to-resize for the right settings panel. 322px (this stylesheet's
+     own default column width) is both the starting width and the hard
+     minimum — "cannot be narrower than it is now" was the explicit ask.
+     The 3D viewport and 2D preview panes are the grid's first two `1fr`
+     tracks, so they always split whatever space remains 50/50 regardless
+     of how wide the panel gets; only the panel's own px track changes.
+
+     Below the layout's existing 1100px stacked-mobile breakpoint, the
+     handle is hidden (see CSS) and dragging is disabled — but an inline
+     style set here would otherwise permanently outrank that breakpoint's
+     own `main{grid-template-columns:...}` rule (inline always beats an
+     external stylesheet, media query or not), silently breaking the
+     responsive collapse the very first time someone resizes the panel and
+     THEN shrinks the window. Guarded by clearing the inline override
+     below the breakpoint and restoring it above, on every window resize. */
+  (function(){
+    const MIN_PANEL_W = 322;
+    const MAX_PANEL_W = 640;
+    const STACK_BREAKPOINT = 1100;
+    const handle = $('panelResizeHandle');
+    const mainEl = document.querySelector('main');
+    if (!handle || !mainEl) return;
+    let panelW = MIN_PANEL_W;
+    let dragging = false, startX = 0, startW = MIN_PANEL_W;
+
+    function applyWidth(){
+      if (window.innerWidth <= STACK_BREAKPOINT){ mainEl.style.gridTemplateColumns = ''; return; }
+      mainEl.style.gridTemplateColumns = `1fr 1fr ${panelW}px`;
+      handle.style.right = (panelW - 4) + 'px';   // center the 8px handle on the column boundary
+    }
+    window.addEventListener('resize', applyWidth);
+
+    handle.addEventListener('pointerdown', e => {
+      if (window.innerWidth <= STACK_BREAKPOINT) return;   // stacked layout — handle is hidden here anyway
+      dragging = true;
+      startX = e.clientX;
+      startW = panelW;
+      handle.classList.add('dragging');
+      document.body.classList.add('resizingPanel');
+      handle.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      const dx = startX - e.clientX;      // dragging left (negative clientX delta) widens the panel
+      panelW = Math.max(MIN_PANEL_W, Math.min(MAX_PANEL_W, startW + dx));
+      applyWidth();
+    });
+    function endDrag(){
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('dragging');
+      document.body.classList.remove('resizingPanel');
+    }
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+  })();
+}

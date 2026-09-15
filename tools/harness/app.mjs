@@ -11,14 +11,13 @@
    The worker itself (js/worker/*.js) is the REAL one, imported
    unmodified — `self` is stubbed below before the import so its
    dispatcher installs the same way it does inside a Worker. The
-   camera matrices come from the REAL three.js r128 (the same
-   cdnjs build index.html loads, vendored under vendor/), driven
-   through the same orbit.apply()/updateFrustum() math as
-   viewport3d.js — so cam.view/cam.proj are bit-identical to the
-   browser's, which matters for a scene whose whole problem is
-   exactly-coincident geometry. gatherSettings/computePaperLayout are
-   not reimplemented either: their source is lifted out of the real
-   app files at runtime (see extract.mjs).
+   main-thread side is real too: gatherSettings, buildCamMessage,
+   computePaperLayout, the orbit/updateFrustum camera construction,
+   setProjMode and updateModelRotation are imported straight from
+   js/*.js (see app-env.mjs for the browser stand-in that makes that
+   possible), so cam.view/cam.proj and the settings object are the
+   browser's own, which matters for a scene whose whole problem is
+   exactly-coincident geometry.
 
    The one thing that genuinely can't be reproduced headlessly is the
    WebGL shading-buffer readback (captureShadingBuffer). It only feeds
@@ -26,22 +25,20 @@
    same thing the app sends with Smooth shading off. Line layers
    (Silhouette/Contour/Crease) are unaffected.
    ================================================================ */
+import { THREE, getEl, setControl } from './app-env.mjs';   // first: installs the globals the app modules need
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { extractFrom, evalWithEnv } from './extract.mjs';
-
-const require = createRequire(import.meta.url);
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const REPO = path.resolve(HERE, '..', '..');
-const THREE = require(path.join(HERE, 'vendor', 'three.min.js'));
+import { LAYERS } from '../../js/main.js';
+import { computePaperLayout, getMargins, layerEls } from '../../js/svg-export.js';
+import { lightVec, orbit, updateFrustum, setProjMode, updateModelRotation, perspCam, orthoCam } from '../../js/viewport3d.js';
+import { gatherSettings, buildCamMessage, setLastGen } from '../../js/panel-controls.js';
 
 /* The app's own viewport is whatever size the user's browser window
-   happened to give it, and a .pen file doesn't record it — but the
-   solver works in viewport pixels, so it has to be stated. This default
-   is recovered from the reference exports in pen_files/ (their
-   invertPageBounds pins vp to 798x947); override with --vp WxH. */
+   happened to give it, and a .pen file doesn't record it — but the solver
+   works in viewport pixels, so it has to be stated. This default was
+   recovered from the invertPageBounds recorded in the browser exports the
+   harness was verified against; override with --vp WxH. */
 export const DEFAULT_VIEWPORT = { w: 798, h: 947 };
 
 /* Shared-worker bookkeeping — see boot() below. One entry per worker
@@ -51,38 +48,32 @@ export const DEFAULT_VIEWPORT = { w: 798, h: 947 };
    state and its own resident-mesh owner. */
 const workers = new Map();   // entry-module URL -> { dispatch, meshOwner }
 let activeApp = null;        // whose post() is in flight (routes replies back)
-
-/* ---------- minimal DOM stand-in ----------
-   Just enough of an "element" for the extracted app code, which only ever
-   touches .value / .checked / .type on the controls it reads. */
-class El {
-  constructor(id, val){
-    this.id = id;
-    this.type = typeof val === 'boolean' ? 'checkbox' : 'text';
-    if (typeof val === 'boolean') this.checked = val; else this.value = String(val);
-  }
-}
+/* The app modules hold ONE set of controls, one orbit and one camera (as the
+   browser does). Several HarnessApps can live in one process — a second
+   scene to compare against — so each pushes its own state into the modules
+   before it solves; see _activate. */
+let stateOwner = null;
 
 export class HarnessApp {
   constructor(){
-    this.els = new Map();
+    this.controls = new Map();  // id -> value, as the .pen's settings block holds them
     this.layers = {};
-    this.vp = { clientWidth: DEFAULT_VIEWPORT.w, clientHeight: DEFAULT_VIEWPORT.h };
+    this.vp = { w: DEFAULT_VIEWPORT.w, h: DEFAULT_VIEWPORT.h };
+    this.projMode = 'persp';
+    this.orbitState = null;     // the .pen camera block, re-applied when this app takes the modules over
     this.messages = [];         // everything the worker has posted back
     this.errors = [];           // 'error' posts (see _onWorkerMessage)
     this.lastGen = null;        // the app's `lastGen` — the last 'result'
     this.loaded = null;         // the 'loaded' reply (center/radius/stats)
     this.modelRadius = 1;
-    this._installAppCode();
+    this.perspCam = perspCam;
+    this.orthoCam = orthoCam;
+    this.orbit = orbit;         // the app's own orbit object — set theta/phi/... then orbit.apply(), as the app does
   }
 
   /* ---- $(id) ---- */
-  $(id){
-    let el = this.els.get(id);
-    if (!el){ el = new El(id, ''); this.els.set(id, el); }   // absent control reads as empty, like a missing id would never happen in the app
-    return el;
-  }
-  setControl(id, val){ this.els.set(id, new El(id, val)); }
+  $(id){ return getEl(id); }
+  setControl(id, val){ this.controls.set(id, val); setControl(id, val); }
 
   /* ---- worker boot ----
      Same module, same entry point as `new Worker('js/worker/solver.js',
@@ -131,6 +122,26 @@ export class HarnessApp {
     if (!this._loadMsg) throw new Error('no model loaded — call loadScene() first');
     this.post(this._loadMsg());
   }
+  /* Pushes this app's controls, layer checkboxes and viewport size into the
+     app modules. Cheap and idempotent, so it runs before every read of
+     module state. The camera (orbit, projection, model rotation) is only
+     re-applied when a DIFFERENT app used the modules last: a caller that
+     changed app.orbit for a view (sweep.mjs) must keep that view. */
+  _activate(){
+    for (const [id, val] of this.controls) setControl(id, val);
+    for (const L of LAYERS){
+      const st = this.layers[L.key];
+      layerEls[L.key] = { chk: { checked: !!(st && st.on) }, pen: { value: L.pen }, dash: { value: (st && st.dash) || L.dash } };
+    }
+    const vpEl = getEl('viewport3d');
+    vpEl.clientWidth = this.vp.w; vpEl.clientHeight = this.vp.h;
+    if (stateOwner !== this){
+      stateOwner = this;
+      setProjMode(this.projMode);
+      if (this.orbitState) this._applyCamera(this.orbitState);
+      updateModelRotation();
+    }
+  }
 
   _onWorkerMessage(m){
     if (m.type === 'loaded') this._onLoaded(m);
@@ -147,66 +158,20 @@ export class HarnessApp {
     this.worker.meshOwner = this;
     this.modelCenter = new THREE.Vector3(m.center[0], m.center[1], m.center[2]);
     this.modelRadius = m.radius;
-    this.perspCam.near = this.orthoCam.near = Math.max(this.modelRadius * 0.01, 1e-4);
-    this.perspCam.far  = this.orthoCam.far  = this.modelRadius * 60;
+    perspCam.near = orthoCam.near = Math.max(this.modelRadius * 0.01, 1e-4);
+    perspCam.far  = orthoCam.far  = this.modelRadius * 60;
   }
 
-  /* ---- app code borrowed verbatim (see extract.mjs) ---- */
-  _installAppCode(){
-    const app = this;
-    this.perspCam = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
-    this.orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
-    this.camera = this.perspCam;
-    this.modelPivot = new THREE.Object3D();
-
-    const $ = id => app.$(id);
-    // env values arrive as plain function parameters, so anything the app code
-    // reads LIVE (and the harness can reassign — `camera`, `lastGen`) is
-    // declared inside the evaluated scope instead, with a tiny setter exported
-    // alongside. `vp` needs no such treatment: it's a stable object whose
-    // properties are mutated in place, exactly like a real DOM element.
-
-    // svg-export.js: the paper transform (solver px -> page mm)
-    const paperSrc = extractFrom(path.join(REPO, 'js', 'svg-export.js'),
-      ['PAPERS', 'getMargins', 'computePaperLayout']);
-    const paper = evalWithEnv(
-      'let lastGen = null;\n' + paperSrc + '\nfunction __setLastGen(v){ lastGen = v; }',
-      { $ }, ['computePaperLayout', 'getMargins', '__setLastGen']);
-    // dims is optional in the app too — computePaperLayout falls back to
-    // lastGen, so that has to be pushed in fresh on every call
-    this.computePaperLayout = dims => { paper.__setLastGen(app.lastGen); return paper.computePaperLayout(dims); };
-    this.getMargins = paper.getMargins;
-
-    // viewport3d.js: light direction + the orbit->camera construction
-    const lightSrc = extractFrom(path.join(REPO, 'js', 'viewport3d.js'), ['lightVec']);
-    this.lightVec = evalWithEnv(lightSrc, { $ }, ['lightVec']).lightVec;
-
-    const orbitSrc = extractFrom(path.join(REPO, 'js', 'viewport3d.js'),
-      ['updateFrustum', 'orbit']);
-    const o = evalWithEnv(orbitSrc,
-      { $, vp: this.vp, perspCam: this.perspCam, orthoCam: this.orthoCam, THREE },
-      ['orbit', 'updateFrustum']);
-    this.orbit = o.orbit;
-    this.updateFrustum = o.updateFrustum;
-
-    // panel-controls.js: the exact settings object the worker is sent
-    const setSrc = extractFrom(path.join(REPO, 'js', 'panel-controls.js'),
-      ['SHADOW_BUDGET_PRESETS', 'HATCH_CAP_PRESETS', 'gatherSettings', 'buildCamMessage']);
-    const s = evalWithEnv(
-      'let camera = null;\n' + setSrc + '\nfunction __setCamera(v){ camera = v; }',
-      {
-        $, vp: this.vp, THREE,
-        computePaperLayout: d => app.computePaperLayout(d),
-        layerStyle: k => app.layerStyle(k),
-        lightVec: () => app.lightVec(),
-        modelPivot: this.modelPivot,
-      },
-      ['gatherSettings', 'buildCamMessage', '__setCamera']);
-    this._setCamera = s.__setCamera;
-    this.gatherSettings = s.gatherSettings;
-    this.buildCamMessage = s.buildCamMessage;
-    this._setCamera(this.camera);
+  // The app's computePaperLayout: dims is optional there too, falling back
+  // to the last result, which is pushed in fresh on every call.
+  computePaperLayout(dims){
+    this._activate();
+    setLastGen(this.lastGen);
+    return computePaperLayout(dims);
   }
+  getMargins(){ this._activate(); return getMargins(); }
+  lightVec(){ this._activate(); return lightVec(); }
+  updateFrustum(){ this._activate(); updateFrustum(); }
 
   /* Ticking a layer's checkbox. Toggling one layer changes what survives in
      every layer below it (see LAYERS in js/main.js), so this must be followed
@@ -224,18 +189,22 @@ export class HarnessApp {
               : { on: false, color: '#000000', width: 1, dash: 'solid' };
   }
 
-  // viewport3d.js setProjMode(), stripped to the part the solver can see
+  // viewport3d.js setProjMode() — the real one; only its solver-visible
+  // effect (which camera buildCamMessage reads) matters here.
   setProjMode(mode){
-    this.camera = mode === 'ortho' ? this.orthoCam : this.perspCam;
-    this._setCamera(this.camera);
+    this.projMode = mode;
+    stateOwner = this;
+    setProjMode(mode);
   }
-  // viewport3d.js updateModelRotation() — note the deliberate Y/Z swap
-  updateModelRotation(){
-    const rx = +this.$('rotX').value * Math.PI/180;
-    const ry = +this.$('rotY').value * Math.PI/180;
-    const rz = +this.$('rotZ').value * Math.PI/180;
-    this.modelPivot.rotation.set(rx, rz, ry, 'XYZ');
-    this.modelPivot.updateMatrixWorld(true);
+  // viewport3d.js updateModelRotation() — the real one (note its Y/Z swap)
+  updateModelRotation(){ this._activate(); updateModelRotation(); }
+  _applyCamera(cs){
+    if (Number.isFinite(cs.theta))  orbit.theta  = cs.theta;
+    if (Number.isFinite(cs.phi))    orbit.phi    = cs.phi;
+    if (Number.isFinite(cs.radius)) orbit.radius = cs.radius;
+    orbit.exactPole = Number.isFinite(cs.exactPole) ? cs.exactPole : 0;
+    if (Array.isArray(cs.target)) orbit.target.set(cs.target[0], cs.target[1], cs.target[2]);
+    orbit.apply();
   }
 
   /* ---- scene-io.js importScene() + applyImportedScene() ---- */
@@ -261,12 +230,7 @@ export class HarnessApp {
     if (!data || data.penumbraScene !== 1 || !data.model)
       throw new Error('unrecognized scene file: ' + penPath);
     this.scene = data;
-    // mutated in place, never reassigned — the extracted app code holds a
-    // reference to this exact object (see _installAppCode)
-    if (opts.viewport){
-      this.vp.clientWidth = opts.viewport.w;
-      this.vp.clientHeight = opts.viewport.h;
-    }
+    if (opts.viewport){ this.vp.w = opts.viewport.w; this.vp.h = opts.viewport.h; }
 
     // model first — onLoaded's center/radius feed near/far, exactly as in the app.
     // Rebuilt fresh each time it's posted (the worker's parsers consume the
@@ -288,28 +252,25 @@ export class HarnessApp {
   }
 
   _applyImportedScene(data){
-    for (const [id, val] of Object.entries(data.settings || {})) this.setControl(id, val);
+    for (const [id, val] of Object.entries(data.settings || {})) this.controls.set(id, val);
     this.layers = {};
     for (const [key, st] of Object.entries(data.layers || {})) this.layers[key] = { ...st };
     const cs = data.camera || {};
-    this.setProjMode(cs.ortho ? 'ortho' : 'persp');
-    if (Number.isFinite(cs.theta))  this.orbit.theta  = cs.theta;
-    if (Number.isFinite(cs.phi))    this.orbit.phi    = cs.phi;
-    if (Number.isFinite(cs.radius)) this.orbit.radius = cs.radius;
-    this.orbit.exactPole = Number.isFinite(cs.exactPole) ? cs.exactPole : 0;
-    if (Array.isArray(cs.target)) this.orbit.target.set(cs.target[0], cs.target[1], cs.target[2]);
-    this.orbit.apply();
-    this.updateModelRotation();
+    this.projMode = cs.ortho ? 'ortho' : 'persp';
+    this.orbitState = cs;
+    stateOwner = null;          // force a full push (controls, camera, rotation) on the next _activate
+    this._activate();
   }
 
   /* ---- panel-controls.js doGenerate() ----
      shadingBuffer is null here (no WebGL) — see the header note. */
   generate(overrides){
     this._ensureMesh();
-    const settings = this.gatherSettings();
+    this._activate();
+    const settings = gatherSettings();
     if (overrides) Object.assign(settings, overrides);
     this.lastSettings = settings;
-    this.lastCam = this.buildCamMessage();
+    this.lastCam = buildCamMessage();
     this.lastGen = null;
     this.errors = [];
     this.post({ type: 'generate', cam: this.lastCam, settings, shadingBuffer: null });
@@ -321,12 +282,14 @@ export class HarnessApp {
   /* ---- the two Contour debug paths the app's Debug panel exposes ---- */
   debugRawContourEdges(){
     this._ensureMesh();
-    this.post({ type: 'debugRawContourEdges', cam: this.buildCamMessage() });
+    this._activate();
+    this.post({ type: 'debugRawContourEdges', cam: buildCamMessage() });
     return this.messages[this.messages.length-1];
   }
   debugRawEdges(){
     this._ensureMesh();
-    this.post({ type: 'debugRawEdges', cam: this.buildCamMessage(),
+    this._activate();
+    this.post({ type: 'debugRawEdges', cam: buildCamMessage(),
                 creaseDeg: +this.$('creaseDeg').value || 0 });
     return this.messages[this.messages.length-1];
   }

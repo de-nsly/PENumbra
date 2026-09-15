@@ -5,9 +5,8 @@
    Contour (sv/sh) that is chainByRun -> mergeContourRunSplits ->
    splitSelfTouching -> simplifyCollinear; Silhouette (so/iv/ih) and
    Crease (cv/ch) each have their own chain path. All of those are pure
-   geometry functions, so they're lifted out of the real file rather
-   than reimplemented (see extract.mjs) — if the app's chaining changes,
-   the harness changes with it.
+   geometry functions imported straight from the real module — if the
+   app's chaining changes, the harness changes with it.
 
    Two emit modes:
      'chained' — what the app actually exports (post-chaining).
@@ -15,30 +14,21 @@
                  Use this to tell "the worker never emitted it" apart
                  from "the chaining lost it".
    ================================================================ */
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { extractFrom, evalWithEnv } from './extract.mjs';
-
-const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-
-/* Every pure declaration onResult's chaining branches depend on, in
-   dependency order. layerStyle/$ are never reached from any of them. */
-const PURE = [
-  'SIMPLIFY_COLLINEAR_TOL', 'MIN_SEG_PX', 'SIMPLIFY_FOLDBACK_TOL', 'CHAIN_CLOSE_SNAP_TOL', 'simplifyCollinear',
-  'accumulatePathStats', 'chainSegments', 'trimTipFoldback', 'mergeSilhouetteClose',
-  'chainByRun', 'mergeContourRunSplits', 'appendPolylineD', 'buildChainedPathD',
-  'mergeAdjacentTouching', 'mergeCreaseScreenSpace', 'splitSelfTouching',
-  'CONTOUR_MICRO_TOL', 'trimContourFoldbacks', 'dropRedundantContourSlivers',
-  'appendContourPathD', 'appendCreasePathD',
-];
-const exported = evalWithEnv(extractFrom(path.join(REPO, 'js', 'svg-export.js'), PURE), {}, PURE);
-export const {
+import './app-env.mjs';   // first: the app modules need its globals at import time
+import {
   chainByRun, mergeContourRunSplits, splitSelfTouching, simplifyCollinear,
   chainSegments, mergeAdjacentTouching, mergeCreaseScreenSpace, buildChainedPathD,
   SIMPLIFY_COLLINEAR_TOL, SIMPLIFY_FOLDBACK_TOL, trimTipFoldback,
   trimContourFoldbacks, dropRedundantContourSlivers,
   appendContourPathD, appendCreasePathD,
-} = exported;
+} from '../../js/svg-export.js';
+export {
+  chainByRun, mergeContourRunSplits, splitSelfTouching, simplifyCollinear,
+  chainSegments, mergeAdjacentTouching, mergeCreaseScreenSpace, buildChainedPathD,
+  SIMPLIFY_COLLINEAR_TOL, SIMPLIFY_FOLDBACK_TOL, trimTipFoldback,
+  trimContourFoldbacks, dropRedundantContourSlivers,
+  appendContourPathD, appendCreasePathD,
+};
 
 const CHAIN_LAYERS = { so:1, iv:1, ih:1 };
 const SEQ_CHAIN_LAYERS = { cv:1, ch:1 };

@@ -25,6 +25,13 @@
    splitSelfTouching, simplifyCollinear) are the main-thread suspects;
    worldOnFace()/intersectSegs()/subtractCovered are the worker's.
    ================================================================ */
+import { $, DASH_KEYS, DASH_RATIOS, LAYERS, MAX_DASH_SLOTS, PEN_LIBRARY, SVG_NS, dashOnFraction, dashPattern, downloadFile, penById, scaledDash, svgEl } from './main.js';
+import { activeTab, gatherSettings, generateFinished, lastGen, markStale, syncLineLayerUI, updateGroundPatternSliderRange } from './panel-controls.js';
+import { blockLayerPenId, blocks, computeLayoutPaperDims, computeLayoutStats, createBlockDom, gridGuidePositions, layoutOverlayOn, refreshAllBlockStyles, renderPreviewLayoutOverlay, syncLayoutPaperFrame, syncLayoutTrimMask, updateBlockStyle } from './layout-canvas.js';
+import { applyPv, resetPv, resetPvFitWithRulers } from './paper-preview.js';
+import { exportSoIvOverlayNow, takePendingSoIvExport } from './scene-io.js';
+import { modelName } from './viewport3d.js';
+
 // Pen widths are mm values entered to plotter-nib precision (0.15, 0.25,
 // 0.35mm etc.) — display up to 2 decimals, trimming trailing zeros rather
 // than padding to a fixed width, so 1 shows as "1", 1.1 as "1.1", and 1.05
@@ -32,12 +39,12 @@
 // this on its own (its own internal step/display arithmetic can otherwise
 // show a value rounded to fewer decimals than were actually typed or
 // stepped to), so this is applied explicitly after every edit.
-function fmtWidth(n){ return (Math.round(n*100)/100).toString(); }
+export function fmtWidth(n){ return (Math.round(n*100)/100).toString(); }
 // Shared by every per-layer dash <select> (built below) AND by addDashSlot
 // further down, which appends a fresh <option> to each already-built one
 // when a new slot is created — 'solid' is always first and isn't part of
 // DASH_KEYS itself (see its own comment in main.js).
-function dashOptionsHtml(){
+export function dashOptionsHtml(){
   return '<option value="solid">—</option>' + DASH_KEYS.map(k => '<option value="' + k + '">' + k + '</option>').join('');
 }
 // The pen counterpart of dashOptionsHtml, but (re)fills an existing <select>
@@ -47,7 +54,7 @@ function dashOptionsHtml(){
 // is how pen-library.js finds them all again after an add/rename/delete.
 // Keeps the select's current pen when it still exists, else lands on
 // `fallbackId` (if that exists) or the first pen.
-function fillPenSelect(select, fallbackId){
+export function fillPenSelect(select, fallbackId){
   const prev = select.value;
   select.replaceChildren(...PEN_LIBRARY.map(p => {
     const opt = document.createElement('option');
@@ -57,34 +64,7 @@ function fillPenSelect(select, fallbackId){
   const has = id => PEN_LIBRARY.some(p => p.id === id);
   select.value = has(prev) ? prev : has(fallbackId) ? fallbackId : PEN_LIBRARY[0].id;
 }
-const layerEls = {};
-for (const L of LAYERS){
-  const row = document.createElement('div');
-  row.className = 'layer';
-  row.innerHTML =
-    '<input type="checkbox" ' + (L.on ? 'checked' : '') + ' aria-label="' + L.name + ' on">' +
-    '<svg class="swatch" viewBox="0 0 50 14" aria-hidden="true"><path d="M3 7 L47 7" fill="none"/></svg>' +
-    '<span class="nm' + (L.name.startsWith('·') ? ' hid' : '') + '">' + L.name + '</span>' +
-    '<select class="penSelect" aria-label="' + L.name + ' pen"></select>' +
-    '<select aria-label="' + L.name + ' dash">' + dashOptionsHtml() + '</select>';
-  $(L.host).appendChild(row);
-  const [chk, , , pen, dash] = row.children;
-  const sw = row.children[1].firstChild;
-  fillPenSelect(pen, L.pen);
-  dash.value = L.dash;
-  layerEls[L.key] = { chk, pen, dash, sw };
-  const restyle = () => applyLayerStyle(L.key);
-  pen.addEventListener('change', restyle);
-  dash.addEventListener('change', () => { restyle(); refreshStatusR(); });
-  chk.addEventListener('change', () => {
-    markStale();
-    // Fades the Lines-section sliders that belong to a layer group once that
-    // group draws nothing (panel-controls.js, which loads after this file —
-    // fine, since this only runs on a click, long after both are loaded).
-    syncLineLayerUI();
-  });
-  applyLayerStyle(L.key);
-}
+export const layerEls = {};
 
 /* ================= Dash section (Pen library tab) =================
    D1/D2 are user-editable 6-value patterns (dash,gap,dash,gap,dash,gap),
@@ -94,7 +74,7 @@ for (const L of LAYERS){
    using it, not just one), the same reason a paper-size change already
    re-runs applyLayerStyle for the whole LAYERS list elsewhere. */
 const DASH_FIELD_LABELS = ['dash','gap','dash','gap','dash','gap'];
-function refreshDashPreview(key){
+export function refreshDashPreview(key){
   const line = $('dashPreview' + key).querySelector('line');
   const pattern = dashPattern(key);
   const PREVIEW_PX_PER_UNIT = 6;    // arbitrary — this preview isn't tied to any real layer's width
@@ -121,14 +101,12 @@ function buildDashFields(key){
   });
   refreshDashPreview(key);
 }
-buildDashFields('D1');
-buildDashFields('D2');
 /* "+ Add dash style" — only ever grows DASH_KEYS (never removes), up to
    MAX_DASH_SLOTS. New slot starts at a plain, visibly non-solid default
    ([2,2,0,0,0,0]) purely so it's not all-zeros (which scaledDash would
    otherwise silently render as solid) until the user actually customizes
    it via the sliders buildDashFields just built. */
-function addDashSlot(){
+export function addDashSlot(){
   if (DASH_KEYS.length >= MAX_DASH_SLOTS) return;
   const newKey = 'D' + (DASH_KEYS.length + 1);
   DASH_RATIOS[newKey] = [2, 2, 0, 0, 0, 0];
@@ -153,16 +131,14 @@ function addDashSlot(){
   }
   if (DASH_KEYS.length >= MAX_DASH_SLOTS) $('addDashBtn').disabled = true;
 }
-$('addDashBtn').addEventListener('click', addDashSlot);
-if (DASH_KEYS.length >= MAX_DASH_SLOTS) $('addDashBtn').disabled = true;   // defensive — e.g. a restored scene that already has all 9
 // color/width are resolved through the layer's pen (see PEN_LIBRARY in
 // main.js) — callers keep seeing the same flat shape they always did.
-function layerStyle(key){
+export function layerStyle(key){
   const el = layerEls[key];
   const pen = penById(el.pen.value);
   return { on: el.chk.checked, color: pen.color, width: pen.width, dash: el.dash.value };
 }
-function applyLayerStyle(key){
+export function applyLayerStyle(key){
   const s = layerStyle(key), el = layerEls[key];
   const swWidth = Math.max(0.6, s.width);
   el.sw.setAttribute('stroke', s.color);
@@ -199,16 +175,14 @@ function applyLayerStyle(key){
   // layout-canvas.js) — only worth the redraw while Layout is the tab
   // actually being looked at; switching TO Layout already does a full
   // render on its own.
-  if (typeof activeTab !== 'undefined' && activeTab === 'layout') refreshAllBlockStyles();
+  if (activeTab === 'layout') refreshAllBlockStyles();
   // The Preview tab's Layout overlay clones each block's current DOM rather
   // than referencing it live (see renderPreviewLayoutOverlay's own comment
   // for why), so a color/width/dash panel tweak needs an explicit rebuild
   // to show up in the overlay — it re-applies updateBlockStyle to each
   // block itself before re-cloning, so this alone is enough even though
   // refreshAllBlockStyles() above didn't run.
-  if (typeof layoutOverlayOn !== 'undefined' && layoutOverlayOn &&
-      typeof renderPreviewLayoutOverlay === 'function')
-    renderPreviewLayoutOverlay();
+  if (layoutOverlayOn) renderPreviewLayoutOverlay();
 }
 
 /* ================= paper layout =================
@@ -217,7 +191,7 @@ function applyLayerStyle(key){
    scaled to fit within the margins and centered on the page — this is the
    single source of truth shared by both the on-screen preview and export,
    so they can never drift apart. */
-const PAPERS = { A0:[1189,841], A1:[841,594], A2:[594,420], A3:[420,297], A4:[297,210], A5:[210,148], A6:[148,105] };
+export const PAPERS = { A0:[1189,841], A1:[841,594], A2:[594,420], A3:[420,297], A4:[297,210], A5:[210,148], A6:[148,105] };
 // Single source of truth for margins — always returns all four sides,
 // regardless of whether Independent margins is on. When it's off, all four
 // are just the one shared marginMm value; when it's on, each is read from
@@ -225,7 +199,7 @@ const PAPERS = { A0:[1189,841], A1:[841,594], A2:[594,420], A3:[420,297], A4:[29
 // both margin guides, the Layout snap-guide targets) uses this shape
 // unconditionally rather than branching on the toggle itself, so none of
 // them need to know or care which mode is active.
-function getMargins(){
+export function getMargins(){
   if ($('marginIndependent').checked){
     return {
       top: Math.max(0, +$('marginTopMm').value || 0),
@@ -237,7 +211,7 @@ function getMargins(){
   const m = Math.max(0, +$('marginMm').value || 0);
   return { top: m, bottom: m, left: m, right: m };
 }
-function computePaperLayout(dims){
+export function computePaperLayout(dims){
   const d = dims || lastGen;
   if (!d) return null;
   const [pl, ps] = PAPERS[$('paperSize').value];
@@ -260,14 +234,14 @@ function computePaperLayout(dims){
 // mm-authored values (pen widths, dash lengths, texture lengths) are
 // multiplied by to land in path-coordinate units. 1 before the first
 // generate, when there is no layout yet.
-function pxPerMm(){
+export function pxPerMm(){
   const layout = computePaperLayout();
   return layout ? 1 / Math.max(1e-6, layout.scale) : 1;
 }
 // Base "fit to pane" size in CSS px, before the current zoom factor is applied.
 // Explicit JS sizing rather than CSS aspect-ratio/flex-centering: those don't
 // reliably "contain" a box against an arbitrary pane size across engines.
-function baseSheetSize(layout){
+export function baseSheetSize(layout){
   const pane = $('paperPane');
   const availW = Math.max(20, pane.clientWidth - 20), availH = Math.max(20, pane.clientHeight - 20);
   const ratio = layout.paperW / layout.paperH;
@@ -275,10 +249,10 @@ function baseSheetSize(layout){
   if (h > availH){ h = availH; w = h * ratio; }
   return { w, h };
 }
-function renderPaper(){
+export function renderPaper(){
   const layout = computePaperLayout();
   if (!layout) return;
-  if (typeof updateGroundPatternSliderRange === 'function') updateGroundPatternSliderRange();
+  updateGroundPatternSliderRange();
   // viewBox is always the FULL page — zoom never crops it, it resizes the whole sheet instead
   $('plot').setAttribute('viewBox', '0 0 ' + layout.paperW.toFixed(3) + ' ' + layout.paperH.toFixed(3));
   const content = $('paperContent');
@@ -306,7 +280,7 @@ function renderPaper(){
     $('plot').insertBefore(gridGuides, $('plot').firstChild);
   }
   gridGuides.innerHTML = '';
-  if (typeof gridGuidePositions === 'function'){
+  {
     const { xs, ys } = gridGuidePositions({ paperW: layout.paperW, paperH: layout.paperH, margin: layout.margin });
     for (const x of xs){
       const line = svgEl('line');
@@ -334,9 +308,8 @@ function renderPaper(){
   // Layout overlay — same "recreate on every renderPaper() call" pattern as
   // marginGuide/pvGridGuides above, since #plot's entire subtree (including
   // whatever this drew last time) gets wiped on every regenerate (see
-  // onResult's while-loop). Defined in layout-canvas.js, which loads after
-  // this file — guarded the same way syncLayoutPaperFrame already is below.
-  if (typeof renderPreviewLayoutOverlay === 'function') renderPreviewLayoutOverlay();
+  // onResult's while-loop).
+  renderPreviewLayoutOverlay();
   syncPreviewTrimMask();   // must stay the LAST child of #plot — see its own comment
   return layout;
 }
@@ -358,7 +331,7 @@ function renderPaper(){
    IS the margin line, so the guide that already sits underneath the
    drawing would otherwise have half its stroke buried by the mask.
    ============================================================================ */
-function buildTrimMaskGroup(id, dims, guideClass){
+export function buildTrimMaskGroup(id, dims, guideClass){
   const x0 = dims.margin.left, y0 = dims.margin.top;
   const x1 = Math.max(x0, dims.paperW - dims.margin.right);
   const y1 = Math.max(y0, dims.paperH - dims.margin.bottom);
@@ -381,7 +354,7 @@ function buildTrimMaskGroup(id, dims, guideClass){
   g.appendChild(guide);
   return g;
 }
-function syncPreviewTrimMask(){
+export function syncPreviewTrimMask(){
   const plot = document.getElementById('plot');
   if (!plot) return;
   const old = document.getElementById('pvTrimMask');
@@ -391,26 +364,12 @@ function syncPreviewTrimMask(){
   if (!layout) return;
   plot.appendChild(buildTrimMaskGroup('pvTrimMask', layout, 'pvMarginGuide'));
 }
-// Display-only, exactly like the mask it drives: no markStale(), no
-// regenerate, no re-layout — the geometry is identical either way and only
-// the export (and what's visible of it) changes.
-$('trimToMargins').addEventListener('change', () => {
-  syncPreviewTrimMask();
-  if (typeof syncLayoutTrimMask === 'function') syncLayoutTrimMask();
-});
-['paperSize','orient','marginMm','marginTopMm','marginBottomMm','marginLeftMm','marginRightMm'].forEach(id =>
-  $(id).addEventListener('input', () => {
-    resetPv(); renderPaper();
-    markStale();   // paper scale now feeds the mm→px hatch-spacing conversion
-    if (typeof syncLayoutPaperFrame === 'function') syncLayoutPaperFrame();
-    refreshStatusR();   // mm figure depends on paper scale — keep it in step with the just-retransformed drawing
-  }));
 // Purely cosmetic (the --paper CSS custom property backs both #sheet and
 // #layoutSheet's background, per .sheet in styles.css, so Preview and
 // Layout always match with a single setting) — no geometry, scale, or
 // hatch-spacing math depends on it, so unlike the layout controls above
 // this never needs resetPv()/renderPaper()/markStale().
-function applyPageColor(){
+export function applyPageColor(){
   document.documentElement.style.setProperty('--paper', $('pageColor').value);
   updateGuideColor();
   updateSelColor();
@@ -467,18 +426,14 @@ function updateSelColor(){
   const selColor = colorDistance(bg, ACCENT_HEX) < SEL_CLOSE_THRESHOLD ? ACCENT_INK_HEX : ACCENT_HEX;
   document.documentElement.style.setProperty('--sel-color', selColor);
 }
-$('pageColor').addEventListener('input', applyPageColor);
-updateGuideColor();   // seed --guide-color for the default page color at boot, before any user edit fires applyPageColor
-updateSelColor();     // same, for --sel-color
-function syncMarginMode(){
+export function syncMarginMode(){
   const on = $('marginIndependent').checked;
   $('marginSingleRow').style.display = on ? 'none' : '';
   $('marginIndependentRows').style.display = on ? '' : 'none';
   resetPv(); renderPaper();
   markStale();
-  if (typeof syncLayoutPaperFrame === 'function') syncLayoutPaperFrame();
+  syncLayoutPaperFrame();
 }
-$('marginIndependent').addEventListener('change', syncMarginMode);
 
 /* ================= segment chaining =================
    Chains touching 2-point segments into maximal polylines. A segment's own
@@ -487,7 +442,7 @@ $('marginIndependent').addEventListener('change', syncMarginMode);
    boundary that's genuinely cut off) keep two distinct ends; closed chains
    (loop back to their own start) get flagged so the caller can emit an
    SVG "Z" instead of a duplicate closing point. */
-function chainSegments(segs){
+export function chainSegments(segs){
   const key = (x,y) => Math.round(x*50) + '_' + Math.round(y*50);   // ~0.02px buckets
   const n = segs.length / 4;
   if (!n) return [];
@@ -584,11 +539,11 @@ function chainSegments(segs){
    tight/loose. Kept tiny and unscaled by zoom on purpose: this is meant to
    catch only genuine (near-)exact collinearity from mesh topology, not a
    perceptual "close enough" judgment the way the dedup tolerances are. */
-const SIMPLIFY_COLLINEAR_TOL = 0.05;   // px, perpendicular deviation allowed
+export const SIMPLIFY_COLLINEAR_TOL = 0.05;   // px, perpendicular deviation allowed
 // The pipeline's "not worth a separate pen mark" floor, in px — the same
 // value as the worker's MIN_SEG (js/worker/dedup.js), which this thread can't
 // import. Every main-thread tolerance defined as "MIN_SEG" derives from it.
-const MIN_SEG_PX = 0.3;
+export const MIN_SEG_PX = 0.3;
 /* How far past its own neighbors a point may stick out and still count as
    redundant. The perpendicular test below asks whether b sits on the a→c
    LINE; on its own it says nothing about whether b sits BETWEEN a and c. For
@@ -606,7 +561,7 @@ const MIN_SEG_PX = 0.3;
    short to be a pen mark at all — fp noise between two independently-computed
    representations of the same point — still collapses exactly as it did
    before, and only excursions a plotter would actually draw are kept. */
-const SIMPLIFY_FOLDBACK_TOL = MIN_SEG_PX;
+export const SIMPLIFY_FOLDBACK_TOL = MIN_SEG_PX;
 // A walk that dead-ends a hair's width from its own start point (confirmed
 // against real output: gaps on the order of 1e-5 units after unit
 // conversion — far below anything a plotter, or a person, could ever
@@ -615,8 +570,8 @@ const SIMPLIFY_FOLDBACK_TOL = MIN_SEG_PX;
 // open curve. Snap-close onto it rather than leaving a curve that's closed
 // in every way that matters except its own SVG markup. Deliberately much
 // smaller than any real feature this pipeline draws (MIN_SEG is 0.3px).
-const CHAIN_CLOSE_SNAP_TOL = 0.05;   // px
-function simplifyCollinear(pts, closed, tol=SIMPLIFY_COLLINEAR_TOL){
+export const CHAIN_CLOSE_SNAP_TOL = 0.05;   // px
+export function simplifyCollinear(pts, closed, tol=SIMPLIFY_COLLINEAR_TOL){
   const n = pts.length;
   if (n < 3) return pts;
   let work = pts;
@@ -676,7 +631,7 @@ function simplifyCollinear(pts, closed, tol=SIMPLIFY_COLLINEAR_TOL){
 // simplify passes below just finished merging away, which is exactly the
 // mismatch a saved Layout block (built from the post-processing d-string)
 // doesn't have.
-function accumulatePathStats(stats, pts, closed){
+export function accumulatePathStats(stats, pts, closed){
   stats.paths++;
   if (closed) stats.closedPaths++;
   stats.segments += pts.length - 1;
@@ -714,7 +669,7 @@ function accumulatePathStats(stats, pts, closed){
       dropSelf test in the worker's 6.9), so it has no cross-shell cut
       endpoints that would need protecting from this merge.
    ================================================================ */
-function trimTipFoldback(chains, angleThreshDeg){
+export function trimTipFoldback(chains, angleThreshDeg){
   const cosThresh = Math.cos(angleThreshDeg * Math.PI/180);
   function fix(pts, fromEnd){
     for (let guard=3; guard>0; guard--){
@@ -740,7 +695,7 @@ function trimTipFoldback(chains, angleThreshDeg){
     return { pts, closed:false };
   });
 }
-function mergeSilhouetteClose(chains, tolMerge){
+export function mergeSilhouetteClose(chains, tolMerge){
   function mdist(a,b){ return Math.hypot(a[0]-b[0],a[1]-b[1]); }
   const open = [], closedOut = [];
   chains.forEach(c => { if (c.closed || c.pts.length < 2) closedOut.push(c); else open.push({ pts: c.pts.map(p=>p.slice()) }); });
@@ -858,7 +813,7 @@ function mergeSilhouetteClose(chains, tolMerge){
    Each returned chain carries the run.id its segments came from (multiple
    chains can share one runId, in seq order, when subtractCovered punched
    a hole) — mergeContourRunSplits below is the consumer. */
-function chainByRun(segs, runIds, seqs){
+export function chainByRun(segs, runIds, seqs){
   const eq = (x1,y1,x2,y2) => Math.abs(x1-x2)<0.02 && Math.abs(y1-y2)<0.02;
   const n = segs.length/4;
   const byRun = new Map();
@@ -926,7 +881,7 @@ function chainByRun(segs, runIds, seqs){
    instead of a distance search. When several runs merge, the merged
    result is labeled with the LOWEST contributing run.id (bookkeeping
    only — the exported path is pure geometry and carries no id). */
-function mergeContourRunSplits(chains, adjacency){
+export function mergeContourRunSplits(chains, adjacency){
   if (!adjacency || !adjacency.length) return chains;
   const EPS = 1e-4;   // exact-computation match, not a proximity tolerance — see dedup.js's EXACT_DUP_EPS
   const eq = (a,b) => Math.abs(a[0]-b[0])<EPS && Math.abs(a[1]-b[1])<EPS;
@@ -1105,7 +1060,7 @@ function mergeContourRunSplits(chains, adjacency){
 /* Appends one polyline to the `d` token array as an SVG subpath (M/L, plus Z
    when closed — `pts` never repeats the first point), and counts it into
    `stats` when given. Every chained line layer's path is built through this. */
-function appendPolylineD(d, pts, closed, stats){
+export function appendPolylineD(d, pts, closed, stats){
   if (stats) accumulatePathStats(stats, pts, closed);
   d.push('M', pts[0][0].toFixed(2), pts[0][1].toFixed(2));
   for (let i=1;i<pts.length;i++) d.push('L', pts[i][0].toFixed(2), pts[i][1].toFixed(2));
@@ -1116,7 +1071,7 @@ function appendPolylineD(d, pts, closed, stats){
    global coordinate chaining, then Silhouette's own tip cleanup
    (trimTipFoldback + mergeSilhouetteClose, see silMergeOpts), then the
    shared split-self-touching / collinear-simplify tail. */
-function buildChainedPathD(segs, stats, silMergeOpts){
+export function buildChainedPathD(segs, stats, silMergeOpts){
   const d = [];
   let chains = chainSegments(segs);
   chains = trimTipFoldback(chains, silMergeOpts.foldbackAngleThreshDeg);
@@ -1126,7 +1081,6 @@ function buildChainedPathD(segs, stats, silMergeOpts){
       appendPolylineD(d, simplifyCollinear(rawPts, closed), closed, stats);
   return d.join(' ');
 }
-
 
 /* Crease/hidden-crease arrive here already topologically pre-ordered by the
    worker (see the crease-chain design spec): genuinely continuous runs are
@@ -1142,7 +1096,7 @@ function buildChainedPathD(segs, stats, silMergeOpts){
    only, rarely (where cross-layer subtraction happened to reorder
    something), miss a merge it could have made, falling back to one
    segment per stroke there exactly like before this feature existed. */
-function mergeAdjacentTouching(segs){
+export function mergeAdjacentTouching(segs){
   const n = segs.length/4;
   const eq = (x1,y1,x2,y2) => Math.abs(x1-x2)<0.02 && Math.abs(y1-y2)<0.02;
   const polys = [];
@@ -1202,7 +1156,7 @@ function mergeAdjacentTouching(segs){
    and mergeAdjacentTouching couldn't join — the same trade-off the user asked
    for to fix box/building facades, where every corner is an exact on-screen
    coincidence anyway. */
-function mergeCreaseScreenSpace(polys){
+export function mergeCreaseScreenSpace(polys){
   const key = (x,y) => Math.round(x*50) + '_' + Math.round(y*50);   // ~0.02px buckets, same as above
 
   const result = [];
@@ -1293,7 +1247,7 @@ function mergeCreaseScreenSpace(polys){
    the chain. Same ink, restructured into pieces no import tool can choke
    on. Nested self-touches (a loop that itself touches a point twice) are
    peeled off one at a time, so this holds for any number of them. */
-function splitSelfTouching(pts, closed){
+export function splitSelfTouching(pts, closed){
   const key = (p) => Math.round(p[0]*50) + '_' + Math.round(p[1]*50);   // ~0.02px buckets, same as above
   const seen = new Map();          // point key → index within `out`
   const out = [];
@@ -1334,7 +1288,7 @@ function splitSelfTouching(pts, closed){
    Both steps are bounded so they only ever remove ink that is still on the
    page, measured over 28 views of the pipe and demo scenes (0 gap cells).
    The unbounded versions of each were measured to delete real ink. */
-const CONTOUR_MICRO_TOL = MIN_SEG_PX;
+export const CONTOUR_MICRO_TOL = MIN_SEG_PX;
 
 /* Trims a path-end vertex that folds straight back (turn > 150°) onto the
    segment before it. Unlike trimTipFoldback (Silhouette's version), the tip
@@ -1345,7 +1299,7 @@ const CONTOUR_MICRO_TOL = MIN_SEG_PX;
    Runs after simplifyCollinear on purpose: before it, the previous segment
    is usually a micro-segment shorter than the stub folding back over it, so
    the tip doesn't land inside its span and nothing is caught. */
-function trimContourFoldbacks(pieces){
+export function trimContourFoldbacks(pieces){
   const cosThresh = Math.cos(150 * Math.PI/180);
   return pieces.map(piece => {
     if (piece.closed || piece.pts.length < 3) return piece;
@@ -1378,7 +1332,7 @@ function trimContourFoldbacks(pieces){
    that, and dropping every tiny piece unconditionally was measured to punch
    holes there. Checked against the non-tiny pieces only, so two slivers can
    never vouch for each other and both disappear. */
-function dropRedundantContourSlivers(pieces){
+export function dropRedundantContourSlivers(pieces){
   const extentOf = pts => {
     let x0=Infinity, y0=Infinity, x1=-Infinity, y1=-Infinity;
     for (const [x,y] of pts){ if (x<x0) x0=x; if (x>x1) x1=x; if (y<y0) y0=y; if (y>y1) y1=y; }
@@ -1435,7 +1389,7 @@ function dropRedundantContourSlivers(pieces){
    aren't relevant to this layer are no-ops. Then the shared
    split-self-touching / collinear-simplify tail, plus Contour's own
    micro-geometry cleanup (trimContourFoldbacks, dropRedundantContourSlivers). */
-function appendContourPathD(d, segs, runIds, seqs, adjacency, stats){
+export function appendContourPathD(d, segs, runIds, seqs, adjacency, stats){
   const contourChains = mergeContourRunSplits(chainByRun(segs, runIds, seqs), adjacency);
   let pieces = [];
   for (const chain of contourChains)
@@ -1454,7 +1408,7 @@ function appendContourPathD(d, segs, runIds, seqs, adjacency, stats){
    3) splitSelfTouching safety net — see its own comment for the
       Blender-import bug this specifically guards
    then collinear simplify. */
-function appendCreasePathD(d, segs, stats){
+export function appendCreasePathD(d, segs, stats){
   for (const chain of mergeCreaseScreenSpace(mergeAdjacentTouching(segs)))
     for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
       appendPolylineD(d, simplifyCollinear(rawPts, closed), closed, stats);
@@ -1668,7 +1622,7 @@ function applyHatchTrimExtend(segs, carrierIdx, trimPx){
 // "which copy of this setting applies to this layer" decision in one
 // place, since every texture-effect read throughout this pipeline needs
 // the same resolution.
-function texId(baseId, layerKey){
+export function texId(baseId, layerKey){
   const individualOn = $('texIndividualOn') && $('texIndividualOn').checked;
   return individualOn ? baseId + '_' + layerKey : baseId;
 }
@@ -1908,17 +1862,9 @@ function arcToBezierSegments(cx, cy, radius, u0, u1){
   }
   return segs;
 }
-function onResult(m){
-  busy = false; $('genBtn').disabled = false;
-  $('paperPane').classList.remove('busy');
-  $('progressBar').style.width = '0';
-  lastGen = m;
-  if (pendingSoIvExport){
-    pendingSoIvExport = false;
-    exportSoIvOverlayNow();
-  }
-  if (genSeq === staleSeq) clearStale();
-  else scheduleAuto();               // view moved while solving — stays stale, auto retries
+export function onResult(m){
+  generateFinished(m);
+  if (takePendingSoIvExport()) exportSoIvOverlayNow();
 
   const svg = $('plot');
   const firstEverGen = !svg.dataset.rendered;
@@ -2161,7 +2107,7 @@ function onResult(m){
 // any time without a solve. Call this any time the active tab, the set of
 // visible blocks/layers, any dash setting, or the paper layout changes.
 let lastLiveStats = null;
-function refreshStatusR(){
+export function refreshStatusR(){
   if (activeTab === 'layout'){
     const s = computeLayoutStats();
     $('statusR').textContent = s.segments.toLocaleString() + ' segments · ' +
@@ -2331,7 +2277,7 @@ function segLengthTable(p0, seg){
 // applied as a flat multiplier at the end since it's uniform across the
 // whole d-string (one dash setting per layer, not per-segment).
 const D_STATS_BEZIER_SAMPLES = 8;
-function computeDStats(d, inkFraction){
+export function computeDStats(d, inkFraction){
   const out = { segments: 0, paths: 0, closedPaths: 0, lenPx: 0 };
   const tokens = d.trim().split(/\s+/);
   let cur = null, start = null;
@@ -2743,20 +2689,6 @@ function trimCloneToMargins(root, dims){
   });
 }
 
-// Purely a preview compositing toggle — no geometry changes, so this
-// flips the class directly on #plot itself (Preview mode — covers both the
-// live drawing AND the Layout overlay, see styles.css) and the shared
-// Layout blocks container (Layout mode — a single toggle there affects
-// every block, since isolation lives at that one shared level, not
-// per-block — see styles.css), rather than going through markStale/
-// data-regen like every other setting.
-$('blendMultiplyOn').addEventListener('change', () => {
-  const on = $('blendMultiplyOn').checked;
-  const plot = document.getElementById('plot');
-  if (plot) plot.classList.toggle('blendMultiply', on);
-  const blocksLayer = document.getElementById('layoutBlocksLayer');
-  if (blocksLayer) blocksLayer.classList.toggle('blendMultiplyLayout', on);
-});
 /* ================= one path per pen (export) =================
    The export used while "Export one path per pen" (Pen library tab) is on:
    instead of cloning the on-screen SVG, a fresh file is built holding ONE
@@ -2866,87 +2798,153 @@ function buildPenPathsExport(isLayout, dims){
   return svg;
 }
 
-$('exportBtn').addEventListener('click', () => {
-  const isLayout = activeTab === 'layout';
-  if (isLayout){
-    if (!blocks.length){ $('statusL').textContent = 'no layers to export'; return; }
-  } else if (!lastGen){ $('statusL').textContent = 'generate first'; return; }
-
-  const layout = isLayout ? computeLayoutPaperDims() : computePaperLayout();
-  let out;
-  if ($('penPathsExport').checked){
-    out = buildPenPathsExport(isLayout, layout);
-  } else {
-    // The ordinary export: a cleaned-up clone of the on-screen SVG, one group
-    // per layer (per block per layer in Layout), exactly as drawn.
-    const sourceSvg = isLayout ? $('layoutPlot') : $('plot');
-
-    const clone = sourceSvg.cloneNode(true);
-    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    clone.setAttribute('width',  layout.paperW.toFixed(2) + 'mm');
-    clone.setAttribute('height', layout.paperH.toFixed(2) + 'mm');
-    clone.setAttribute('viewBox', '0 0 ' + layout.paperW.toFixed(3) + ' ' + layout.paperH.toFixed(3));
-    const guide = clone.querySelector('#marginGuide');
-    if (guide) guide.remove();            // preview-only reference rect, not part of the plot
-    const pvGrid = clone.querySelector('#pvGridGuides');
-    if (pvGrid) pvGrid.remove();          // preview-only guide grid, not part of the plot
-    // The trim masks are the on-screen STAND-IN for the clip below — in the
-    // exported file the geometry is genuinely cut, so the paper-coloured
-    // frame (which would otherwise export as a real filled rectangle, plotted
-    // as a solid block of ink) has no business being there. Removed for both
-    // tabs regardless of which one is exporting, since only one exists at a
-    // time and neither belongs in a plot file.
-    ['#pvTrimMask', '#layoutTrimMaskSlot'].forEach(sel => {
-      const el = clone.querySelector(sel);
-      if (el) el.remove();
+/* ================= init =================
+   Everything above only declares. This wires the DOM and starts the
+   module's live behaviour — called once by app.js, in script order. */
+export function initSvgExport(){
+  for (const L of LAYERS){
+    const row = document.createElement('div');
+    row.className = 'layer';
+    row.innerHTML =
+      '<input type="checkbox" ' + (L.on ? 'checked' : '') + ' aria-label="' + L.name + ' on">' +
+      '<svg class="swatch" viewBox="0 0 50 14" aria-hidden="true"><path d="M3 7 L47 7" fill="none"/></svg>' +
+      '<span class="nm' + (L.name.startsWith('·') ? ' hid' : '') + '">' + L.name + '</span>' +
+      '<select class="penSelect" aria-label="' + L.name + ' pen"></select>' +
+      '<select aria-label="' + L.name + ' dash">' + dashOptionsHtml() + '</select>';
+    $(L.host).appendChild(row);
+    const [chk, , , pen, dash] = row.children;
+    const sw = row.children[1].firstChild;
+    fillPenSelect(pen, L.pen);
+    dash.value = L.dash;
+    layerEls[L.key] = { chk, pen, dash, sw };
+    const restyle = () => applyLayerStyle(L.key);
+    pen.addEventListener('change', restyle);
+    dash.addEventListener('change', () => { restyle(); refreshStatusR(); });
+    chk.addEventListener('change', () => {
+      markStale();
+      // Fades the Lines-section sliders that belong to a layer group once that
+      // group draws nothing (panel-controls.js).
+      syncLineLayerUI();
     });
-    const overlay = clone.querySelector('#previewLayoutOverlay');
-    if (overlay) overlay.remove();        // preview-only Layout overlay reference, not part of the plot
-    // .blendMultiply now lives on #plot itself (see the toggle's own comment)
-    // — for a Preview export, `clone` IS that root element, which
-    // querySelectorAll below can't reach (it only matches descendants), so
-    // the root's own class has to be stripped separately first.
-    clone.classList.remove('blendMultiply');
-    clone.querySelectorAll('.blendMultiply').forEach(el => el.classList.remove('blendMultiply'));   // preview-only compositing, inert anyway with no stylesheet, but kept clean
+    applyLayerStyle(L.key);
+  }
+  buildDashFields('D1');
+  buildDashFields('D2');
+  $('addDashBtn').addEventListener('click', addDashSlot);
+  if (DASH_KEYS.length >= MAX_DASH_SLOTS) $('addDashBtn').disabled = true;   // defensive — e.g. a restored scene that already has all 9
+  // Display-only, exactly like the mask it drives: no markStale(), no
+  // regenerate, no re-layout — the geometry is identical either way and only
+  // the export (and what's visible of it) changes.
+  $('trimToMargins').addEventListener('change', () => {
+    syncPreviewTrimMask();
+    syncLayoutTrimMask();
+  });
+  ['paperSize','orient','marginMm','marginTopMm','marginBottomMm','marginLeftMm','marginRightMm'].forEach(id =>
+    $(id).addEventListener('input', () => {
+      resetPv(); renderPaper();
+      markStale();   // paper scale now feeds the mm→px hatch-spacing conversion
+      syncLayoutPaperFrame();
+      refreshStatusR();   // mm figure depends on paper scale — keep it in step with the just-retransformed drawing
+    }));
+  $('pageColor').addEventListener('input', applyPageColor);
+  updateGuideColor();   // seed --guide-color for the default page color at boot, before any user edit fires applyPageColor
+  updateSelColor();     // same, for --sel-color
+  $('marginIndependent').addEventListener('change', syncMarginMode);
+  // Purely a preview compositing toggle — no geometry changes, so this
+  // flips the class directly on #plot itself (Preview mode — covers both the
+  // live drawing AND the Layout overlay, see styles.css) and the shared
+  // Layout blocks container (Layout mode — a single toggle there affects
+  // every block, since isolation lives at that one shared level, not
+  // per-block — see styles.css), rather than going through markStale/
+  // data-regen like every other setting.
+  $('blendMultiplyOn').addEventListener('change', () => {
+    const on = $('blendMultiplyOn').checked;
+    const plot = document.getElementById('plot');
+    if (plot) plot.classList.toggle('blendMultiply', on);
+    const blocksLayer = document.getElementById('layoutBlocksLayer');
+    if (blocksLayer) blocksLayer.classList.toggle('blendMultiplyLayout', on);
+  });
+  $('exportBtn').addEventListener('click', () => {
+    const isLayout = activeTab === 'layout';
     if (isLayout){
-      // These are all Layout-tab-only UI chrome (selection box/handles/gizmo,
-      // the invisible full-paper click-catcher, the dashed margin reference,
-      // and any leftover snap-guide lines) — never part of the actual plot.
-      // Also matters because the exported file has no access to the app's
-      // stylesheet: elements styled only via CSS classes (like the margin
-      // guide's fill:none) would otherwise fall back to SVG's default black
-      // fill in the standalone file instead of being invisible.
-      ['#layoutSelOverlay', '#layoutHitBg', '#layoutMarginGuide', '#layoutGridGuides', '#layoutSnapGuides', '#layoutAxisGuides'].forEach(sel => {
+      if (!blocks.length){ $('statusL').textContent = 'no layers to export'; return; }
+    } else if (!lastGen){ $('statusL').textContent = 'generate first'; return; }
+
+    const layout = isLayout ? computeLayoutPaperDims() : computePaperLayout();
+    let out;
+    if ($('penPathsExport').checked){
+      out = buildPenPathsExport(isLayout, layout);
+    } else {
+      // The ordinary export: a cleaned-up clone of the on-screen SVG, one group
+      // per layer (per block per layer in Layout), exactly as drawn.
+      const sourceSvg = isLayout ? $('layoutPlot') : $('plot');
+
+      const clone = sourceSvg.cloneNode(true);
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      clone.setAttribute('width',  layout.paperW.toFixed(2) + 'mm');
+      clone.setAttribute('height', layout.paperH.toFixed(2) + 'mm');
+      clone.setAttribute('viewBox', '0 0 ' + layout.paperW.toFixed(3) + ' ' + layout.paperH.toFixed(3));
+      const guide = clone.querySelector('#marginGuide');
+      if (guide) guide.remove();            // preview-only reference rect, not part of the plot
+      const pvGrid = clone.querySelector('#pvGridGuides');
+      if (pvGrid) pvGrid.remove();          // preview-only guide grid, not part of the plot
+      // The trim masks are the on-screen STAND-IN for the clip below — in the
+      // exported file the geometry is genuinely cut, so the paper-coloured
+      // frame (which would otherwise export as a real filled rectangle, plotted
+      // as a solid block of ink) has no business being there. Removed for both
+      // tabs regardless of which one is exporting, since only one exists at a
+      // time and neither belongs in a plot file.
+      ['#pvTrimMask', '#layoutTrimMaskSlot'].forEach(sel => {
         const el = clone.querySelector(sel);
         if (el) el.remove();
       });
-    }
-    clone.querySelectorAll('g[style*="display: none"], g[style*="display:none"]').forEach(g => g.remove());
-    if ($('splitDashBtn').checked){
-      clone.querySelectorAll('g[stroke-dasharray]').forEach(g => {
-        const pattern = g.getAttribute('stroke-dasharray').trim().split(/[\s,]+/).map(Number);
-        g.querySelectorAll('path').forEach(p => {
-          p.setAttribute('d', splitDashedPathD(p.getAttribute('d'), pattern));
+      const overlay = clone.querySelector('#previewLayoutOverlay');
+      if (overlay) overlay.remove();        // preview-only Layout overlay reference, not part of the plot
+      // .blendMultiply now lives on #plot itself (see the toggle's own comment)
+      // — for a Preview export, `clone` IS that root element, which
+      // querySelectorAll below can't reach (it only matches descendants), so
+      // the root's own class has to be stripped separately first.
+      clone.classList.remove('blendMultiply');
+      clone.querySelectorAll('.blendMultiply').forEach(el => el.classList.remove('blendMultiply'));   // preview-only compositing, inert anyway with no stylesheet, but kept clean
+      if (isLayout){
+        // These are all Layout-tab-only UI chrome (selection box/handles/gizmo,
+        // the invisible full-paper click-catcher, the dashed margin reference,
+        // and any leftover snap-guide lines) — never part of the actual plot.
+        // Also matters because the exported file has no access to the app's
+        // stylesheet: elements styled only via CSS classes (like the margin
+        // guide's fill:none) would otherwise fall back to SVG's default black
+        // fill in the standalone file instead of being invisible.
+        ['#layoutSelOverlay', '#layoutHitBg', '#layoutMarginGuide', '#layoutGridGuides', '#layoutSnapGuides', '#layoutAxisGuides'].forEach(sel => {
+          const el = clone.querySelector(sel);
+          if (el) el.remove();
         });
-        g.removeAttribute('stroke-dasharray');
-      });
+      }
+      clone.querySelectorAll('g[style*="display: none"], g[style*="display:none"]').forEach(g => g.remove());
+      if ($('splitDashBtn').checked){
+        clone.querySelectorAll('g[stroke-dasharray]').forEach(g => {
+          const pattern = g.getAttribute('stroke-dasharray').trim().split(/[\s,]+/).map(Number);
+          g.querySelectorAll('path').forEach(p => {
+            p.setAttribute('d', splitDashedPathD(p.getAttribute('d'), pattern));
+          });
+          g.removeAttribute('stroke-dasharray');
+        });
+      }
+      // Deliberately the very last geometry step, after dash splitting: each
+      // dash piece is then clipped in its own right, so the dash rhythm in the
+      // file is the one the preview showed rather than one that restarts at
+      // wherever the margin happened to cut a path. Same paper description the
+      // rest of this export is built from, so the clip lands exactly on the
+      // margin guide the preview draws.
+      if ($('trimToMargins').checked) trimCloneToMargins(clone, layout);
+      out = clone;
     }
-    // Deliberately the very last geometry step, after dash splitting: each
-    // dash piece is then clipped in its own right, so the dash rhythm in the
-    // file is the one the preview showed rather than one that restarts at
-    // wherever the margin happened to cut a path. Same paper description the
-    // rest of this export is built from, so the clip lands exactly on the
-    // margin guide the preview draws.
-    if ($('trimToMargins').checked) trimCloneToMargins(clone, layout);
-    out = clone;
-  }
-  const meta = document.createComment(' Penumbra plot · ' + modelName + ' · ' +
-    new Date().toISOString() + ' · ' + (isLayout
-      ? ('layout: ' + blocks.length + ' layer(s)')
-      : ('settings: ' + JSON.stringify(gatherSettings()))) + ' ');
-  out.insertBefore(meta, out.firstChild);
+    const meta = document.createComment(' Penumbra plot · ' + modelName + ' · ' +
+      new Date().toISOString() + ' · ' + (isLayout
+        ? ('layout: ' + blocks.length + ' layer(s)')
+        : ('settings: ' + JSON.stringify(gatherSettings()))) + ' ');
+    out.insertBefore(meta, out.firstChild);
 
-  downloadFile(modelName.replace(/\.(stl|obj)$/i, '') + (isLayout ? '-layout.svg' : '-plot.svg'),
-    '<?xml version="1.0" encoding="UTF-8"?>\n' + out.outerHTML, 'image/svg+xml');
-});
-
+    downloadFile(modelName.replace(/\.(stl|obj)$/i, '') + (isLayout ? '-layout.svg' : '-plot.svg'),
+      '<?xml version="1.0" encoding="UTF-8"?>\n' + out.outerHTML, 'image/svg+xml');
+  });
+}

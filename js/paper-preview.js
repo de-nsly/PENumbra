@@ -15,13 +15,19 @@
    export; computeLayoutPaperDims (the Layout-tab equivalent, no solver
    viewport to fit) lives in layout-canvas.js.
    ================================================================ */
+import { $, onMiddleDblClick, svgEl } from './main.js';
+import { baseSheetSize, computePaperLayout, layerEls, layerStyle } from './svg-export.js';
+import { computeLayoutPaperDims, selectedBlocks, updateSelectionOverlay } from './layout-canvas.js';
+import { activeTab } from './panel-controls.js';
+
 const pane2 = $('paperPane');
-const pv = { z: 1, tx: 0, ty: 0 };            // tx/ty: sheet-center offset from pane-center, in CSS px
-let activeSheetId = 'sheet';
+export const pv = { z: 1, tx: 0, ty: 0 };            // tx/ty: sheet-center offset from pane-center, in CSS px
+export let activeSheetId = 'sheet';
+export function setActiveSheet(id){ activeSheetId = id; }   // layout-canvas.js's tab switch
 function currentLayoutDims(){
   return activeSheetId === 'sheet' ? computePaperLayout() : computeLayoutPaperDims();
 }
-function resetPv(){ pv.z = 1; pv.tx = 0; pv.ty = 0; }
+export function resetPv(){ pv.z = 1; pv.tx = 0; pv.ty = 0; }
 /* previewOverlaySvg/layoutOverlaySvg are position:fixed;inset:0, covering
    the ENTIRE browser viewport — needed so the viewport-relative coordinates
    getBoundingClientRect() already hands back everywhere else in this file
@@ -45,9 +51,7 @@ function updatePaneClip(){
   $('previewOverlaySvg').style.clipPath = clip;
   $('layoutOverlaySvg').style.clipPath = clip;
 }
-window.addEventListener('resize', updatePaneClip);
-updatePaneClip();
-function applyPv(layout){
+export function applyPv(layout){
   layout = layout || currentLayoutDims();
   if (!layout) return;
   updatePaneClip();   // pane bounds can change on tab switch (Layout widens #paperPane via CSS grid), not just window resize
@@ -65,30 +69,12 @@ function applyPv(layout){
   // size/orientation/margin change via renderPaper), the overlay needs
   // redrawing too, or it visually detaches from the block/page it's
   // supposed to be tracking.
-  if (activeSheetId === 'layoutSheet' && typeof selectedBlocks !== 'undefined' && selectedBlocks.size){
+  if (activeSheetId === 'layoutSheet' && selectedBlocks.size){
     updateSelectionOverlay();
   }
-  if (activeSheetId === 'sheet' && typeof updateTextureGizmo === 'function') updateTextureGizmo();
+  if (activeSheetId === 'sheet') updateTextureGizmo();
   updateRuler(layout);
 }
-pane2.addEventListener('wheel', e => {
-  const layout = currentLayoutDims();
-  if (!layout) return;
-  e.preventDefault();
-  const base = baseSheetSize(layout);
-  const r = pane2.getBoundingClientRect();
-  const mx = e.clientX - r.left, my = e.clientY - r.top;         // pane-local px
-  const cx0 = pane2.clientWidth/2 + pv.tx, cy0 = pane2.clientHeight/2 + pv.ty;
-  const dispW0 = base.w * pv.z, dispH0 = base.h * pv.z;
-  const fx = (mx - (cx0 - dispW0/2)) / dispW0;                   // fraction of sheet under cursor
-  const fy = (my - (cy0 - dispH0/2)) / dispH0;
-  pv.z = Math.min(40, Math.max(0.1, pv.z * Math.exp(-e.deltaY * 0.0014)));
-  const dispW1 = base.w * pv.z, dispH1 = base.h * pv.z;
-  const cx1 = mx - fx*dispW1 + dispW1/2, cy1 = my - fy*dispH1 + dispH1/2;
-  pv.tx = cx1 - pane2.clientWidth/2;
-  pv.ty = cy1 - pane2.clientHeight/2;
-  applyPv(layout);
-}, { passive: false });
 let panDrag = false, plx = 0, ply = 0;
 // Touch pans with TWO fingers, not one — a single finger is left free for
 // other touch interaction (tap-select, etc.) rather than immediately
@@ -114,38 +100,6 @@ function syncTouchPan(){
     panDrag = false;
   }
 }
-pane2.addEventListener('pointerdown', e => {
-  if (e.pointerType === 'touch'){
-    touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    pane2.setPointerCapture(e.pointerId);
-    syncTouchPan();
-    e.preventDefault();
-    return;
-  }
-  // Mouse/pen: only the middle button pans — left and right click no
-  // longer do, freeing them up for selection/context-menu use without an
-  // accidental drag.
-  if (e.button !== 1) return;
-  panDrag = true; plx = e.clientX; ply = e.clientY;
-  pane2.setPointerCapture(e.pointerId);
-  e.preventDefault();   // suppress the browser's default middle-click autoscroll behavior
-});
-pane2.addEventListener('pointermove', e => {
-  if (e.pointerType === 'touch'){
-    if (!touchPointers.has(e.pointerId)) return;
-    touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (!panDrag) return;
-    const [cx, cy] = touchMidpoint();
-    pv.tx += cx - plx; pv.ty += cy - ply;
-    plx = cx; ply = cy;
-    applyPv();
-    return;
-  }
-  if (!panDrag) return;
-  pv.tx += e.clientX - plx; pv.ty += e.clientY - ply;
-  plx = e.clientX; ply = e.clientY;
-  applyPv();
-});
 function endPanPointer(e){
   if (e.pointerType === 'touch'){
     touchPointers.delete(e.pointerId);
@@ -154,20 +108,7 @@ function endPanPointer(e){
   }
   panDrag = false;
 }
-pane2.addEventListener('pointerup', endPanPointer);
-pane2.addEventListener('pointercancel', endPanPointer);
-// The reset button sits on top of the pannable/zoomable pane — swallow its
-// own pointerdown so it never reaches pane2's handler above and triggers a
-// pan-drag + pointer-capture on what's really a button click. Pointer
-// capture redirects subsequent pointer events to pane2, which interferes
-// with the browser's click-event synthesis for the original target (the
-// button) on mouse input — the same problem #genExportFloat already guards
-// against, for the same reason.
-['pointerdown','wheel'].forEach(t => $('reset2dBtn').addEventListener(t, e => e.stopPropagation()));
 function reset2dView(){ resetPvFitWithRulers(); applyPv(); }
-$('reset2dBtn').addEventListener('click', reset2dView);
-// same reset via a double middle-click anywhere on the pane (Preview + Layout)
-onMiddleDblClick(pane2, reset2dView);
 
 /* ================= texture pattern gizmo =================
    Draggable center-point marker for the ground-shadow texture pattern,
@@ -267,7 +208,7 @@ function drawPathEndpointMarkers(){
   p.setAttribute('d', d.join(' '));
   $('previewOverlaySvg').appendChild(p);
 }
-function updateTextureGizmo(){
+export function updateTextureGizmo(){
   const ov = $('previewOverlaySvg');
   ov.innerHTML = '';
   // This wipe takes every other overlay consumer out with it, so they all get
@@ -302,32 +243,6 @@ function updateTextureGizmo(){
   });
 }
 let gizmoDragging = false;
-document.addEventListener('pointermove', e => {
-  if (!gizmoDragging) return;
-  const layout = computePaperLayout();
-  if (!layout) return;
-  const mm = screenToPreviewMm(e.clientX, e.clientY);
-  if (!mm) return;
-  const xSlider = $('texGroundPatternCenterX'), ySlider = $('texGroundPatternCenterY');
-  xSlider.value = Math.min(+xSlider.max, Math.max(+xSlider.min, mm[0] - layout.paperW/2));
-  ySlider.value = Math.min(+ySlider.max, Math.max(+ySlider.min, mm[1] - layout.paperH/2));
-  // Dispatching real 'input' events reuses the existing slider pipeline
-  // (markStale + refreshValLabel) instead of duplicating it — markStale's
-  // own debounce means the actual regenerate naturally only fires once
-  // the drag settles, not on every pointermove.
-  xSlider.dispatchEvent(new Event('input'));
-  ySlider.dispatchEvent(new Event('input'));
-  updateTextureGizmo();
-});
-document.addEventListener('pointerup', () => { gizmoDragging = false; });
-document.addEventListener('pointercancel', () => { gizmoDragging = false; });
-$('texGroundPatternCenterX').addEventListener('input', updateTextureGizmo);
-$('texGroundPatternCenterY').addEventListener('input', updateTextureGizmo);
-$('texGizmoShow').addEventListener('change', updateTextureGizmo);
-// updateTextureGizmo is the single redraw entry point for previewOverlaySvg —
-// it owns the wipe — so toggling the endpoint markers goes through it too.
-// Nothing needs re-solving: the dots are read off the already-rendered paths.
-$('debugShowPathEndpoints').addEventListener('change', updateTextureGizmo);
 
 /* ================= page rulers =================
    Horizontal ruler above the page, vertical ruler to its left — screen
@@ -361,7 +276,7 @@ const RULER_GAP_MM = 5;          // baseline sits this far outside the page edge
 const RULER_TICK_1MM = 0.8, RULER_TICK_5MM = 1.6, RULER_TICK_10MM = 2.6;
 const RULER_LABEL_GAP_MM = 0.6, RULER_LABEL_GAP_TOP_MM = 1.4, RULER_LABEL_FONT_MM = 2.6, RULER_STROKE_MM = 0.15;
 const PAGE_LABEL_GAP_MM = 10, PAGE_LABEL_FONT_MM = 70, PAGE_LABEL_COLOR = '#566276';
-function updateRuler(layout){
+export function updateRuler(layout){
   const ov = $(activeSheetId === 'sheet' ? 'previewOverlaySvg' : 'layoutOverlaySvg');
   const old = ov.querySelector('.pageRuler');
   if (old) old.remove();
@@ -460,7 +375,7 @@ function rulerFitMarginMm(){
     top: RULER_GAP_MM + RULER_TICK_10MM + RULER_LABEL_GAP_TOP_MM + RULER_LABEL_FONT_MM * 0.6,
   };
 }
-function resetPvFitWithRulers(){
+export function resetPvFitWithRulers(){
   const layout = currentLayoutDims();
   if (!layout){ resetPv(); return; }
   const margin = rulerFitMarginMm();
@@ -479,3 +394,99 @@ function resetPvFitWithRulers(){
   pv.ty = (margin.top * scale) / 2;
 }
 
+/* ================= init =================
+   Everything above only declares. This wires the DOM and starts the
+   module's live behaviour — called once by app.js, in script order. */
+export function initPaperPreview(){
+  window.addEventListener('resize', updatePaneClip);
+  updatePaneClip();
+  pane2.addEventListener('wheel', e => {
+    const layout = currentLayoutDims();
+    if (!layout) return;
+    e.preventDefault();
+    const base = baseSheetSize(layout);
+    const r = pane2.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;         // pane-local px
+    const cx0 = pane2.clientWidth/2 + pv.tx, cy0 = pane2.clientHeight/2 + pv.ty;
+    const dispW0 = base.w * pv.z, dispH0 = base.h * pv.z;
+    const fx = (mx - (cx0 - dispW0/2)) / dispW0;                   // fraction of sheet under cursor
+    const fy = (my - (cy0 - dispH0/2)) / dispH0;
+    pv.z = Math.min(40, Math.max(0.1, pv.z * Math.exp(-e.deltaY * 0.0014)));
+    const dispW1 = base.w * pv.z, dispH1 = base.h * pv.z;
+    const cx1 = mx - fx*dispW1 + dispW1/2, cy1 = my - fy*dispH1 + dispH1/2;
+    pv.tx = cx1 - pane2.clientWidth/2;
+    pv.ty = cy1 - pane2.clientHeight/2;
+    applyPv(layout);
+  }, { passive: false });
+  pane2.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'touch'){
+      touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      pane2.setPointerCapture(e.pointerId);
+      syncTouchPan();
+      e.preventDefault();
+      return;
+    }
+    // Mouse/pen: only the middle button pans — left and right click no
+    // longer do, freeing them up for selection/context-menu use without an
+    // accidental drag.
+    if (e.button !== 1) return;
+    panDrag = true; plx = e.clientX; ply = e.clientY;
+    pane2.setPointerCapture(e.pointerId);
+    e.preventDefault();   // suppress the browser's default middle-click autoscroll behavior
+  });
+  pane2.addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch'){
+      if (!touchPointers.has(e.pointerId)) return;
+      touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (!panDrag) return;
+      const [cx, cy] = touchMidpoint();
+      pv.tx += cx - plx; pv.ty += cy - ply;
+      plx = cx; ply = cy;
+      applyPv();
+      return;
+    }
+    if (!panDrag) return;
+    pv.tx += e.clientX - plx; pv.ty += e.clientY - ply;
+    plx = e.clientX; ply = e.clientY;
+    applyPv();
+  });
+  pane2.addEventListener('pointerup', endPanPointer);
+  pane2.addEventListener('pointercancel', endPanPointer);
+  // The reset button sits on top of the pannable/zoomable pane — swallow its
+  // own pointerdown so it never reaches pane2's handler above and triggers a
+  // pan-drag + pointer-capture on what's really a button click. Pointer
+  // capture redirects subsequent pointer events to pane2, which interferes
+  // with the browser's click-event synthesis for the original target (the
+  // button) on mouse input — the same problem #genExportFloat already guards
+  // against, for the same reason.
+  ['pointerdown','wheel'].forEach(t => $('reset2dBtn').addEventListener(t, e => e.stopPropagation()));
+  $('reset2dBtn').addEventListener('click', reset2dView);
+  // same reset via a double middle-click anywhere on the pane (Preview + Layout)
+  onMiddleDblClick(pane2, reset2dView);
+  document.addEventListener('pointermove', e => {
+    if (!gizmoDragging) return;
+    const layout = computePaperLayout();
+    if (!layout) return;
+    const mm = screenToPreviewMm(e.clientX, e.clientY);
+    if (!mm) return;
+    const xSlider = $('texGroundPatternCenterX'), ySlider = $('texGroundPatternCenterY');
+    xSlider.value = Math.min(+xSlider.max, Math.max(+xSlider.min, mm[0] - layout.paperW/2));
+    ySlider.value = Math.min(+ySlider.max, Math.max(+ySlider.min, mm[1] - layout.paperH/2));
+    // Dispatching real 'input' events reuses the existing slider pipeline
+    // (markStale + refreshValLabel) instead of duplicating it — markStale's
+    // own debounce means the actual regenerate naturally only fires once
+    // the drag settles, not on every pointermove.
+    xSlider.dispatchEvent(new Event('input'));
+    ySlider.dispatchEvent(new Event('input'));
+    updateTextureGizmo();
+  });
+  document.addEventListener('pointerup', () => { gizmoDragging = false; });
+  document.addEventListener('pointercancel', () => { gizmoDragging = false; });
+  $('texGroundPatternCenterX').addEventListener('input', updateTextureGizmo);
+  $('texGroundPatternCenterY').addEventListener('input', updateTextureGizmo);
+  $('texGizmoShow').addEventListener('change', updateTextureGizmo);
+  // updateTextureGizmo is the single redraw entry point for previewOverlaySvg —
+  // it owns the wipe — so toggling the endpoint markers goes through it too.
+  // Nothing needs re-solving: the dots are read off the already-rendered paths.
+  $('debugShowPathEndpoints').addEventListener('change', updateTextureGizmo);
+}

@@ -1,18 +1,17 @@
-'use strict';
 /* ================================================================
    main.js — shared app state & boot glue
    Declares the $ helper, APP_VERSION, the layer registry (LAYERS), the
    pen library (PEN_LIBRARY/penById), the dash patterns
    (DASH_RATIOS/DASH_KEYS/scaledDash), two small shared widgets
    (segmented-toggle pill positioning, middle-button double-click), the
-   per-layer texture-tab cloning, and instantiates the HLR worker as a
-   module worker from js/worker/solver.js.
-   Load this file FIRST — every other file assumes these globals exist.
+   per-layer texture-tab cloning, and the HLR worker (bootWorker creates it
+   from js/worker/solver.js as a module worker). Imports nothing from the
+   other modules; every one of them imports from here.
    ================================================================ */
-const $ = id => document.getElementById(id);
+export const $ = id => document.getElementById(id);
 // SVG element factory — the one place the namespace is spelled out.
-const SVG_NS = 'http://www.w3.org/2000/svg';
-function svgEl(tag, attrs){
+export const SVG_NS = 'http://www.w3.org/2000/svg';
+export function svgEl(tag, attrs){
   const el = document.createElementNS(SVG_NS, tag);
   if (attrs) for (const k in attrs) el.setAttribute(k, attrs[k]);
   return el;
@@ -29,20 +28,20 @@ function svgEl(tag, attrs){
        must keep its arrow keys, but it holds no text, so Ctrl+C there is
        still ours to handle.
    `input` with no type attribute defaults to text, hence the || 'text'. */
-const TEXT_ENTRY_INPUT_TYPES = new Set(['text','search','url','tel','email','password','number']);
-function isTextEntryTarget(){
+export const TEXT_ENTRY_INPUT_TYPES = new Set(['text','search','url','tel','email','password','number']);
+export function isTextEntryTarget(){
   const a = document.activeElement;
   if (!a) return false;
   if (a.isContentEditable || a.tagName === 'TEXTAREA') return true;
   return a.tagName === 'INPUT' && TEXT_ENTRY_INPUT_TYPES.has((a.type || 'text').toLowerCase());
 }
-function isFormControlTarget(){
+export function isFormControlTarget(){
   const a = document.activeElement;
   if (!a) return false;
   return !!a.isContentEditable || a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT';
 }
 // Hands the browser a file to save (scene export, SVG export, debug dumps).
-function downloadFile(name, text, mime){
+export function downloadFile(name, text, mime){
   const blob = new Blob([text], { type: mime });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -52,7 +51,7 @@ function downloadFile(name, text, mime){
 }
 
 // App version (shown in the About dialog footer). Bump on release.
-const APP_VERSION = '0.8.6';
+export const APP_VERSION = '0.8.6';
 
 /* ================= layer registry =================
    Order here is the drawing-priority hierarchy (top = highest), used for:
@@ -73,7 +72,7 @@ const APP_VERSION = '0.8.6';
    index.html in the same order as here.
    pen → the DEFAULT pen id (see PEN_LIBRARY below) the row starts on. A
    layer has no colour/width of its own any more, only a pen reference. */
-const LAYERS = [
+export const LAYERS = [
   { key:'so', name:'Silhouette',            on:false, pen:'p1', dash:'solid', host:'edgeLayersSil'  },
   { key:'iv', name:'Silhouette individual', on:false, pen:'p2', dash:'solid', host:'edgeLayersSil'  },
   { key:'ih', name:'· hidden',              on:false, pen:'p4', dash:'D1',    host:'edgeLayersSil'  },
@@ -104,7 +103,7 @@ const LAYERS = [
    NAMING: "pen" also means the .pen scene file and the Lines tab's own
    penTab/penModeBtn/data-mode="pen" ids — library code uses the penLib
    prefix and PEN_LIBRARY to stay distinguishable from both. */
-function defaultPens(){
+export function defaultPens(){
   return [
     { id:'p1', name:'Black 1.2', color:'#000000', width:1.2  },
     { id:'p2', name:'Ink 0.8',   color:'#14171c', width:0.8  },
@@ -113,12 +112,11 @@ function defaultPens(){
     { id:'p5', name:'Blue 0.2',  color:'#2c5aa8', width:0.2  },
   ];
 }
-const PEN_LIBRARY = defaultPens();   // mutated in place (like DASH_KEYS), never reassigned
-let penIdCounter = PEN_LIBRARY.length;
+export const PEN_LIBRARY = defaultPens();   // mutated in place (like DASH_KEYS), never reassigned
 // Never returns undefined: an unknown id (shouldn't happen — every delete/
 // import path reassigns references first) falls back to the first pen so a
 // render can't throw mid-way. The library always holds at least one pen.
-function penById(id){
+export function penById(id){
   return PEN_LIBRARY.find(p => p.id === id) || PEN_LIBRARY[0];
 }
 // Dash/gap lengths are true mm values (same units as a pen's width),
@@ -132,15 +130,15 @@ function penById(id){
 // context's stroke width — rather than one shared pre-baked string. Do NOT
 // pass the stroke width itself here; that would make dash length scale
 // with pen width instead of being the literal mm value the user typed.
-const DASH_RATIOS = { solid: null, D1: [3.5, 2.5, 0, 0, 0, 0], D2: [0.5, 2.5, 0, 0, 0, 0] };
+export const DASH_RATIOS = { solid: null, D1: [3.5, 2.5, 0, 0, 0, 0], D2: [0.5, 2.5, 0, 0, 0, 0] };
 // DASH_KEYS is the growable, ordered list of active dash slots — 'solid'
 // is implicit and always offered first in any dropdown, so it's not part
 // of this list. New slots are only ever appended (D3, D4, ... up to
 // MAX_DASH_SLOTS) via the "+ Add dash style" button — see addDashSlot in
 // svg-export.js — never removed, so nothing downstream needs to handle a
 // slot disappearing out from under a layer/scene that's already using it.
-const DASH_KEYS = ['D1', 'D2'];
-const MAX_DASH_SLOTS = 9;
+export const DASH_KEYS = ['D1', 'D2'];
+export const MAX_DASH_SLOTS = 9;
 // The pattern a dash slot actually draws, in mm: its (dash, gap) pairs with
 // every pair whose DASH is 0 dropped whole, gap included — a 0 in a dash
 // field means "unused slot", never a dot of ink (a zero-length dash would
@@ -150,7 +148,7 @@ const MAX_DASH_SLOTS = 9;
 // key, or a pattern with no dash left. The single source of truth for
 // scaledDash, dashOnFraction, the dash previews — and, through the
 // stroke-dasharray scaledDash writes, the export's dash split.
-function dashPattern(key){
+export function dashPattern(key){
   const r = DASH_RATIOS[key];
   if (!r) return null;
   const out = [];
@@ -162,7 +160,7 @@ function dashPattern(key){
 // pxPerMm: how many of this context's local units correspond to 1mm — the
 // SAME factor that context divided a mm width by to get its own local-unit
 // stroke-width (i.e. pass 1/scale, never the stroke-width itself).
-function scaledDash(key, pxPerMm){
+export function scaledDash(key, pxPerMm){
   const p = dashPattern(key);
   if (!p) return '';
   const w = Math.max(1e-6, pxPerMm);
@@ -176,7 +174,7 @@ function scaledDash(key, pxPerMm){
 // Used by the stats readout as a length-only approximation of actual pen
 // travel, not a literal geometric split like splitDashedPathD does at
 // export time.
-function dashOnFraction(key){
+export function dashOnFraction(key){
   const t = dashPattern(key);
   if (!t) return 1;                       // solid
   let on = 0, total = 0;
@@ -194,7 +192,7 @@ function dashOnFraction(key){
    Angle jitter and Regular wobble entirely (tagged with
    data-skipforcircles in the source markup), since neither applies to a
    circle. */
-(function buildPerLayerTextureTabs(){
+export function buildPerLayerTextureTabs(){
   const generalWrap = document.getElementById('texGeneralSettings');
   const layerKeys = ['h1', 'h2', 'h3', 'cr'];
   for (const key of layerKeys){
@@ -208,7 +206,7 @@ function dashOnFraction(key){
     }
     generalWrap.parentElement.appendChild(clone);
   }
-})();
+}
 
 /* ================= segmented-toggle sliding pill =================
    Shared by every .modeToggle (panel Pen/Texture/Page/Cog, Texture sub-tab
@@ -217,7 +215,7 @@ function dashOnFraction(key){
    it over the active child. Callers that flip which child has .active also
    call positionSegPill() so the move animates immediately; the ResizeObserver
    below covers layout changes and rows that were hidden when first measured. */
-function positionSegPill(el){
+export function positionSegPill(el){
   if (!el) return;
   const active = [...el.children].find(c => c.classList.contains('active') && c.offsetParent);
   if (!active) return;                                  // no active child, or row hidden
@@ -228,14 +226,14 @@ function positionSegPill(el){
     requestAnimationFrame(() => el.classList.add('seg-anim'));
   }
 }
-(function initSegPills(){
+export function initSegPills(){
   const bars = document.querySelectorAll('.modeToggle, .projRow');
   bars.forEach(el => {
     positionSegPill(el);
     new ResizeObserver(() => positionSegPill(el)).observe(el);
   });
   addEventListener('load', () => bars.forEach(positionSegPill));   // re-measure once fonts settle
-})();
+}
 
 /* ================= middle-button double-click =================
    Fires `handler` when the mouse wheel (middle button) is pressed twice in
@@ -244,7 +242,7 @@ function positionSegPill(el){
    on the completing press, stops propagation so the pane's own middle-button
    pan/orbit handler doesn't also kick in; preventDefault kills the browser's
    middle-click autoscroll. Used for "reset the view" in the 3D and 2D panes. */
-function onMiddleDblClick(el, handler){
+export function onMiddleDblClick(el, handler){
   let t = 0, x = 0, y = 0;
   el.addEventListener('pointerdown', e => {
     if (e.button !== 1) return;
@@ -259,5 +257,11 @@ function onMiddleDblClick(el, handler){
   }, true);
 }
 
-/* ================= worker ================= */
-const worker = new Worker('js/worker/solver.js', { type: 'module' });
+/* ================= worker =================
+   Created by bootWorker() (called from app.js before any init runs) rather
+   than at module evaluation, so this module can also be imported headlessly
+   (tools/harness). Every other module reads the live binding. */
+export let worker = null;
+export function bootWorker(){
+  worker = new Worker('js/worker/solver.js', { type: 'module' });
+}

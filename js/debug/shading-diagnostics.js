@@ -1,9 +1,10 @@
 /* ================================================================
    debug/shading-diagnostics.js — console tools for the shading buffer
-   Loaded only with ?debug in the URL (see the loader at the end of
-   scene-io.js). Everything here is a diagnostic over captureShadingBuffer
-   (viewport3d.js) and the worker's sampleShading; none of it is used by
-   the app itself. Call from the browser console once a model is loaded:
+   Loaded only with ?debug in the URL (dynamic import at the end of
+   initSceneIO, scene-io.js). Everything here is a diagnostic over
+   captureShadingBuffer (viewport3d.js) and the worker's sampleShading;
+   none of it is used by the app itself. Call from the browser console
+   once a model is loaded:
 
      previewShadingBuffer()        draws the captured buffer over the live
                                    viewport — shadow/terminator edges should
@@ -16,6 +17,8 @@
                                    (transfer + row flip + sampleShading) and
                                    checks the two agree
    ================================================================ */
+import { worker } from '../main.js';
+import { captureShadingBuffer, modelMesh, vp } from '../viewport3d.js';
 (function(){
   function previewShadingBuffer(){
     const cap = captureShadingBuffer();

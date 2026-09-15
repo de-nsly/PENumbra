@@ -8,11 +8,15 @@ what the worker sees or what the SVG ends up containing.
 
 Nothing about the pipeline is reimplemented here. `gatherSettings`,
 `buildCamMessage`, `computePaperLayout`, `lightVec`, the orbit→camera
-construction and the whole Contour/Silhouette/Crease chaining tail are
-pulled out of `js/panel-controls.js`, `js/viewport3d.js` and
-`js/svg-export.js` **as source text** at runtime and evaluated in a sandbox
-(see `extract.mjs`). Edit the app, the harness follows; rename one of those
-declarations and the harness fails loudly rather than testing a stale copy.
+construction, `setProjMode`, `updateModelRotation` and the whole
+Contour/Silhouette/Crease chaining tail are **imported from the real
+modules** (`js/panel-controls.js`, `js/viewport3d.js`, `js/svg-export.js`).
+`app-env.mjs` installs the little the modules need at import time in Node —
+a `THREE` global and a `document` whose `getElementById()` returns fake
+controls with `.value`/`.checked` — and the modules' init functions (all the
+DOM wiring) are simply never called. Edit the app, the harness follows;
+rename or un-export one of those declarations and the harness fails at
+module link time rather than testing a stale copy.
 
 Verified (2026-09) against a pipe-model scene: the harness reproduced all
 three browser exports (full plot, hidden Contour, Silhouette) **segment for
@@ -93,10 +97,10 @@ app's built-in demo mesh as an independent second scene.
 
 | file | what it is |
 |---|---|
+| `app-env.mjs` | the browser stand-in (`THREE`, `document`, fake controls) the app modules need at import time. Import it first. |
 | `app.mjs` | the main thread: `.pen` import → worker `load` → camera/settings → `generate` → result. `openScene()` / `HarnessApp`. |
 | `svg.mjs` | `onResult`'s per-layer path building (`layerPathD`, calling the same builders `onResult` does) and a paper-space SVG writer. |
 | `raster.mjs` | tiny anti-aliased line rasterizer + PNG writer, so a run can be looked at. Debug aid only. |
-| `extract.mjs` | pulls named declarations out of the app's global-scope scripts and evaluates them in a sandbox. |
 | `run.mjs` | CLI. |
 | `contour-audit.mjs` | Contour-specific diagnostics (see below). |
 | `double-ink.mjs` | finds overlapping near-coincident ink within a layer. |

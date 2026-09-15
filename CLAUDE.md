@@ -33,25 +33,37 @@ There is no lint or build step. Two checks:
    demo scene, toggle layers, Generate, export SVG, Layout tab, save/load a `.pen`). The harness cannot
    cover WebGL-dependent paths (the Smooth-shading buffer) or any UI.
 
-## Script load order (index.html, bottom of file)
+## Main-thread modules
 
-Files are plain global-scope scripts, not modules, and depend on load order:
+`index.html` loads `three.min.js` (CDN, a classic script that defines the `THREE` global) and then one
+module script, `js/app.js`. Every other main-thread file is an ES module with explicit `import`/`export`:
 
 ```
-three.min.js (CDN)
-js/main.js          - must load first: defines $, LAYERS, PEN_LIBRARY/penById, DASH_RATIOS/scaledDash, boots the HLR worker
-js/viewport3d.js     - three.js scene/camera/orbit controls, onLoaded()
-js/paper-preview.js  - pan/zoom for the on-screen paper pane
-js/svg-export.js     - layer styling, paper layout math, worker-result -> SVG, file export
-js/panel-controls.js - control panel wiring, gatherSettings(), staleness/auto-generate
-js/pen-library.js    - the Pen library tab, pen add/delete, matching incoming pens (needs panel-controls.js + svg-export.js)
-js/layout-canvas.js  - the Layout tab (needs panel-controls.js + svg-export.js)
-js/scene-io.js       - must load last: worker.onmessage dispatcher, file I/O, .pen scene save/load, boots the app
-js/debug/*.js        - console-only diagnostics, loaded by scene-io.js only when the URL has ?debug
+js/app.js            - entry point: imports every module and calls their init functions in order, then boots
+js/main.js           - $, svgEl/SVG_NS, downloadFile, focus guards, LAYERS, PEN_LIBRARY/penById, DASH_*, the worker (bootWorker)
+js/viewport3d.js     - three.js scene/camera/orbit controls, gizmos, saved views, shading-buffer capture, onLoaded()
+js/paper-preview.js  - pan/zoom for the on-screen paper pane, rulers, circles-centre gizmo
+js/svg-export.js     - layer rows + dash editor, paper layout math, chaining, texture effects, onResult(), export
+js/panel-controls.js - control panel wiring, gatherSettings(), generate/staleness/auto-generate state
+js/pen-library.js    - the Pen library tab, pen add/delete, matching incoming pens
+js/layout-canvas.js  - the Layout tab
+js/scene-io.js       - worker.onmessage dispatcher, file I/O, .pen scene save/load, boots the demo scene
+js/debug/*.js        - console-only diagnostics, dynamically imported by scene-io.js only when the URL has ?debug
 ```
 
-Each file's own header comment documents its responsibilities and cross-file dependencies in more detail
-than is repeated here — read the top of the file you're editing first.
+**The rule that keeps this importable headlessly:** a module's top level only *declares* (functions,
+constants, `let` state, `$('id')` element lookups). Every side effect — event wiring, DOM building, the
+render loop, `new Worker` — lives in that module's exported `init…()` function, which `app.js` calls in the
+order above. `tools/harness` imports the same modules in Node with a small browser stand-in
+(`tools/harness/app-env.mjs`) and never calls the inits. Keep new side effects inside the inits.
+
+Modules import each other freely (there are cycles); that is safe precisely because nothing at module top
+level reads another module's state. Cross-module *writes* go through small exported setters
+(`setActiveTab`, `setActiveSheet`, `setSavedViews`, `replaceBlocks`, `generateFinished`,
+`takePendingSceneImport`, …) — an imported `let` binding is readable live but not assignable.
+
+Each file's own header comment documents its responsibilities in more detail — read the top of the file
+you're editing first.
 
 ## Architecture
 
@@ -112,9 +124,10 @@ every setting, the pen library, layer pen/dash choices) as a single JSON-ish `.p
 
 ## Working in this codebase
 
-- Global-scope, not modules: every function/const declared in any loaded script is a shared global.
-  Cross-file references (e.g. `svg-export.js` calling `markStale` from `panel-controls.js`) are implicit
-  and depend on load order — check the header comments before reordering `<script>` tags.
+- Adding a cross-file reference means adding it to the `import { … }` line at the top of the file; a
+  name that isn't exported fails at module link time (the browser console and `node
+  tools/harness/verify-golden.mjs` both report it). New module-level state that another module must
+  *assign* needs an exported setter function.
 - The worker and the main thread each have their own copies of some logic (e.g. mesh math) and communicate
   only via `postMessage`/structured clone — the worker cannot touch DOM or main-thread globals directly.
 - When a typed array needs to be reused by the sender after posting (e.g. the worker's own mesh buffers),

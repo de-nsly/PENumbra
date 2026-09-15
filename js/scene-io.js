@@ -4,29 +4,18 @@
    viewport3d.js, 'result' -> onResult in svg-export.js), STL/OBJ
    file loading (drag-drop + file picker + Z-up toggle), .pen scene
    save/load (base64 model embedding + settings/layers/pens/camera
-   round-trip, migrating pre-pen-library scenes), and the final boot call that builds the demo scene.
-   Load this file LAST — its last line kicks off the app.
+   round-trip, migrating pre-pen-library scenes), and the demo-scene boot
+   at the end of initSceneIO — app.js calls that init last, so it is the
+   step that starts the app.
    ================================================================ */
-worker.onmessage = ev => {
-  const m = ev.data;
-  if (m.type === 'progress'){
-    $('progressBar').style.width = (m.v * 100).toFixed(1) + '%';
-  } else if (m.type === 'loaded'){
-    onLoaded(m);
-  } else if (m.type === 'result'){
-    onResult(m);
-  } else if (m.type === 'smoothAngleResult'){
-    onSmoothAngleResult(m);
-  } else if (m.type === 'debugRawEdgesResult'){
-    handleDebugRawEdgesResult(m);
-  } else if (m.type === 'debugRawContourEdgesResult'){
-    handleDebugRawContourEdgesResult(m);
-  } else if (m.type === 'error'){
-    busy = false; $('genBtn').disabled = false;
-    $('paperPane').classList.remove('busy');
-    $('statusL').textContent = 'error: ' + m.msg;
-  }
-};
+import { $, APP_VERSION, DASH_KEYS, DASH_RATIOS, LAYERS, MAX_DASH_SLOTS, PEN_LIBRARY, downloadFile, penById, worker } from './main.js';
+import { applySmoothAngleChange, applySmoothShadingToggle, camera, modelMesh, modelName, onLoaded, onSmoothAngleResult, orbit, orthoCam, renderSavedViews, savedViewCounter, savedViews, setSavedViews, setProjMode, syncGroundCatcher, syncShadowCasting, syncSmoothAngleVisibility, updateLight, updateLightGizmo, updateModelRotation } from './viewport3d.js';
+import { addDashSlot, applyLayerStyle, applyPageColor, computePaperLayout, layerEls, onResult, refreshDashPreview, refreshStatusR, syncMarginMode } from './svg-export.js';
+import { activeTab, buildCamMessage, doGenerate, generateFailed, lastGen, refreshValLabel, syncIndividualMode, syncLineLayerUI, syncShadowUI, syncSoftShadowsUI, updateTexLayerTabVisibility } from './panel-controls.js';
+import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncSplitDashChoiceFromDom, syncPenLibraryUI, syncPenPathsExportUI } from './pen-library.js';
+import { blockCounter, blocks, replaceBlocks, renderBlocksList, renderLayoutCanvas } from './layout-canvas.js';
+import { resetPvFitWithRulers } from './paper-preview.js';
+
 
 /* ================= debug: raw edges export =================
    Bypasses almost the entire solver — see generateRawEdges in the worker.
@@ -82,8 +71,6 @@ function handleDebugRawEdgesResult(m){
   downloadDebugEdgesSvg(d.join(' '), m, mode, '-debug-raw');
   $('statusL').textContent = 'exported raw edges (' + (segs.length/4) + ' segments)';
 }
-$('debugRawEdgesRawBtn').addEventListener('click', () => triggerDebugRawEdgesExport('raw'));
-$('debugRawEdgesPaperBtn').addEventListener('click', () => triggerDebugRawEdgesExport('paper'));
 
 /* ================= debug: raw contour edges export =================
    Same two-variant pattern as the raw edges export above, but the worker
@@ -117,8 +104,6 @@ function handleDebugRawContourEdgesResult(m){
   downloadDebugEdgesSvg(d.join(' '), m, mode, '-debug-raw-contour');
   $('statusL').textContent = 'exported raw contour edges (' + chains.length + ' chains, ' + nSegs + ' segments)';
 }
-$('debugRawContourEdgesRawBtn').addEventListener('click', () => triggerDebugRawContourEdgesExport('raw'));
-$('debugRawContourEdgesPaperBtn').addEventListener('click', () => triggerDebugRawContourEdgesExport('paper'));
 
 /* ================= debug: Silhouette vs Individual pre-dedup overlay =================
    Exports the raw so/iv geometry EXACTLY as computed, before subtractCovered
@@ -129,7 +114,7 @@ $('debugRawContourEdgesPaperBtn').addEventListener('click', () => triggerDebugRa
    for them (settings.debugPreDedup, set from pendingSoIvExport in
    doGenerate), so the button triggers one such generate and exports from
    its result. */
-function exportSoIvOverlayNow(){
+export function exportSoIvOverlayNow(){
   const so = lastGen.debugPreDedupSo, iv = lastGen.debugPreDedupIv;
   const dFor = (segs) => {
     const d = [];
@@ -149,18 +134,11 @@ function exportSoIvOverlayNow(){
   downloadFile(modelName.replace(/\.(stl|obj)$/i, '') + '-debug-so-vs-iv.svg', svgStr, 'image/svg+xml');
   $('statusL').textContent = 'exported so/iv overlay (so: ' + (so.length/4) + ' segs, iv: ' + (iv.length/4) + ' segs)';
 }
-let pendingSoIvExport = false;
-$('debugSoIvOverlayBtn').addEventListener('click', () => {
-  if (!modelMesh){ $('statusL').textContent = 'load a model first'; return; }
-  if (lastGen && lastGen.debugPreDedupSo){ exportSoIvOverlayNow(); return; }
-  pendingSoIvExport = true;
-  doGenerate();
-});
+export let pendingSoIvExport = false;
+// onResult (svg-export.js) asks whether the result it just received was the
+// one this export requested; asking clears the flag.
+export function takePendingSoIvExport(){ const v = pendingSoIvExport; pendingSoIvExport = false; return v; }
 
-
-$('loadBtn').addEventListener('click', () => $('fileInput').click());
-for (const [wrap, btn] of [['zUpWrap','zUpBtn'], ['autoWrap','autoGenBtn'], ['addToLayoutSaveViewWrap','addToLayoutSaveViewBtn']])
-  $(wrap).addEventListener('click', e => { if (e.target !== $(btn)) $(btn).click(); });
 // Single entry point for "the user handed us a file" — file picker and drag-drop
 // both funnel through this, and it's just a filename sniff: .pen goes to the
 // scene importer, everything else goes down the usual STL/OBJ mesh-load path.
@@ -168,10 +146,6 @@ function openDroppedFile(file){
   if (/\.pen$/i.test(file.name)) importScene(file);
   else loadFile(file);
 }
-$('fileInput').addEventListener('change', e => {
-  if (e.target.files[0]) openDroppedFile(e.target.files[0]);
-  e.target.value = '';
-});
 // Z-up import: STL/OBJ carry no up-axis; CAD exports (Rhino STL etc.) are
 // usually Z-up while this app is Y-up internally. The toggle rotates files
 // upright on import. We keep a copy of the last file so flipping the toggle
@@ -183,22 +157,6 @@ async function loadFile(file){
   lastFileData = { name: file.name, buffer: buffer.slice(0) };
   worker.postMessage({ type:'load', name: file.name, buffer, zUp: zUpImport }, [buffer]);
 }
-$('zUpBtn').addEventListener('click', () => {
-  zUpImport = !zUpImport;
-  $('zUpBtn').setAttribute('aria-checked', String(zUpImport));
-  $('zUpBtn').classList.toggle('active', zUpImport);
-  if (lastFileData){                       // re-import the loaded file in the new convention
-    $('statusL').textContent = 'reloading ' + lastFileData.name + '…';
-    const buffer = lastFileData.buffer.slice(0);
-    worker.postMessage({ type:'load', name: lastFileData.name, buffer, zUp: zUpImport }, [buffer]);
-  }
-});
-window.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging'); });
-window.addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
-window.addEventListener('drop', e => {
-  e.preventDefault(); document.body.classList.remove('dragging');
-  if (e.dataTransfer.files[0]) openDroppedFile(e.dataTransfer.files[0]);
-});
 
 /* ================= scene export / import (.pen) =================
    Captures everything needed to reproduce the current view exactly: the
@@ -236,53 +194,11 @@ function sceneSettingIds(){
     .concat(DASH_KEYS.flatMap(k => [0,1,2,3,4,5].map(i => 'dash' + k + '_' + i)));
 }
 
-$('exportSceneBtn').addEventListener('click', () => {
-  if (!modelMesh){ $('statusL').textContent = 'load a model first'; return; }
-  const settings = {};
-  for (const id of sceneSettingIds()){
-    const el = document.getElementById(id);
-    if (el) settings[id] = el.type === 'checkbox' ? el.checked : el.value;
-  }
-  // While "Export one path per pen" is on, Split dashes is only shown ticked
-  // (see syncPenPathsExportUI) — save the user's own choice instead.
-  settings.splitDashBtn = splitDashChoice;
-  const layers = {};
-  for (const L of LAYERS){
-    const els = layerEls[L.key];
-    layers[L.key] = { on: els.chk.checked, pen: els.pen.value, dash: els.dash.value };
-  }
-  const camState = {
-    theta: orbit.theta, phi: orbit.phi, radius: orbit.radius,
-    exactPole: orbit.exactPole,
-    target: [orbit.target.x, orbit.target.y, orbit.target.z],
-    ortho: camera === orthoCam,
-  };
-  // demo scene has no uploaded bytes to embed — re-import just rebuilds it
-  // the same procedural way the app does on first boot
-  const modelField = lastFileData
-    ? { name: lastFileData.name, zUp: zUpImport, dataB64: base64FromArrayBuffer(lastFileData.buffer) }
-    : { demo: true };
-  // Each block carries a live .dom reference (its persistent SVG nodes —
-  // see layout-canvas.js) once it's actually been rendered; JSON.stringify
-  // on a DOM node throws (circular structure), so it must be stripped here,
-  // not carried through into the saved file at all — it's rebuilt fresh on
-  // import anyway (renderLayoutCanvas hydrates DOM for any block missing it).
-  const blocksOut = blocks.map(({ dom, ...rest }) => rest);
-  const scene = { penumbraScene: 1, appVersion: APP_VERSION, savedAt: new Date().toISOString(),
-    model: modelField, camera: camState, settings, layers,
-    pens: PEN_LIBRARY.map(p => ({ ...p })), penIdCounter,
-    dashKeys: DASH_KEYS.slice(), savedViews, savedViewCounter, blocks: blocksOut, blockCounter };
-  const base = (lastFileData ? lastFileData.name.replace(/\.(stl|obj)$/i, '') : modelName)
-    .replace(/[^\w.-]+/g, '_');
-  downloadFile(base + '.pen', JSON.stringify(scene), 'application/json');
-  $('statusL').textContent = 'exported scene';
-});
-
 // Applying a scene sets DOM properties directly (not the same as a user
 // typing/dragging), which does NOT dispatch input/change events — so every
 // side effect those events would normally trigger has to be called
 // explicitly here, once, after all the values are in place.
-function applyImportedScene(data){
+export function applyImportedScene(data){
   // Create any dash slots this scene needs (D3+) BEFORE the generic
   // settings-restore loop below, which relies on their DOM (dashD3_0 etc.)
   // already existing, and before layer dash values get restored, which
@@ -302,7 +218,7 @@ function applyImportedScene(data){
   // Both export checkboxes were just set directly (no change event): take the
   // restored Split dashes value as the user's own choice, then re-apply the
   // lock/forced tick if one-path-per-pen export is on.
-  splitDashChoice = $('splitDashBtn').checked;
+  syncSplitDashChoiceFromDom();
   syncPenPathsExportUI();
   // The loop above only set each dash-field input's raw value — DASH_RATIOS
   // itself and the derived preview/layer rendering need an explicit sync.
@@ -316,8 +232,8 @@ function applyImportedScene(data){
   // texIndividualOn's checked state was just set directly above (no event
   // dispatched), so the tab-visibility/layer-tab-filter logic that
   // normally reacts to toggling it needs an explicit nudge here too.
-  if (typeof syncIndividualMode === 'function') syncIndividualMode();
-  if (typeof updateTexLayerTabVisibility === 'function') updateTexLayerTabVisibility();
+  syncIndividualMode();
+  updateTexLayerTabVisibility();
   // The pen library belongs to the scene — replace it wholesale. Scenes saved
   // before pens existed have no data.pens: setPenLibrary restarts from the
   // built-in set, and each layer's own color/width is matched into it below.
@@ -370,48 +286,35 @@ function applyImportedScene(data){
   // (the worker reads the checkbox's now-correct .checked state fresh)
   // but the live viewport keeps showing flat shading until the user
   // manually toggles the checkbox off and back on.
-  if (typeof applySmoothShadingToggle === 'function') applySmoothShadingToggle();
+  applySmoothShadingToggle();
   // Same reasoning — the smooth-angle row's visibility is also driven by
   // smoothShading's 'change' listener, which setting .checked directly
   // doesn't fire either.
-  if (typeof syncSmoothAngleVisibility === 'function') syncSmoothAngleVisibility();
+  syncSmoothAngleVisibility();
   // Same reasoning as smoothShading just above — marginIndependent's
   // .checked was just set directly too, which won't fire the 'change'
   // listener that shows/hides the right margin inputs and recomputes the
   // paper layout for the newly-restored mode.
-  if (typeof syncMarginMode === 'function') syncMarginMode();
+  syncMarginMode();
   // Same reasoning again — pageColor's .value was just set directly by the
   // generic loop above, which doesn't fire its own 'input' listener (the
   // thing that actually pushes the value into the --paper CSS variable).
-  if (typeof applyPageColor === 'function') applyPageColor();
+  applyPageColor();
   // Same reasoning again — smoothAngleDeg's .value was just set directly by
   // the generic loop above too, which won't trigger the worker round-trip
   // that recomputes the corner normals for the newly-restored angle.
-  if (typeof applySmoothAngleChange === 'function') applySmoothAngleChange();
+  applySmoothAngleChange();
   // Older .pen files predate the Saved Views feature — default to an empty
   // list and a fresh counter rather than failing on the missing fields.
-  savedViews = Array.isArray(data.savedViews) ? data.savedViews : [];
-  savedViewCounter = Number.isFinite(data.savedViewCounter) ? data.savedViewCounter : 0;
+  setSavedViews(Array.isArray(data.savedViews) ? data.savedViews : [],
+    Number.isFinite(data.savedViewCounter) ? data.savedViewCounter : 0);
   renderSavedViews();
-  // Same fallback for layout blocks (a later addition than Saved Views).
-  // A scene import always REPLACES the block list wholesale (unlike loading
-  // a bare STL/OBJ, which leaves existing blocks alone) — so the outgoing
-  // blocks' own persistent DOM (see createBlockDom's PERFORMANCE ARCHITECTURE
-  // comment up top) and any selection referencing them must be torn down
-  // explicitly here. Just reassigning `blocks` would orphan their <g> trees
-  // in #layoutBlocksLayer forever: renderLayoutCanvas only ever creates DOM
-  // for blocks that lack one, it never removes DOM for blocks no longer in
-  // the array, leaving stale shapes visible but unselectable/undeletable.
-  clearSelection();
-  closeLayerContextMenu();
-  for (const b of blocks) removeBlockDom(b);
-  blocks = Array.isArray(data.blocks) ? data.blocks : [];
-  // Fresh ids on import rather than trusting whatever's in the file — older
-  // scenes predate the id field entirely, and even a newer one could get
-  // re-imported twice in the same session, so regenerating here is what
-  // keeps every block's id actually unique against blockIdCounter's current
-  // state instead of just against the other blocks in this one file.
-  for (const b of blocks) b.id = ++blockIdCounter;
+  // Same fallback for layout blocks (a later addition than Saved Views). A
+  // scene import always REPLACES the block list wholesale, unlike loading a
+  // bare STL/OBJ, which leaves existing blocks alone — see replaceBlocks
+  // (layout-canvas.js) for the DOM/selection teardown and id reassignment.
+  replaceBlocks(Array.isArray(data.blocks) ? data.blocks : [],
+    Number.isFinite(data.blockCounter) ? data.blockCounter : 0);
   // Override entries from before pens existed are {color, width, dash};
   // matched into the library the same way the layers above were. Newer ones
   // already hold a pen id from this very scene's library.
@@ -425,14 +328,20 @@ function applyImportedScene(data){
     }
   }
   syncPenLibraryUI();
-  blockCounter = Number.isFinite(data.blockCounter) ? data.blockCounter : 0;
   renderBlocksList();
   if (activeTab === 'layout') renderLayoutCanvas();
   refreshStatusR();
   resetPvFitWithRulers();        // new scene's content — fit the whole page, rulers included, like a first-ever generate
 }
 
-let importingScene = false, pendingSceneRestore = null;
+let pendingSceneRestore = null;   // the parsed .pen while its model loads in the worker
+// onLoaded (viewport3d.js) asks for this once the model is in: a scene
+// import restores camera + settings from the file instead of framing fresh.
+export function takePendingSceneImport(){
+  const data = pendingSceneRestore;
+  pendingSceneRestore = null;
+  return data;
+}
 // .pen files arrive through the same "Open STL / OBJ / PEN" button and
 // drag-drop as meshes — openDroppedFile routes by extension.
 async function importScene(file){
@@ -444,7 +353,6 @@ async function importScene(file){
     $('statusL').textContent = 'unrecognized scene file';
     return;
   }
-  importingScene = true;
   pendingSceneRestore = data;
   if (data.model.demo){
     lastFileData = null;
@@ -459,15 +367,108 @@ async function importScene(file){
   }
 }
 
-/* ================= boot: demo scene ================= */
-$('statusL').textContent = 'building demo scene…';
-worker.postMessage({ type:'demo' });
-
 /* ================= optional debug tools =================
    js/debug/*.js hold console-only diagnostics that are never needed in
    normal use. Adding ?debug to the URL loads them. */
-if (new URLSearchParams(location.search).has('debug')){
-  const s = document.createElement('script');
-  s.src = 'js/debug/shading-diagnostics.js';
-  document.body.appendChild(s);
+
+/* ================= init =================
+   Everything above only declares. This wires the DOM and starts the
+   module's live behaviour — called once by app.js, in script order. */
+export function initSceneIO(){
+  worker.onmessage = ev => {
+    const m = ev.data;
+    if (m.type === 'progress'){
+      $('progressBar').style.width = (m.v * 100).toFixed(1) + '%';
+    } else if (m.type === 'loaded'){
+      onLoaded(m);
+    } else if (m.type === 'result'){
+      onResult(m);
+    } else if (m.type === 'smoothAngleResult'){
+      onSmoothAngleResult(m);
+    } else if (m.type === 'debugRawEdgesResult'){
+      handleDebugRawEdgesResult(m);
+    } else if (m.type === 'debugRawContourEdgesResult'){
+      handleDebugRawContourEdgesResult(m);
+    } else if (m.type === 'error'){
+      generateFailed(m.msg);
+    }
+  };
+  $('debugRawEdgesRawBtn').addEventListener('click', () => triggerDebugRawEdgesExport('raw'));
+  $('debugRawEdgesPaperBtn').addEventListener('click', () => triggerDebugRawEdgesExport('paper'));
+  $('debugRawContourEdgesRawBtn').addEventListener('click', () => triggerDebugRawContourEdgesExport('raw'));
+  $('debugRawContourEdgesPaperBtn').addEventListener('click', () => triggerDebugRawContourEdgesExport('paper'));
+  $('debugSoIvOverlayBtn').addEventListener('click', () => {
+    if (!modelMesh){ $('statusL').textContent = 'load a model first'; return; }
+    if (lastGen && lastGen.debugPreDedupSo){ exportSoIvOverlayNow(); return; }
+    pendingSoIvExport = true;
+    doGenerate();
+  });
+  $('loadBtn').addEventListener('click', () => $('fileInput').click());
+  for (const [wrap, btn] of [['zUpWrap','zUpBtn'], ['autoWrap','autoGenBtn'], ['addToLayoutSaveViewWrap','addToLayoutSaveViewBtn']])
+    $(wrap).addEventListener('click', e => { if (e.target !== $(btn)) $(btn).click(); });
+  $('fileInput').addEventListener('change', e => {
+    if (e.target.files[0]) openDroppedFile(e.target.files[0]);
+    e.target.value = '';
+  });
+  $('zUpBtn').addEventListener('click', () => {
+    zUpImport = !zUpImport;
+    $('zUpBtn').setAttribute('aria-checked', String(zUpImport));
+    $('zUpBtn').classList.toggle('active', zUpImport);
+    if (lastFileData){                       // re-import the loaded file in the new convention
+      $('statusL').textContent = 'reloading ' + lastFileData.name + '…';
+      const buffer = lastFileData.buffer.slice(0);
+      worker.postMessage({ type:'load', name: lastFileData.name, buffer, zUp: zUpImport }, [buffer]);
+    }
+  });
+  window.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging'); });
+  window.addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
+  window.addEventListener('drop', e => {
+    e.preventDefault(); document.body.classList.remove('dragging');
+    if (e.dataTransfer.files[0]) openDroppedFile(e.dataTransfer.files[0]);
+  });
+  $('exportSceneBtn').addEventListener('click', () => {
+    if (!modelMesh){ $('statusL').textContent = 'load a model first'; return; }
+    const settings = {};
+    for (const id of sceneSettingIds()){
+      const el = document.getElementById(id);
+      if (el) settings[id] = el.type === 'checkbox' ? el.checked : el.value;
+    }
+    // While "Export one path per pen" is on, Split dashes is only shown ticked
+    // (see syncPenPathsExportUI) — save the user's own choice instead.
+    settings.splitDashBtn = splitDashChoice;
+    const layers = {};
+    for (const L of LAYERS){
+      const els = layerEls[L.key];
+      layers[L.key] = { on: els.chk.checked, pen: els.pen.value, dash: els.dash.value };
+    }
+    const camState = {
+      theta: orbit.theta, phi: orbit.phi, radius: orbit.radius,
+      exactPole: orbit.exactPole,
+      target: [orbit.target.x, orbit.target.y, orbit.target.z],
+      ortho: camera === orthoCam,
+    };
+    // demo scene has no uploaded bytes to embed — re-import just rebuilds it
+    // the same procedural way the app does on first boot
+    const modelField = lastFileData
+      ? { name: lastFileData.name, zUp: zUpImport, dataB64: base64FromArrayBuffer(lastFileData.buffer) }
+      : { demo: true };
+    // Each block carries a live .dom reference (its persistent SVG nodes —
+    // see layout-canvas.js) once it's actually been rendered; JSON.stringify
+    // on a DOM node throws (circular structure), so it must be stripped here,
+    // not carried through into the saved file at all — it's rebuilt fresh on
+    // import anyway (renderLayoutCanvas hydrates DOM for any block missing it).
+    const blocksOut = blocks.map(({ dom, ...rest }) => rest);
+    const scene = { penumbraScene: 1, appVersion: APP_VERSION, savedAt: new Date().toISOString(),
+      model: modelField, camera: camState, settings, layers,
+      pens: PEN_LIBRARY.map(p => ({ ...p })), penIdCounter,
+      dashKeys: DASH_KEYS.slice(), savedViews, savedViewCounter, blocks: blocksOut, blockCounter };
+    const base = (lastFileData ? lastFileData.name.replace(/\.(stl|obj)$/i, '') : modelName)
+      .replace(/[^\w.-]+/g, '_');
+    downloadFile(base + '.pen', JSON.stringify(scene), 'application/json');
+    $('statusL').textContent = 'exported scene';
+  });
+  /* ================= boot: demo scene ================= */
+  $('statusL').textContent = 'building demo scene…';
+  worker.postMessage({ type:'demo' });
+  if (new URLSearchParams(location.search).has('debug')) import('./debug/shading-diagnostics.js');
 }
