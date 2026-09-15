@@ -80,15 +80,19 @@ and Phase 4 also has to lay the ground for two planned features (§2.1).
 ### 2.1 The two planned features Phase 4 must prepare for (user's words, before Phase 3)
 
 1. **A flexible hatch-layer system**: instead of the fixed Hatch / Crosshatch / Deep shadow / Circles
-   set, the user adds only the fill layers they want, possibly several of one type, each with its own
-   pen, dash and texture settings. New shading types will be added later and must slot in.
-2. **Texture effects on every layer**, including Silhouette / Contour / Crease — today they apply to
-   fills only.
+   set, the user adds only the fill layers they want, possibly several of one type. **Every setting is
+   per instance** — pen, dash, angle, min and max spacing, "below" threshold, and (for circles) the
+   centre — nothing shared between instances. New shading types will be added later and must slot in.
+2. **A texture stack on every layer** (edge layers included), like modifiers in Blender: each layer
+   carries an ordered list of user-added texture "filters" (trim/extend, overshoot, spacing jitter,
+   angle jitter, wobble, regular wobble, gaps, and later more), each with its own parameters. **There
+   are no global texture settings any more**: a layer with an empty stack has no texture, which is the
+   default; today's "General" panel and "Individual texture settings" toggle disappear.
 
 Neither is to be *built* now; the code must be shaped so that both are additive later. Concretely
-(agreed with the user): layer instances `{ id, type, on, pen, dash, texture }`; the worker takes an
-array of pass descriptors instead of `hatch.p1/p2/p3`; the texture module takes geometry by kind, not a
-layer key.
+(agreed with the user): layer instances `{ id, type, on, pen, dash, ...perInstanceSettings,
+texture: [ ...filters ] }`; the worker takes an array of pass descriptors instead of `hatch.p1/p2/p3`;
+the texture module applies a stack to geometry given by kind, not by layer key.
 
 ---
 
@@ -146,28 +150,40 @@ export const LAYER_TYPES = {
 export const layers = [ /* ordered, highest priority first — the LAYERS order today */
   { id:'so', type:'so', on:false, pen:'p1', dash:'solid' },
   …
-  { id:'h1', type:'hatch',   on:true,  pen:'p5', dash:'solid', angleOffsetDeg:0,  thresholdId:'hatchThr', texture:null },
-  { id:'h2', type:'hatch',   on:true,  pen:'p5', dash:'solid', angleOffsetDeg:90, thresholdId:'crossThr', texture:null },
-  { id:'h3', type:'hatch',   on:false, pen:'p5', dash:'solid', angleOffsetDeg:45, thresholdId:'deepThr',  texture:null },
-  { id:'cr', type:'circles', on:false, pen:'p5', dash:'solid', thresholdId:'texCirclesThr', texture:null },
+  // fill instances carry EVERY fill setting themselves (nothing shared) — values below are today's
+  // global defaults, so the migrated scene solves identically
+  { id:'h1', type:'hatch',   on:true,  pen:'p5', dash:'solid', angleDeg:45,  minSpacing:1, maxSpacing:7, threshold:0.92, texture:[] },
+  { id:'h2', type:'hatch',   on:true,  pen:'p5', dash:'solid', angleDeg:135, minSpacing:1, maxSpacing:7, threshold:0.45, texture:[] },
+  { id:'h3', type:'hatch',   on:false, pen:'p5', dash:'solid', angleDeg:90,  minSpacing:1, maxSpacing:7, threshold:0.18, texture:[] },
+  { id:'cr', type:'circles', on:false, pen:'p5', dash:'solid', minSpacing:1, maxSpacing:7, threshold:0.92, centerX:0, centerY:0, texture:[] },
 ];
 ```
-- `texture: null` means "use the General texture settings"; an object means the instance's own (today's
-  "Individual texture settings" mode gives every fill instance an object seeded from General — keep
-  that exact seeding behaviour, see `seedLayerTextureSettings`).
-- Texture object shape = the texture control ids without prefix/suffix: `{ trimOn, trimValue,
-  overshootOn, overshootMin, overshootMax, spacingOn, …, gapsOn, gapsSpacing, gapsMax }`. Circles
-  ignore `angle*` and `regWobble*` (today's `data-skipforcircles`).
-- **UI**: the texture panel becomes ONE set of controls bound to "the selected instance" (or General),
-  re-filled from the model when the tab/instance changes, writing back on input. Delete
-  `buildPerLayerTextureTabs`, `baseTexId`, `valLabelId`'s suffix logic, `texId()`, `TEXTURE_LAYER_KEYS`
-  loops, `seedLayerTextureSettings` (becomes a model copy), and the `_h1/_h2/_h3/_cr` ids. The
-  General/Individual toggle stays as UI, mapped onto `texture: null | {…}`.
-- **Persistence**: `.pen` version 2 writes `layers` as this array. Loader for version 1: rebuild
-  instances from `layers[key] = {on, pen, dash}` and from the suffixed `settings` ids
-  (`texOvershootMin_h1` → `h1.texture.overshootMin`) when `texIndividualOn` was true. Keep writing the
-  General texture values under their existing `settings` ids. Blocks (`layerPaths` keyed by layer id)
-  and clipboard need no change as long as ids `h1 h2 h3 cr` stay.
+- **Texture is a stack**: `texture` is an ordered array of filter entries `{ type, ...params }`, e.g.
+  `[{ type:'overshoot', min:-2, max:1 }, { type:'wobble', spacing:1, amp:0.5, variation:0, varScale:10,
+  shared:false }, { type:'gaps', spacing:30, max:2 }]`. Empty array = no texture (the default for every
+  layer, edge layers included). Filter types and their params are a registry (`TEXTURE_FILTERS` in
+  `hatch-texture.js` after Phase 5): `trim {value}`, `overshoot {min,max}`, `spacingJitter {min,max}`,
+  `angleJitter {min,max}` (lines only), `wobble {spacing,amp,variation,varScale,shared}`,
+  `regularWobble {amp,wavelength}` (lines only), `gaps {spacing,max}`. Each type declares which
+  geometry kinds it supports (`lines`, `arcs`) — today's `data-skipforcircles` becomes that flag.
+- **Order of application is the stack order.** Today's fixed pipeline order (trim → overshoot →
+  spacing jitter → angle jitter → wobble → regular wobble → gaps, see `onResult`) becomes the order in
+  which the *migrated* stack is built, so a scene with several effects on solves as before; a user
+  may reorder later.
+- **UI**: the Texture tab becomes a per-layer stack editor: pick a layer (or reach it from its row),
+  "+ Add filter" chooses a type, each entry shows its own controls, can be removed and reordered.
+  Delete the General/Individual concept entirely: `texIndividualOn`, `buildPerLayerTextureTabs`,
+  `baseTexId`, `valLabelId`'s suffix logic, `texId()`, `TEXTURE_LAYER_KEYS` loops,
+  `seedLayerTextureSettings`, `updateTexLayerTabVisibility`, `selectTexTop`, and the `_h1/_h2/_h3/_cr`
+  ids. The Circles centre gizmo and `texCirclesThr` move to the circles instance's own settings.
+- **Persistence**: `.pen` version 2 writes `layers` as this array (stack included). Loader for
+  version 1: rebuild instances from `layers[key] = {on, pen, dash}` plus the old globals
+  (`hatchAng` + 0/90/45 → `angleDeg`, `hatchMin/hatchMax` → spacing, `hatchThr/crossThr/deepThr/
+  texCirclesThr` → threshold, `texGroundPatternCenterX/Y` → circles centre), and build each fill
+  instance's stack from the texture settings that were *enabled* — General's (`texOvershootOn` …) when
+  `texIndividualOn` was false, the suffixed per-layer ids (`texOvershootOn_h1` …) when true. Effects
+  that were off produce no entry. Edge layers get `[]`. Blocks (`layerPaths` keyed by layer id) and
+  clipboard need no change as long as ids `h1 h2 h3 cr` stay.
 - **Readers to migrate** (grep `LAYERS`, `layerEls`, `layerStyle`, `HATCH_ANGLE_OFFSET`,
   `TEXTURE_LAYER_KEYS`): svg-export.js (row building, `onResult`, `buildPenPathsExport`),
   panel-controls.js (`gatherSettings`, `syncLineLayerUI`, texture tabs), pen-library.js
@@ -210,32 +226,41 @@ shadow too. Run both after this step.
 ### 4d. Dynamic fill layers (the user's feature 1, UI part only)
 
 After 4b/4c this is additive: an "+ Add layer" control on the Lines tab offering the fill types, a delete
-button per fill row, `layers.push({ id: nextFillId(), type, … })`, drag-reorder among fill rows only
-(edge rows keep their fixed hierarchy above). Per-instance fields the UI must expose: pen, dash,
-angle (absolute, replacing "global angle + fixed offset": default instances get 45/135/90 to reproduce
-today's output exactly — and note `hatchAng` then becomes per-instance, with the slider moving to the row
-or a per-row popover), threshold (per instance, replacing `hatchThr/crossThr/deepThr`), texture
-(own/inherit). Min/Max spacing and the Circles centre stay global for now. New ids must not collide
-with persisted keys (`f1, f2, …` is fine; never reuse an id in a session). `.pen` version 2 is required
-here (thresholds/angles move from `settings` into the instance). The cascade `HIER` in `generate()`
+button per fill row, `layers.push({ id: nextFillId(), type, …defaults })`, drag-reorder among fill rows
+only (edge rows keep their fixed hierarchy above). Every fill setting is per instance and edited on
+that instance (a per-row expander or popover): pen, dash, angle (absolute — default instances get
+45/135/90 to reproduce today's "global angle + 0/90/45 offset" exactly), min and max spacing, "below"
+threshold, and for circles the centre (the on-canvas gizmo then belongs to the selected circles
+instance). The old global `hatchAng`, `hatchMin`, `hatchMax`, `hatchThr`, `crossThr`, `deepThr`,
+`texCirclesThr`, `texGroundPatternCenterX/Y` controls go away from the panel (their ids survive only in
+the version-1 loader). New instance ids must not collide with persisted keys (`f1, f2, …` is fine;
+never reuse an id in a session). `.pen` version 2 is required here. The cascade `HIER` in `generate()`
 excludes hatch already; keep it so.
+
+Worker consequence: `minS`/`maxS`, the carrier family `c0` anchor and the `lineVis` map in the hatch
+block are currently computed once per generate from the global spacing; with per-instance spacing they
+move inside the per-pass loop (one carrier family per pass). Only the *sharing* changes — with equal
+values per pass the arithmetic is identical, which the goldens confirm.
 
 Only start 4d once 4a–4c are green and the user asks for it.
 
 ### 4e. Texture as a function of geometry (the user's feature 2, groundwork)
 
 In svg-export.js `onResult`, the hatch branch and the circles branch each read texture settings and
-apply a pipeline. Restructure into one entry point used by both:
+apply a fixed pipeline. Restructure into one entry point used by both:
 
 ```js
-applyTexture(pieces, geometryKind /* 'lines' | 'arcs' */, texture, mmToPx) -> polylines
+applyTextureStack(pieces, geometryKind /* 'lines' | 'arcs' */, stack, mmToPx) -> polylines
 ```
-where `texture` is the resolved object from 4b (instance's own or General). Edge layers already produce
+which walks the instance's `texture` array in order and dispatches each entry to its filter's
+implementation for that geometry kind (`TEXTURE_FILTERS[type].apply[geometryKind]`); a filter that does
+not support the kind is skipped. An empty stack returns the input untouched. Edge layers already produce
 polylines (`pts` arrays of `[x,y]`) at the end of `buildChainedPathD` / `appendContourPathD` /
-`appendCreasePathD`; converting those to the flat `[x0,y0,x1,y1,…]` form the texture functions take, and
-back, is the only plumbing left for feature 2. Do NOT apply anything to edge layers in this phase
-(their `texture` stays `null`, output identical); just make the call possible. Watch closed paths: edge
-layers emit `Z`; texture functions today only see open hatch strokes.
+`appendCreasePathD`; converting those to the flat `[x0,y0,x1,y1,…]` form the filters take, and back, is
+the only plumbing left for feature 2. Do NOT apply anything to edge layers in this phase (their stack is
+`[]`, output identical); just make the call possible. Watch closed paths: edge layers emit `Z`; the
+filters today only ever see open hatch strokes, so closed polylines need an explicit rule (probably:
+a filter that opens a path, such as gaps, drops the `Z`; the rest keep it).
 
 ### Phase 4 verification
 
