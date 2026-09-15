@@ -15,6 +15,13 @@ The only external dependency is `three.js r128`, loaded from a CDN `<script>` ta
 for the live 3D viewport only — the HLR solver itself is dependency-free). Fonts are loaded from Google
 Fonts. Both require network access on first load.
 
+## Ongoing cleanup
+
+A whole-codebase cleanup is in progress on branch `cleanup` (Phases 0–3 done: goldens, dead code,
+shared helpers, ES modules). `docs/refactor-plan.md` is the handoff for the remaining phases — read it
+before any refactor work; it lists the ground rules (byte-identical output, keys that must not be
+renamed, module discipline) and the planned layer/texture model the next phase must prepare for.
+
 ## Verifying changes
 
 There is no lint or build step. Two checks:
