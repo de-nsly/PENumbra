@@ -413,8 +413,9 @@ export function updateModelRotation(){
    update, and cleared the moment ANY of those settings changes through
    any interaction path: orbit drag/pan, wheel zoom, projection toggle,
    isometric presets, recenter, rotation sliders/resets, FOV, or light. See
-   clearActiveView() calls scattered through this file and the generic
-   [data-regen] listener in panel-controls.js for the actual hookup. */
+   clearActiveView() calls scattered through this file and the regen
+   listener in panel-controls.js (entries flagged clearsView in
+   settings.js) for the actual hookup. */
 export let savedViews = [];
 export let savedViewCounter = 0;
 // Scene import replaces the whole list (older .pen files have none).

@@ -9,10 +9,11 @@
    step that starts the app.
    ================================================================ */
 import { $, APP_VERSION, DASH_KEYS, DASH_RATIOS, LAYERS, MAX_DASH_SLOTS, PEN_LIBRARY, downloadFile, penById, worker } from './main.js';
-import { applySmoothAngleChange, applySmoothShadingToggle, camera, modelMesh, modelName, onLoaded, onSmoothAngleResult, orbit, orthoCam, renderSavedViews, savedViewCounter, savedViews, setSavedViews, setProjMode, syncGroundCatcher, syncShadowCasting, syncSmoothAngleVisibility, updateLight, updateLightGizmo, updateModelRotation } from './viewport3d.js';
-import { addDashSlot, applyLayerStyle, applyPageColor, computePaperLayout, layerEls, onResult, refreshDashPreview, refreshStatusR, syncMarginMode } from './svg-export.js';
-import { activeTab, buildCamMessage, doGenerate, generateFailed, lastGen, refreshValLabel, syncIndividualMode, syncLineLayerUI, syncShadowUI, syncSoftShadowsUI, updateTexLayerTabVisibility } from './panel-controls.js';
-import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncSplitDashChoiceFromDom, syncPenLibraryUI, syncPenPathsExportUI } from './pen-library.js';
+import { restoreHooks, sceneSettingIds } from './settings.js';
+import { camera, modelMesh, modelName, onLoaded, onSmoothAngleResult, orbit, orthoCam, renderSavedViews, savedViewCounter, savedViews, setSavedViews, setProjMode } from './viewport3d.js';
+import { addDashSlot, applyLayerStyle, computePaperLayout, layerEls, onResult, refreshDashPreview, refreshStatusR } from './svg-export.js';
+import { activeTab, buildCamMessage, doGenerate, generateFailed, lastGen, refreshValLabel, syncLineLayerUI } from './panel-controls.js';
+import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncPenLibraryUI } from './pen-library.js';
 import { blockCounter, blocks, replaceBlocks, renderBlocksList, renderLayoutCanvas } from './layout-canvas.js';
 import { resetPvFitWithRulers } from './paper-preview.js';
 
@@ -163,10 +164,11 @@ async function loadFile(file){
    model itself (the original uploaded file's bytes, not the parsed/welded
    mesh — re-importing re-runs the same load path a fresh upload would, so
    any future change to that pipeline can't drift the two apart), every
-   [data-regen] control plus the paper layout controls (which aren't
-   solve-affecting but are still part of "what I had"), the pen library and
-   each layer's pen/dash choice, and the camera (orbit angles/distance/target + projection mode —
-   FOV rides along as an ordinary [data-regen] control already).
+   control in the settings registry (settings.js: the solve settings plus
+   the paper layout controls, which aren't solve-affecting but are still
+   part of "what I had"), the pen library and each layer's pen/dash choice,
+   and the camera (orbit angles/distance/target + projection mode — FOV
+   rides along as an ordinary registry control already).
    A plain JSON container, base64 for the binary model bytes — simple, and
    the model is the only part large enough for that ~33% inflation to
    matter, which is an acceptable trade for not inventing a binary format. */
@@ -185,19 +187,20 @@ function base64ToArrayBuffer(b64){
   for (let i=0; i<binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes.buffer;
 }
-// every plain id→value/checked control worth restoring: all solve settings
-// (data-regen) plus the paper layout controls, which live outside that
-// mechanism (their own listener re-lays-out the page rather than staling it)
-function sceneSettingIds(){
-  return [...document.querySelectorAll('[data-regen]')].map(el => el.id)
-    .concat(['paperSize', 'orient', 'marginMm', 'marginIndependent', 'marginTopMm', 'marginBottomMm', 'marginLeftMm', 'marginRightMm', 'trimToMargins', 'pageColor', 'gridGuideEnabled', 'gridGuideX', 'gridGuideY', 'penPathsExport', 'splitDashBtn'])
+// every plain id→value/checked control worth restoring: the settings
+// registry (solve settings plus the paper layout controls) and the dash
+// slot fields, which are a growable list rather than fixed controls
+function savedSettingIds(){
+  return sceneSettingIds()
     .concat(DASH_KEYS.flatMap(k => [0,1,2,3,4,5].map(i => 'dash' + k + '_' + i)));
 }
 
 // Applying a scene sets DOM properties directly (not the same as a user
 // typing/dragging), which does NOT dispatch input/change events — so every
 // side effect those events would normally trigger has to be called
-// explicitly here, once, after all the values are in place.
+// explicitly here, once, after all the values are in place: each settings
+// entry names its own sync function (onRestore in settings.js), run below
+// through restoreHooks(); the layer rows and the camera are handled here.
 export function applyImportedScene(data){
   // Create any dash slots this scene needs (D3+) BEFORE the generic
   // settings-restore loop below, which relies on their DOM (dashD3_0 etc.)
@@ -213,13 +216,8 @@ export function applyImportedScene(data){
     const el = document.getElementById(id);
     if (!el) continue;
     if (el.type === 'checkbox') el.checked = !!val; else el.value = val;
-    if (el.dataset.regen !== undefined) refreshValLabel(el);
+    refreshValLabel(el);   // no-op for a control without a value label
   }
-  // Both export checkboxes were just set directly (no change event): take the
-  // restored Split dashes value as the user's own choice, then re-apply the
-  // lock/forced tick if one-path-per-pen export is on.
-  syncSplitDashChoiceFromDom();
-  syncPenPathsExportUI();
   // The loop above only set each dash-field input's raw value — DASH_RATIOS
   // itself and the derived preview/layer rendering need an explicit sync.
   for (const key of DASH_KEYS){
@@ -229,11 +227,6 @@ export function applyImportedScene(data){
     }
     refreshDashPreview(key);
   }
-  // texIndividualOn's checked state was just set directly above (no event
-  // dispatched), so the tab-visibility/layer-tab-filter logic that
-  // normally reacts to toggling it needs an explicit nudge here too.
-  syncIndividualMode();
-  updateTexLayerTabVisibility();
   // The pen library belongs to the scene — replace it wholesale. Scenes saved
   // before pens existed have no data.pens: setPenLibrary restarts from the
   // built-in set, and each layer's own color/width is matched into it below.
@@ -276,34 +269,12 @@ export function applyImportedScene(data){
   orbit.exactPole = Number.isFinite(cs.exactPole) ? cs.exactPole : 0;
   if (Array.isArray(cs.target))   orbit.target.set(cs.target[0], cs.target[1], cs.target[2]);
   orbit.apply();                 // also updates the frustum for the restored FOV/ortho state
-  syncShadowUI(); syncSoftShadowsUI(); syncShadowCasting(); syncGroundCatcher();
-  updateLight(); updateLightGizmo(); updateModelRotation();
-  // Setting smoothShading's .checked directly (like every control above)
-  // doesn't fire its own 'change' listener, which is what actually swaps
-  // the 3D viewport's geometry between the flat and smooth normal
-  // attributes (see applySmoothShadingToggle in viewport3d.js) — without
-  // this, an imported scene with Smooth shading on generates correctly
-  // (the worker reads the checkbox's now-correct .checked state fresh)
-  // but the live viewport keeps showing flat shading until the user
-  // manually toggles the checkbox off and back on.
-  applySmoothShadingToggle();
-  // Same reasoning — the smooth-angle row's visibility is also driven by
-  // smoothShading's 'change' listener, which setting .checked directly
-  // doesn't fire either.
-  syncSmoothAngleVisibility();
-  // Same reasoning as smoothShading just above — marginIndependent's
-  // .checked was just set directly too, which won't fire the 'change'
-  // listener that shows/hides the right margin inputs and recomputes the
-  // paper layout for the newly-restored mode.
-  syncMarginMode();
-  // Same reasoning again — pageColor's .value was just set directly by the
-  // generic loop above, which doesn't fire its own 'input' listener (the
-  // thing that actually pushes the value into the --paper CSS variable).
-  applyPageColor();
-  // Same reasoning again — smoothAngleDeg's .value was just set directly by
-  // the generic loop above too, which won't trigger the worker round-trip
-  // that recomputes the corner normals for the newly-restored angle.
-  applySmoothAngleChange();
+  // Every control was set by assignment, so nothing above fired the
+  // listeners that normally follow an edit: the shadow/margin/export UI
+  // state, the three.js light, shadow flags, model rotation, the smooth-
+  // shading geometry swap and its worker round-trip, the page colour, the
+  // texture tab mode. Each entry in settings.js names what it needs.
+  for (const fn of restoreHooks()) fn();
   // Older .pen files predate the Saved Views feature — default to an empty
   // list and a fresh counter rather than failing on the missing fields.
   setSavedViews(Array.isArray(data.savedViews) ? data.savedViews : [],
@@ -429,7 +400,7 @@ export function initSceneIO(){
   $('exportSceneBtn').addEventListener('click', () => {
     if (!modelMesh){ $('statusL').textContent = 'load a model first'; return; }
     const settings = {};
-    for (const id of sceneSettingIds()){
+    for (const id of savedSettingIds()){
       const el = document.getElementById(id);
       if (el) settings[id] = el.type === 'checkbox' ? el.checked : el.value;
     }

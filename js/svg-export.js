@@ -2855,8 +2855,8 @@ export function initSvgExport(){
   // live drawing AND the Layout overlay, see styles.css) and the shared
   // Layout blocks container (Layout mode — a single toggle there affects
   // every block, since isolation lives at that one shared level, not
-  // per-block — see styles.css), rather than going through markStale/
-  // data-regen like every other setting.
+  // per-block — see styles.css), rather than going through markStale like
+  // every regen setting (settings.js).
   $('blendMultiplyOn').addEventListener('change', () => {
     const on = $('blendMultiplyOn').checked;
     const plot = document.getElementById('plot');

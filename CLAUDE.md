@@ -48,6 +48,7 @@ module script, `js/app.js`. Every other main-thread file is an ES module with ex
 ```
 js/app.js            - entry point: imports every module and calls their init functions in order, then boots
 js/main.js           - $, svgEl/SVG_NS, downloadFile, focus guards, LAYERS, PEN_LIBRARY/penById, DASH_*, the worker (bootWorker)
+js/settings.js       - SETTINGS registry: one entry per control (regen flag, label unit/decimals/presets, scene persistence, onRestore hook)
 js/viewport3d.js     - three.js scene/camera/orbit controls, gizmos, saved views, shading-buffer capture, onLoaded()
 js/paper-preview.js  - pan/zoom for the on-screen paper pane, rulers, circles-centre gizmo
 js/svg-export.js     - layer rows + dash editor, paper layout math, chaining, texture effects, onResult(), export

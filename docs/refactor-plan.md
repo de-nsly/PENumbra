@@ -101,9 +101,16 @@ the texture module applies a stack to geometry given by kind, not by layer key.
 The largest remaining design change. Do it in the sub-steps below, each output-neutral and committed
 separately. Total: expect 4–6 commits.
 
-### 4a. Settings registry (`js/settings.js`, new)
+### 4a. Settings registry (`js/settings.js`, new) — DONE 2026-09-15
 
-**Problem today.** Every setting lives only in its `<input>`; `gatherSettings` (panel-controls.js) reads
+Done as specified below. Notes for later steps: the preset ladders and `fmtBigCount` now live in
+`settings.js` (panel-controls imports them); `sceneSettingIds()` is registry order, not DOM order (the
+`.pen` settings block's key order changed, loading is order-independent); `applyImportedScene` runs
+`restoreHooks()` once after the layer rows and camera are restored, so `updateTexLayerTabVisibility`
+now sees the restored layer checkboxes (it used to run before them). `perLayer` entries and
+`settingElementIds` exist only to carry the `_h1…_cr` clones until 4b removes them.
+
+**Problem before 4a.** Every setting lives only in its `<input>`; `gatherSettings` (panel-controls.js) reads
 ~40 elements; `sceneSettingIds` (scene-io.js) is `[data-regen]` ids plus a hand-kept list; the value
 label formatting is two hand-written if-chains (`refreshValLabel`, `valUnitFor`); after a scene import
 `applyImportedScene` hand-calls twelve sync functions because setting `.value` fires no events.

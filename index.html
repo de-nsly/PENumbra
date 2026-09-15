@@ -38,17 +38,17 @@
         </div>
         <div class="ctl">
           <label for="fovDeg">FOV</label>
-          <input type="range" id="fovDeg" min="10" max="130" step="1" value="40" data-regen>
+          <input type="range" id="fovDeg" min="10" max="130" step="1" value="40">
           <span class="val" id="fovDegVal">40&deg;</span>
         </div>
         <div class="ctl ctlWideLabel">
           <label for="camShiftX" title="Shifts the lens/frustum sideways without moving or rotating the camera — moves the vanishing point, same effect as Blender's camera Shift.">Shift X</label>
-          <input type="range" id="camShiftX" min="-1" max="1" step="0.01" value="0" data-regen data-camshift>
+          <input type="range" id="camShiftX" min="-1" max="1" step="0.01" value="0">
           <span class="val" id="camShiftXVal">0.00</span>
         </div>
         <div class="ctl ctlWideLabel">
           <label for="camShiftY" title="Shifts the lens/frustum vertically without moving or rotating the camera — moves the vanishing point, same effect as Blender's camera Shift.">Shift Y</label>
-          <input type="range" id="camShiftY" min="-1" max="1" step="0.01" value="0" data-regen data-camshift>
+          <input type="range" id="camShiftY" min="-1" max="1" step="0.01" value="0">
           <span class="val" id="camShiftYVal">0.00</span>
         </div>
         <div class="vpLabel">Isometric</div>
@@ -63,17 +63,17 @@
         <div class="vpLabel">Rotate model</div>
         <div class="ctl">
           <label for="rotX">X</label>
-          <input type="range" id="rotX" min="-180" max="180" step="1" value="0" data-regen data-rot-axis="x">
+          <input type="range" id="rotX" min="-180" max="180" step="1" value="0">
           <span class="val" id="rotXVal">0°</span>
         </div>
         <div class="ctl">
           <label for="rotY">Y</label>
-          <input type="range" id="rotY" min="-180" max="180" step="1" value="0" data-regen data-rot-axis="y">
+          <input type="range" id="rotY" min="-180" max="180" step="1" value="0">
           <span class="val" id="rotYVal">0°</span>
         </div>
         <div class="ctl">
           <label for="rotZ">Z</label>
-          <input type="range" id="rotZ" min="-180" max="180" step="1" value="0" data-regen data-rot-axis="z">
+          <input type="range" id="rotZ" min="-180" max="180" step="1" value="0">
           <span class="val" id="rotZVal">0°</span>
         </div>
         <span class="switchWrap" id="zUpWrap"
@@ -315,47 +315,47 @@
         <div class="sec">
           <div class="ctl">
             <label for="lightAz">Light azim.</label>
-            <input type="range" id="lightAz" min="0" max="360" step="1" value="35" data-regen data-light>
+            <input type="range" id="lightAz" min="0" max="360" step="1" value="35">
             <span class="val" id="lightAzVal">35°</span>
           </div>
           <div class="ctl">
             <label for="lightEl">Light elev.</label>
-            <input type="range" id="lightEl" min="0" max="90" step="1" value="42" data-regen data-light>
+            <input type="range" id="lightEl" min="0" max="90" step="1" value="42">
             <span class="val" id="lightElVal">42°</span>
           </div>
           <div class="ctl">
             <label for="hatchAng">Hatch angle</label>
-            <input type="range" id="hatchAng" min="0" max="180" step="1" value="45" data-regen>
+            <input type="range" id="hatchAng" min="0" max="180" step="1" value="45">
             <span class="val" id="hatchAngVal">45°</span>
           </div>
           <div class="ctl">
             <label for="hatchMin">Min spacing</label>
-            <input type="range" id="hatchMin" min="0.1" max="5" step="0.1" value="1.0" data-regen>
+            <input type="range" id="hatchMin" min="0.1" max="5" step="0.1" value="1.0">
             <span class="val" id="hatchMinVal">1.0mm</span>
           </div>
           <div class="ctl">
             <label for="hatchMax">Max spacing</label>
-            <input type="range" id="hatchMax" min="1" max="20" step="0.5" value="7" data-regen>
+            <input type="range" id="hatchMax" min="1" max="20" step="0.5" value="7">
             <span class="val" id="hatchMaxVal">7mm</span>
           </div>
           <div class="ctl">
             <label for="hatchCap" title="Safety cap on total hatch segments per generate. Higher allows denser/more complex hatching before it gets cut off, at the cost of a slower solve.">Hatch cap</label>
-            <input type="range" id="hatchCap" min="0" max="7" step="1" value="4" data-regen>
+            <input type="range" id="hatchCap" min="0" max="7" step="1" value="4">
             <span class="val" id="hatchCapVal">320k</span>
           </div>
           <div class="ctl" id="hatchThrCtl">
             <label for="hatchThr">Hatch below</label>
-            <input type="range" id="hatchThr" min="0.01" max="1" step="0.01" value="0.92" data-regen>
+            <input type="range" id="hatchThr" min="0.01" max="1" step="0.01" value="0.92">
             <span class="val" id="hatchThrVal">0.92</span>
           </div>
           <div class="ctl" id="crossThrCtl">
             <label for="crossThr">Cross below</label>
-            <input type="range" id="crossThr" min="0.01" max="1" step="0.01" value="0.45" data-regen>
+            <input type="range" id="crossThr" min="0.01" max="1" step="0.01" value="0.45">
             <span class="val" id="crossThrVal">0.45</span>
           </div>
           <div class="ctl" id="deepThrCtl">
             <label for="deepThr">Deep below</label>
-            <input type="range" id="deepThr" min="0.01" max="1" step="0.01" value="0.18" data-regen>
+            <input type="range" id="deepThr" min="0.01" max="1" step="0.01" value="0.18">
             <span class="val" id="deepThrVal">0.18</span>
           </div>
         </div>
@@ -364,24 +364,24 @@
         <div class="sec">
           <div class="ctl">
             <label for="texGroundPatternCenterX">Center X</label>
-            <input type="range" id="texGroundPatternCenterX" min="-150" max="150" step="1" value="0" data-regen>
+            <input type="range" id="texGroundPatternCenterX" min="-150" max="150" step="1" value="0">
             <span class="val" id="texGroundPatternCenterXVal">0.0mm</span>
           </div>
           <div class="ctl">
             <label for="texGroundPatternCenterY">Center Y</label>
-            <input type="range" id="texGroundPatternCenterY" min="-150" max="150" step="1" value="0" data-regen>
+            <input type="range" id="texGroundPatternCenterY" min="-150" max="150" step="1" value="0">
             <span class="val" id="texGroundPatternCenterYVal">0.0mm</span>
           </div>
           <div class="ctl">
             <label for="texCirclesThr">Circles below</label>
-            <input type="range" id="texCirclesThr" min="0.01" max="1" step="0.01" value="0.92" data-regen>
+            <input type="range" id="texCirclesThr" min="0.01" max="1" step="0.01" value="0.92">
             <span class="val" id="texCirclesThrVal">0.92</span>
           </div>
         </div>
 
         <h2>Texture mode</h2>
         <div class="sec">
-          <label class="chk"><input type="checkbox" id="texIndividualOn" data-regen>
+          <label class="chk"><input type="checkbox" id="texIndividualOn">
             Individual texture settings (per layer)</label>
         </div>
       </div>
@@ -391,67 +391,67 @@
       <div class="sec">
         <div class="textureGroup">
           <label class="chk">
-            <input type="checkbox" id="texTrimOn" data-regen>
+            <input type="checkbox" id="texTrimOn">
             <span>Trim / extend</span>
           </label>
           <div class="textureFieldsWrap ctlDisabled" id="texTrimFields">
             <div class="ctl">
               <label for="texTrimValue">Value</label>
-              <input type="range" id="texTrimValue" min="-10" max="10" step="0.1" value="0" data-regen>
+              <input type="range" id="texTrimValue" min="-10" max="10" step="0.1" value="0">
               <span class="val" id="texTrimValueVal">0.0mm</span>
             </div>
           </div>
         </div>
         <div class="textureGroup">
           <label class="chk">
-            <input type="checkbox" id="texOvershootOn" data-regen>
+            <input type="checkbox" id="texOvershootOn">
             <span>Overshoot / undershoot</span>
           </label>
           <div class="textureFieldsWrap ctlDisabled" id="texOvershootFields">
             <div class="ctl">
               <label for="texOvershootMin">Min</label>
-              <input type="range" id="texOvershootMin" min="-10" max="10" step="0.1" value="-2" data-regen>
+              <input type="range" id="texOvershootMin" min="-10" max="10" step="0.1" value="-2">
               <span class="val" id="texOvershootMinVal">-2.0mm</span>
             </div>
             <div class="ctl">
               <label for="texOvershootMax">Max</label>
-              <input type="range" id="texOvershootMax" min="-10" max="10" step="0.1" value="1" data-regen>
+              <input type="range" id="texOvershootMax" min="-10" max="10" step="0.1" value="1">
               <span class="val" id="texOvershootMaxVal">1.0mm</span>
             </div>
           </div>
         </div>
         <div class="textureGroup">
           <label class="chk">
-            <input type="checkbox" id="texSpacingOn" data-regen>
+            <input type="checkbox" id="texSpacingOn">
             <span>Spacing jitter</span>
           </label>
           <div class="textureFieldsWrap ctlDisabled" id="texSpacingFields">
             <div class="ctl">
               <label for="texSpacingMin">Min</label>
-              <input type="range" id="texSpacingMin" min="0" max="10" step="0.1" value="0" data-regen>
+              <input type="range" id="texSpacingMin" min="0" max="10" step="0.1" value="0">
               <span class="val" id="texSpacingMinVal">0.0mm</span>
             </div>
             <div class="ctl">
               <label for="texSpacingMax">Max</label>
-              <input type="range" id="texSpacingMax" min="0" max="10" step="0.1" value="0.5" data-regen>
+              <input type="range" id="texSpacingMax" min="0" max="10" step="0.1" value="0.5">
               <span class="val" id="texSpacingMaxVal">0.5mm</span>
             </div>
           </div>
         </div>
         <div class="textureGroup" data-skipforcircles="1">
           <label class="chk">
-            <input type="checkbox" id="texAngleOn" data-regen>
+            <input type="checkbox" id="texAngleOn">
             <span>Angle jitter</span>
           </label>
           <div class="textureFieldsWrap ctlDisabled" id="texAngleFields">
             <div class="ctl">
               <label for="texAngleMin">Min</label>
-              <input type="range" id="texAngleMin" min="0" max="10" step="0.1" value="0" data-regen>
+              <input type="range" id="texAngleMin" min="0" max="10" step="0.1" value="0">
               <span class="val" id="texAngleMinVal">0.0°</span>
             </div>
             <div class="ctl">
               <label for="texAngleMax">Max</label>
-              <input type="range" id="texAngleMax" min="0" max="10" step="0.1" value="0.5" data-regen>
+              <input type="range" id="texAngleMax" min="0" max="10" step="0.1" value="0.5">
               <span class="val" id="texAngleMaxVal">0.5°</span>
             </div>
           </div>
@@ -459,69 +459,69 @@
         <div class="textureGroup">
           <div class="rowSplit">
             <label class="chk">
-              <input type="checkbox" id="texWobbleOn" data-regen>
+              <input type="checkbox" id="texWobbleOn">
               <span>Wobble</span>
             </label>
             <label class="chk chk-sub">
-              <input type="checkbox" id="texWobbleShared" data-regen>
+              <input type="checkbox" id="texWobbleShared">
               Same noise field per layer
             </label>
           </div>
           <div class="textureFieldsWrap ctlDisabled" id="texWobbleFields">
             <div class="ctl">
               <label for="texWobbleSpacing">Spacing</label>
-              <input type="range" id="texWobbleSpacing" min="0.1" max="10" step="0.1" value="1" data-regen>
+              <input type="range" id="texWobbleSpacing" min="0.1" max="10" step="0.1" value="1">
               <span class="val" id="texWobbleSpacingVal">1.0mm</span>
             </div>
             <div class="ctl">
               <label for="texWobbleAmp">Amplitude</label>
-              <input type="range" id="texWobbleAmp" min="0" max="10" step="0.1" value="0.5" data-regen>
+              <input type="range" id="texWobbleAmp" min="0" max="10" step="0.1" value="0.5">
               <span class="val" id="texWobbleAmpVal">0.5mm</span>
             </div>
             <div class="ctl">
               <label for="texWobbleVariation">Variation</label>
-              <input type="range" id="texWobbleVariation" min="0" max="1" step="0.1" value="0" data-regen>
+              <input type="range" id="texWobbleVariation" min="0" max="1" step="0.1" value="0">
               <span class="val" id="texWobbleVariationVal">0.0</span>
             </div>
             <div class="ctl">
               <label for="texWobbleVarScale">Var. scale</label>
-              <input type="range" id="texWobbleVarScale" min="1" max="50" step="0.5" value="10" data-regen>
+              <input type="range" id="texWobbleVarScale" min="1" max="50" step="0.5" value="10">
               <span class="val" id="texWobbleVarScaleVal">10.0mm</span>
             </div>
           </div>
         </div>
         <div class="textureGroup" data-skipforcircles="1">
           <label class="chk">
-            <input type="checkbox" id="texRegWobbleOn" data-regen>
+            <input type="checkbox" id="texRegWobbleOn">
             <span>Regular wobble</span>
           </label>
           <div class="textureFieldsWrap ctlDisabled" id="texRegWobbleFields">
             <div class="ctl">
               <label for="texRegWobbleAmp">Amplitude</label>
-              <input type="range" id="texRegWobbleAmp" min="0" max="10" step="0.1" value="0.5" data-regen>
+              <input type="range" id="texRegWobbleAmp" min="0" max="10" step="0.1" value="0.5">
               <span class="val" id="texRegWobbleAmpVal">0.5mm</span>
             </div>
             <div class="ctl">
               <label for="texRegWobbleWavelength">Wavelength</label>
-              <input type="range" id="texRegWobbleWavelength" min="0.5" max="50" step="0.5" value="5" data-regen>
+              <input type="range" id="texRegWobbleWavelength" min="0.5" max="50" step="0.5" value="5">
               <span class="val" id="texRegWobbleWavelengthVal">5.0mm</span>
             </div>
           </div>
         </div>
         <div class="textureGroup">
           <label class="chk">
-            <input type="checkbox" id="texGapsOn" data-regen>
+            <input type="checkbox" id="texGapsOn">
             <span>Gaps</span>
           </label>
           <div class="textureFieldsWrap ctlDisabled" id="texGapsFields">
             <div class="ctl">
               <label for="texGapsSpacing">Avg. spacing</label>
-              <input type="range" id="texGapsSpacing" min="1" max="100" step="0.5" value="30" data-regen>
+              <input type="range" id="texGapsSpacing" min="1" max="100" step="0.5" value="30">
               <span class="val" id="texGapsSpacingVal">30.0mm</span>
             </div>
             <div class="ctl">
               <label for="texGapsMax">Max gap</label>
-              <input type="range" id="texGapsMax" min="0.1" max="10" step="0.1" value="2" data-regen>
+              <input type="range" id="texGapsMax" min="0.1" max="10" step="0.1" value="2">
               <span class="val" id="texGapsMaxVal">2.0mm</span>
             </div>
           </div>
@@ -532,7 +532,7 @@
     <div id="settingsTab" style="display:none">
       <h2>Model</h2>
       <div class="sec">
-        <label class="chk"><input type="checkbox" id="watertight" checked data-regen>
+        <label class="chk"><input type="checkbox" id="watertight" checked>
           Assume watertight (cull back-face occluders)</label>
       </div>
 
@@ -547,12 +547,12 @@
         </p>
         <div class="ctl">
           <label for="dedupOffMult" title="How close two lines' offset from each other needs to be to be treated as the same line. Lower = only near-exact overlaps merge; higher = more lines that are merely close together get merged.">Match tolerance</label>
-          <input type="range" id="dedupOffMult" min="0" max="4" step="0.05" value="1" data-regen>
+          <input type="range" id="dedupOffMult" min="0" max="4" step="0.05" value="1">
           <span class="val" id="dedupOffMultVal">1.00×</span>
         </div>
         <div class="ctl">
           <label for="dedupGapMult" title="How large a real gap along the same line (e.g. an occlusion break) can be before it stops bridging into one continuous stroke.">Bridge gap</label>
-          <input type="range" id="dedupGapMult" min="0" max="4" step="0.05" value="1" data-regen>
+          <input type="range" id="dedupGapMult" min="0" max="4" step="0.05" value="1">
           <span class="val" id="dedupGapMultVal">1.00×</span>
         </div>
       </div>
@@ -593,18 +593,18 @@
       <div id="edgeLayersContour"></div>
       <div class="ctl" id="contourCleanupCtl">
         <label for="contourCleanup" title="How much depth difference still counts as the same surface when Contour decides whether a stretch of line is a real fold or a triangulation artifact. Measured as a fraction of the model's size, so it doesn't change as you zoom or orbit. Lower = keeps more lines, including some doubled-up artifact along dense curves; higher = removes more artifact, but eventually starts eating real folds where a shape passes close in front of itself. Default 0.0220.">Cleanup</label>
-        <input type="range" id="contourCleanup" min="0" max="0.06" step="0.0005" value="0.022" data-regen>
+        <input type="range" id="contourCleanup" min="0" max="0.06" step="0.0005" value="0.022">
         <span class="val" id="contourCleanupVal">0.0220</span>
       </div>
       <div class="ctl" id="contourMaxHopsCtl">
         <label for="contourMaxHops" title="The second half of Contour cleanup: how far across the surface a backdrop can be and still count as the same local surface. A triangulation artifact's backdrop is a neighbouring triangle; a shape passing close in front of itself is a long walk around the surface even though it looks near. A stretch of line is only removed if it is BOTH depth-similar (above) and within this many triangle steps. Lower = keeps more lines; higher = removes more. Default 3.">Max hops</label>
-        <input type="range" id="contourMaxHops" min="1" max="20" step="1" value="3" data-regen>
+        <input type="range" id="contourMaxHops" min="1" max="20" step="1" value="3">
         <span class="val" id="contourMaxHopsVal">3</span>
       </div>
       <div id="edgeLayersCrease"></div>
       <div class="ctl" id="creaseDegCtl">
         <label for="creaseDeg">Crease angle</label>
-        <input type="range" id="creaseDeg" min="0" max="120" step="0.1" value="1" data-regen>
+        <input type="range" id="creaseDeg" min="0" max="120" step="0.1" value="1">
         <span class="val" id="creaseDegVal">1.0°</span>
       </div>
       <div id="hatchLayers"></div>
@@ -621,33 +621,33 @@
     <h2>Shadows</h2>
     <div class="sec">
       <div class="chkRow">
-        <label class="chk"><input type="checkbox" id="softShadows" checked data-regen>
+        <label class="chk"><input type="checkbox" id="softShadows" checked>
           Soft shadows</label>
         <label class="chk" id="invertShadowsRow" title="Flips where Hatch/Crosshatch/Deep shadow/Circles are drawn from Soft and Cast shadows: draws in the previously-blank (lit) areas instead of the previously-hatched (shadowed) ones. Ground shadow is unaffected.">
-          <input type="checkbox" id="invertShadows" data-regen>
+          <input type="checkbox" id="invertShadows">
           Invert shadows</label>
       </div>
-      <label class="chk"><input type="checkbox" id="castShadows" data-regen>
+      <label class="chk"><input type="checkbox" id="castShadows">
         Cast shadows</label>
-      <label class="chk"><input type="checkbox" id="groundShadow" data-regen>
+      <label class="chk"><input type="checkbox" id="groundShadow">
         Ground shadow</label>
       <div class="ctl ctlDisabled" id="shadowBudgetCtl">
         <label for="shadowBudget" title="Higher = more shadow-test samples allowed per generate, catching finer detail on complex scenes at the cost of a slower solve. Object self-shadow only — Ground shadow is analytic and never uses this budget.">Shadow budg.</label>
-        <input type="range" id="shadowBudget" min="0" max="7" step="1" value="1" data-regen>
+        <input type="range" id="shadowBudget" min="0" max="7" step="1" value="1">
         <span class="val" id="shadowBudgetVal">500k</span>
       </div>
       <div class="ctl ctlDisabled" id="groundOffCtl">
         <label for="groundOff">Plane offset</label>
-        <input type="range" id="groundOff" min="0" max="100" step="1" value="0" data-regen>
+        <input type="range" id="groundOff" min="0" max="100" step="1" value="0">
         <span class="val" id="groundOffVal">0%</span>
       </div>
       <label class="chk chk-gap" title="Smooths both the 3D viewport display and the shadow-pattern boundary, for circles and for parallel hatching (all of Hatch/Crosshatch/Deep shadow).">
-        <input type="checkbox" id="smoothShading" data-regen>
+        <input type="checkbox" id="smoothShading">
         Smooth shading</label>
       <div class="ctl ctlDisabled" id="smoothAngleRow"
            title="How sharp a dihedral angle between two faces can be before Smooth Shading treats it as a hard edge (never blending a normal across it) rather than part of the same smooth surface. Lower = more edges stay crisp; higher = more of the model blends smooth.">
         <label for="smoothAngleDeg">Smooth angle</label>
-        <input type="range" id="smoothAngleDeg" min="0" max="180" step="1" value="30" data-regen>
+        <input type="range" id="smoothAngleDeg" min="0" max="180" step="1" value="30">
         <span class="val" id="smoothAngleDegVal">30°</span>
       </div>
     </div>

@@ -7,39 +7,24 @@
    the shadow/soft-shadow UI sync helpers.
    ================================================================ */
 import { $, APP_VERSION, isFormControlTarget, positionSegPill, worker } from './main.js';
+import { HATCH_CAP_PRESETS, SETTINGS, SHADOW_BUDGET_PRESETS, TEXTURE_LAYER_KEYS, formatValue, settingById, settingElementIds } from './settings.js';
 import { camera, captureShadingBuffer, clearActiveView, lightVec, modelMesh, modelPivot, syncGroundCatcher, syncShadowCasting, updateLight, updateLightGizmo, updateModelRotation, vp } from './viewport3d.js';
 import { computePaperLayout, layerEls, layerStyle } from './svg-export.js';
 import { updateTextureGizmo } from './paper-preview.js';
 import { pendingSoIvExport } from './scene-io.js';
 
 /* ================= settings / staleness ================= */
-// Shadow budget is a discrete preset ladder (not a raw number slider) so the
-// wide useful range — from "fast preview" to "no cap, however long it takes"
-// — stays reachable with a handful of clicks instead of a mostly-useless
-// linear scrubber. `Number.MAX_SAFE_INTEGER` stands in for "unlimited": it's
-// finite (so it survives structured-clone/JSON round-trips as an ordinary
-// number, unlike literal Infinity, which JSON.stringify turns into `null`),
-// while being far larger than any real scene could ever exhaust.
-export const SHADOW_BUDGET_PRESETS = [250000, 500000, 1000000, 2000000, 4000000, 8000000, 16000000, Number.MAX_SAFE_INTEGER];
-// same idea for the hatch segment safety cap — default (index 2 → 80k)
-// matches the value this app always used before it became adjustable.
-export const HATCH_CAP_PRESETS = [20000, 40000, 80000, 160000, 320000, 640000, 1280000, Number.MAX_SAFE_INTEGER];
-function fmtBigCount(n){
-  if (n >= Number.MAX_SAFE_INTEGER) return 'unl.';
-  if (n >= 1e6) return (n/1e6).toFixed(n % 1e6 === 0 ? 0 : 1) + 'M';
-  return Math.round(n/1e3) + 'k';
-}
-const PRESET_SLIDERS = { shadowBudget: SHADOW_BUDGET_PRESETS, hatchCap: HATCH_CAP_PRESETS };
 // shared by the live 'input' listener below AND scene import — a restored
 // control's value has to be reflected in its val-span the same way a user
 // dragging it would, just without an 'input' event to trigger it naturally
 // Per-layer texture clones suffix every id with _h1/_h2/_h3/_cr (see
-// buildPerLayerTextureTabs in main.js) — stripping that suffix before
-// classifying a control's type means refreshValLabel/valUnitFor below
-// don't need a second copy of their own logic per layer.
+// buildPerLayerTextureTabs in main.js) — stripping that suffix maps a
+// clone back to the registry entry (settings.js) it shares with the
+// General control.
 function baseTexId(id){
   return id.replace(/_(h1|h2|h3|cr)$/, '');
 }
+function settingFor(el){ return settingById(baseTexId(el.id)); }
 // The value span's own id is always "<baseId>Val" in the source markup
 // (e.g. texOvershootMin / texOvershootMinVal) — but buildPerLayerTextureTabs
 // (main.js) renames every id in a per-layer clone by appending _h1/_h2/_h3/_cr
@@ -53,32 +38,15 @@ function valLabelId(id){
 export function refreshValLabel(el){
   const v = $(valLabelId(el.id));
   if (!v) return;
-  const presets = PRESET_SLIDERS[el.id];
-  if (presets){ v.textContent = fmtBigCount(presets[+el.value]); return; }
-  if (el.id === 'camShiftX' || el.id === 'camShiftY'){ v.textContent = (+el.value).toFixed(2); return; }
-  if (el.id === 'dedupOffMult' || el.id === 'dedupGapMult'){ v.textContent = (+el.value).toFixed(2) + '×'; return; }
-  // A bare fraction of the model radius, small enough to need 4 decimals and
-  // with no unit at all (the generic fallback below would otherwise suffix it
-  // with a degree sign, since it sits among the angle controls).
-  if (el.id === 'contourCleanup'){ v.textContent = (+el.value).toFixed(4); return; }
-  // A bare count of triangle steps — no unit, and integral, so the generic
-  // fallback's degree sign would be actively wrong.
-  if (el.id === 'contourMaxHops'){ v.textContent = el.value; return; }
-  if (el.id === 'layoutOverlayOpacity'){ v.textContent = el.value + '%'; return; }
-  const bid = baseTexId(el.id);
-  const isTexAngle = bid === 'texAngleMin' || bid === 'texAngleMax';
-  const isTexRatio = bid === 'texWobbleVariation' || bid === 'texCirclesThr';
-  const oneDecimal = bid === 'creaseDeg' || (bid.startsWith('tex') && bid !== 'texCirclesThr');
-  const num = bid === 'texCirclesThr' ? (+el.value).toFixed(2) : oneDecimal ? (+el.value).toFixed(1) : el.value;
-  const unit = bid.startsWith('tex') ? (isTexRatio ? '' : isTexAngle ? '°' : 'mm') :
-    bid.includes('Thr') ? '' :
-    bid.includes('hatchM') ? 'mm' : bid === 'groundOff' ? '%' : '°';
-  v.textContent = num + unit;
+  const s = settingFor(el);
+  if (!s) return;
+  v.textContent = formatValue(s, el.value);
 }
 /* ================= double-click-to-edit slider values =================
    Every slider's value span already goes through refreshValLabel above to
    format itself (a unit suffix, or — for the two preset-ladder sliders — a
-   lookup through a small fixed list). This adds the reverse direction:
+   lookup through a small fixed list, both from the entry's registry
+   fields in settings.js). This adds the reverse direction:
    double-click the span, edit the raw number in place (unit suffix
    stripped while editing, restored on commit), Enter or blur to commit,
    Escape to cancel. On commit the slider's real 'input' event is
@@ -92,24 +60,12 @@ export function refreshValLabel(el){
    Invalid (non-numeric) text reverts to the previous value with no
    change. A valid number outside the slider's range clamps to whichever
    boundary it's past, rather than reverting. */
-function valUnitFor(id){
-  if (id === 'camShiftX' || id === 'camShiftY') return '';
-  if (id === 'dedupOffMult' || id === 'dedupGapMult') return '×';
-  if (id === 'contourCleanup') return '';
-  if (id === 'contourMaxHops') return '';
-  if (id === 'layoutOverlayOpacity') return '%';
-  const bid = baseTexId(id);
-  if (bid.startsWith('tex')) return (bid === 'texWobbleVariation' || bid === 'texCirclesThr') ? '' : (bid === 'texAngleMin' || bid === 'texAngleMax') ? '°' : 'mm';
-  if (bid.includes('Thr')) return '';
-  if (bid.includes('hatchM')) return 'mm';
-  if (bid === 'groundOff') return '%';
-  return '°';
-}
 function makeSliderValueEditable(rangeEl){
-  if (PRESET_SLIDERS[rangeEl.id]) return;      // excluded — see comment above
+  const s = settingFor(rangeEl);
+  if (!s || s.presets) return;      // preset ladders excluded — see comment above
   const span = $(valLabelId(rangeEl.id));
   if (!span) return;
-  const unit = valUnitFor(rangeEl.id);
+  const unit = s.unit || '';
   let editing = false, cancelled = false;
   function beginEdit(){
     if (editing) return;
@@ -549,7 +505,6 @@ export function setPanelMode(mode){
    fields row dimmed while off. Listed by id prefix only, so a future
    effect just needs one more entry here — same pattern as PANEL_MODES. */
 const TEXTURE_GROUPS = ['texTrim', 'texOvershoot', 'texSpacing', 'texAngle', 'texWobble', 'texRegWobble', 'texGaps'];
-const TEXTURE_LAYER_KEYS = ['h1', 'h2', 'h3', 'cr'];
 function syncTextureGroup(prefix, suffix){
   const onEl = $(prefix + 'On' + suffix), fieldsEl = $(prefix + 'Fields' + suffix);
   if (!onEl || !fieldsEl) return;   // e.g. texAngle/texRegWobble don't exist in the Circles clone
@@ -635,14 +590,22 @@ export function syncIndividualMode(){
    module's live behaviour — called once by app.js, in script order. */
 export function initPanelControls(){
   document.querySelectorAll('input[type="range"]').forEach(makeSliderValueEditable);
-  document.querySelectorAll('[data-regen]').forEach(el =>
-    el.addEventListener('input', () => {
-      markStale();
-      if (el.dataset.light !== undefined){ updateLight(); updateLightGizmo(); }
-      if (el.dataset.rotAxis !== undefined){ updateModelRotation(); }
-      if (el.id === 'fovDeg' || el.dataset.light !== undefined || el.dataset.rotAxis !== undefined || el.dataset.camshift !== undefined) clearActiveView();
-      refreshValLabel(el);
-    }));
+  // Every solve-affecting control (settings.js: regen) re-runs the pipeline
+  // on input; the entry's flags say what else that edit has to move.
+  for (const s of SETTINGS){
+    if (!s.regen) continue;
+    for (const id of settingElementIds(s)){
+      const el = $(id);
+      if (!el) continue;   // e.g. the Circles clone has no Angle jitter
+      el.addEventListener('input', () => {
+        markStale();
+        if (s.light){ updateLight(); updateLightGizmo(); }
+        if (s.rotAxis){ updateModelRotation(); }
+        if (s.clearsView) clearActiveView();
+        refreshValLabel(el);
+      });
+    }
+  }
   $('genBtn').addEventListener('click', doGenerate);
   $('autoGenBtn').setAttribute('aria-checked', 'true');
   $('autoGenBtn').classList.add('active');
