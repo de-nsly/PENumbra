@@ -297,7 +297,29 @@ values per pass the arithmetic is identical, which the goldens confirm.
 
 Only start 4d once 4a–4c are green and the user asks for it.
 
-### 4e. Texture as a function of geometry (the user's feature 2, groundwork)
+### 4e. Texture as a function of geometry (the user's feature 2, groundwork) — DONE 2026-09-15
+
+Done, ahead of 4d (4e did not depend on it). Differences from the sketch below:
+- Signature `applyTextureStack(input, stack, ctx)`: `input` is a tagged representation, not a flat array,
+  because Circles must stay arcs (emitted as Béziers) unless wobble turns them into polylines, and hatch
+  starts as segments plus carrier indices. Reps: `segments {segs, carrier}`, `arcs {pieces}`,
+  `polylines {polylines, closed}`. `ctx = {geometry, mmToPx, familyAngleDeg}`. Implementations are
+  `TEXTURE_IMPL[type][rep]`; segments are converted to 2-point polylines when a filter only has a
+  polylines implementation, and at the end.
+- **Line jitters are one step.** Overshoot, spacing jitter and angle jitter on segments share per-carrier
+  random draws and apply rotate → shift → overshoot, so they run as one combined step
+  (`applyHatchTexture`) at the first of them in the stack. Splitting them into independent passes is an
+  intended output change (different random draws, slightly different geometry) — do it in its own
+  commit, if and when the stack becomes user-reorderable. The editor inserts entries at their
+  `TEXTURE_FILTERS` position, which keeps the three adjacent.
+- Closed-path rule implemented as proposed: a one-to-one filter passes `closed` through, gaps returns
+  `closed: null` (all open).
+- Edge layers: not wired. `applyTextureStack` accepts their polylines (rep `polylines`, geometry null → every
+  filter skipped, input returned as is), but the chaining functions still write straight into `d`
+  (`appendPolylineD`), so feeding their output through it needs those functions to hand back polylines
+  first. That is the remaining plumbing for feature 2, and it touches ground-rule-2 functions.
+- Verified: the 4b scratch comparison (pre-4b onResult vs now, 84 texture configurations × v1/v2 load)
+  still 168/168 identical; verify-golden identical.
 
 In svg-export.js `onResult`, the hatch branch and the circles branch each read texture settings and
 apply a fixed pipeline. Restructure into one entry point used by both:

@@ -26,7 +26,7 @@
    worldOnFace()/intersectSegs()/subtractCovered are the worker's.
    ================================================================ */
 import { $, DASH_KEYS, DASH_RATIOS, MAX_DASH_SLOTS, PEN_LIBRARY, SVG_NS, dashOnFraction, dashPattern, downloadFile, penById, scaledDash, svgEl } from './main.js';
-import { LAYER_TYPES, layerById, layerType, layers, stackEntry } from './layers.js';
+import { LAYER_TYPES, filterSupports, layerById, layerType, layers, stackEntry } from './layers.js';
 import { activeTab, gatherSettings, generateFinished, lastGen, markStale, syncLineLayerUI, updateGroundPatternSliderRange } from './panel-controls.js';
 import { blockLayerPenId, blocks, computeLayoutPaperDims, computeLayoutStats, createBlockDom, gridGuidePositions, layoutOverlayOn, refreshAllBlockStyles, renderPreviewLayoutOverlay, syncLayoutPaperFrame, syncLayoutTrimMask, updateBlockStyle } from './layout-canvas.js';
 import { applyPv, resetPv, resetPvFitWithRulers, updateTextureGizmo } from './paper-preview.js';
@@ -1432,9 +1432,8 @@ export function appendCreasePathD(d, segs, stats){
    mmToPx. A hatch layer's effects run on its flat segment list (plus the
    per-segment carrier index the worker sends, so fragments of one line
    jitter together); Circles has arc-aware variants of the first few and
-   shares wobble/gaps once its arcs are polylines. onResult applies them
-   in the fixed order trim → overshoot/spacing/angle jitter → wobble →
-   regular wobble → gaps, reading each entry from the stack. */
+   shares wobble/gaps once its arcs are polylines. applyTextureStack
+   (further down) runs them in the layer's stack order. */
 // The family angle of a hatch layer's lines: the global Hatch angle slider
 // plus the instance's own offset (layers.js: angleOffsetDeg).
 function hatchFamilyAngleDeg(L){
@@ -1880,6 +1879,123 @@ function arcToBezierSegments(cx, cy, radius, u0, u1){
   }
   return segs;
 }
+
+/* ================= texture stack =================
+   applyTextureStack(input, stack, ctx) is the one entry point every layer's
+   texture goes through: it walks the layer's stack IN ORDER and hands each
+   entry to its implementation for the representation the pieces are in
+   right now. Representations ("rep"):
+     segments   { segs, carrier }  a hatch layer's flat Float32Array
+                [x0,y0,x1,y1,…] and the worker's per-segment carrier index
+                (null when absent — the carrier-coherent jitters then skip)
+     arcs       { pieces }  Circles pieces {cx, cy, radius, u0, u1, …}
+     polylines  { polylines, closed }  flat [x0,y0,x1,y1,…] arrays; closed is
+                a per-polyline boolean array, or null for "all open"
+   A filter can change the rep (wobble turns segments or arcs into
+   polylines). When a filter has no implementation for segments but has one
+   for polylines, the segments become 2-point polylines first. A filter
+   whose type the layer's geometry doesn't support (ctx.geometry — see
+   TEXTURE_FILTERS in layers.js), or that has no implementation for the
+   current rep, is skipped. Segments still left at the end become
+   polylines; arcs stay arcs (onResult emits them as Béziers).
+   Closed paths: a filter that keeps the polylines one-to-one passes
+   `closed` through; one that can split a path (gaps) returns closed:null,
+   i.e. every output path open, since a gap opens a ring. Only hatch and
+   circles call this today; an edge layer's chained polylines could come
+   in as rep:'polylines' with their Z flags as `closed`, and with its empty
+   stack come back untouched (refactor plan §4e).
+   Overshoot, spacing jitter and angle jitter on segments are ONE combined
+   step (applyHatchTexture), run where the first of them sits in the stack:
+   they share per-carrier random draws and are applied rotate → shift →
+   overshoot per segment, so running them as three separate passes would
+   change the output. The editor keeps them adjacent (texture-stack.js). */
+function segmentsToPolylines(st){
+  const polylines = [];
+  for (let i = 0; i < st.segs.length; i += 4) polylines.push([st.segs[i], st.segs[i+1], st.segs[i+2], st.segs[i+3]]);
+  return { rep: 'polylines', polylines, closed: null };
+}
+const LINE_JITTER_TYPES = { overshoot: 1, spacingJitter: 1, angleJitter: 1 };
+function lineJitter(st, f, ctx, stack){
+  if (!st.carrier) return st;
+  return { rep: 'segments', segs: applyHatchTexture(st.segs, st.carrier, ctx.familyAngleDeg, ctx.mmToPx, stack), carrier: st.carrier };
+}
+const TEXTURE_IMPL = {
+  trim: {
+    segments: (st, f, ctx) => {
+      const r = applyHatchTrimExtend(st.segs, st.carrier, (+f.value || 0) * ctx.mmToPx);
+      return { rep: 'segments', segs: r.segs, carrier: r.carrierIdx };
+    },
+    arcs: (st, f, ctx) => ({ rep: 'arcs', pieces: applyCircleTrimExtend(st.pieces, (+f.value || 0) * ctx.mmToPx) }),
+  },
+  overshoot: {
+    segments: lineJitter,
+    arcs: (st, f, ctx) => ({ rep: 'arcs', pieces: applyCircleOvershootUndershoot(st.pieces, (+f.min || 0) * ctx.mmToPx, (+f.max || 0) * ctx.mmToPx) }),
+  },
+  spacingJitter: {
+    segments: lineJitter,
+    arcs: (st, f, ctx) => ({ rep: 'arcs', pieces: applyCircleSpacingJitter(st.pieces, (+f.min || 0) * ctx.mmToPx, (+f.max || 0) * ctx.mmToPx) }),
+  },
+  angleJitter: { segments: lineJitter },
+  // Wobble displaces points along a line or arc, so the result is a dense
+  // polyline — a wobbled arc is no longer a circle.
+  wobble: {
+    segments: (st, f, ctx) => {
+      const wb = readWobbleParams(f, ctx.mmToPx);
+      return { rep: 'polylines', closed: null,
+        polylines: applyHatchWobble(st.segs, wb.spacingPx, wb.ampPx, wb.sharedSeed, wb.variationAmount, wb.envScalePx, wb.sharedEnvSeed) };
+    },
+    arcs: (st, f, ctx) => {
+      const wb = readWobbleParams(f, ctx.mmToPx);
+      return { rep: 'polylines', closed: null,
+        polylines: applyCircleWobble(st.pieces, wb.spacingPx, wb.ampPx, wb.sharedSeed, wb.variationAmount, wb.envScalePx, wb.sharedEnvSeed) };
+    },
+  },
+  regularWobble: {
+    polylines: (st, f, ctx) => ({ rep: 'polylines', closed: st.closed,
+      polylines: applyHatchRegularWobble(st.polylines, ctx.familyAngleDeg, (+f.amp || 0) * ctx.mmToPx, (+f.wavelength || 5) * ctx.mmToPx) }),
+  },
+  gaps: {
+    arcs: (st, f, ctx) => {
+      const gp = readGapParams(f, ctx.mmToPx);
+      return { rep: 'arcs', pieces: applyCircleGaps(st.pieces, gp.minLenPx, gp.maxGapPx) };
+    },
+    polylines: (st, f, ctx) => {
+      const gp = readGapParams(f, ctx.mmToPx);
+      return { rep: 'polylines', closed: null, polylines: applyHatchGaps(st.polylines, gp.minLenPx, gp.maxGapPx) };
+    },
+  },
+};
+// ctx: { geometry ('lines' | 'arcs' | null for edge layers), mmToPx,
+// familyAngleDeg (lines: the hatch family's angle) }
+export function applyTextureStack(input, stack, ctx){
+  let st = input;
+  let lineJitterDone = false;
+  for (const f of stack){
+    const impl = TEXTURE_IMPL[f.type];
+    if (!impl || !filterSupports(f.type, ctx.geometry)) continue;
+    if (LINE_JITTER_TYPES[f.type] && st.rep === 'segments'){
+      if (lineJitterDone) continue;     // the combined step already ran for this group
+      lineJitterDone = true;
+    }
+    let run = impl[st.rep];
+    if (!run && st.rep === 'segments' && impl.polylines){ st = segmentsToPolylines(st); run = impl.polylines; }
+    if (!run) continue;
+    st = run(st, f, ctx, stack);
+  }
+  return st.rep === 'segments' ? segmentsToPolylines(st) : st;
+}
+// Appends polylines to a path's d tokens, one subpath each, counting them
+// into pathStats when given. A polyline whose ends meet (within 0.02px) is
+// counted as closed.
+function appendTexturedPolylinesD(d, polylines, pathStats){
+  for (const poly of polylines){
+    const pts = []; for (let i=0;i<poly.length;i+=2) pts.push([poly[i],poly[i+1]]);
+    const closed = pts.length>2 && Math.hypot(pts[0][0]-pts[pts.length-1][0], pts[0][1]-pts[pts.length-1][1]) < 0.02;
+    if (pathStats) accumulatePathStats(pathStats, closed ? pts.slice(0,-1) : pts, closed);
+    d.push('M', poly[0].toFixed(2), poly[1].toFixed(2));
+    for (let i = 2; i < poly.length; i += 2) d.push('L', poly[i].toFixed(2), poly[i+1].toFixed(2));
+  }
+}
 export function onResult(m){
   generateFinished(m);
   if (takePendingSoIvExport()) exportSoIvOverlayNow();
@@ -1938,59 +2054,17 @@ export function onResult(m){
     const T = layerType(L);
     if (L.type === 'circles'){
       if (!layerStyle(L.id).on || !m.circlePatternSegs || !m.circlePatternSegs.length) continue;
-      const mmToPx = pxPerMm();
-      const stack = L.texture;
-      let pieces = m.circlePatternSegs;
-      const trim = stackEntry(stack, 'trim');
-      if (trim){
-        const trimPx = (+trim.value || 0) * mmToPx;
-        pieces = applyCircleTrimExtend(pieces, trimPx);
-      }
-      const overshoot = stackEntry(stack, 'overshoot');
-      if (overshoot){
-        const oMin = (+overshoot.min || 0) * mmToPx;
-        const oMax = (+overshoot.max || 0) * mmToPx;
-        pieces = applyCircleOvershootUndershoot(pieces, oMin, oMax);
-      }
-      const spacing = stackEntry(stack, 'spacingJitter');
-      if (spacing){
-        const sMin = (+spacing.min || 0) * mmToPx;
-        const sMax = (+spacing.max || 0) * mmToPx;
-        pieces = applyCircleSpacingJitter(pieces, sMin, sMax);
-      }
-      // Angle jitter and regular wobble never apply here — a circle has no
-      // "angle" for them to act on (TEXTURE_FILTERS lists them for 'lines'
-      // only, so an arcs stack never holds one).
-      const wobble = stackEntry(stack, 'wobble');
-      const gaps = stackEntry(stack, 'gaps');
+      const tex = applyTextureStack({ rep: 'arcs', pieces: m.circlePatternSegs }, L.texture,
+        { geometry: T.geometry, mmToPx: pxPerMm() });
       const d = [];
-      if (wobble){
-        // Wobble displaces points along the arc, so the result is no longer
-        // a circle — falls back to the original dense-polyline path, same
-        // as before this feature existed.
-        const wb = readWobbleParams(wobble, mmToPx);
-        let polylines = applyCircleWobble(pieces, wb.spacingPx, wb.ampPx, wb.sharedSeed, wb.variationAmount, wb.envScalePx, wb.sharedEnvSeed);
-        if (gaps){
-          const gp = readGapParams(gaps, mmToPx);
-          polylines = applyHatchGaps(polylines, gp.minLenPx, gp.maxGapPx);
-        }
-        for (const poly of polylines){
-          const pts = []; for (let i=0;i<poly.length;i+=2) pts.push([poly[i],poly[i+1]]);
-          const closed = pts.length>2 && Math.hypot(pts[0][0]-pts[pts.length-1][0], pts[0][1]-pts[pts.length-1][1]) < 0.02;
-          accumulatePathStats(pathStats, closed ? pts.slice(0,-1) : pts, closed);
-          d.push('M', poly[0].toFixed(2), poly[1].toFixed(2));
-          for (let i = 2; i < poly.length; i += 2) d.push('L', poly[i].toFixed(2), poly[i+1].toFixed(2));
-        }
+      if (tex.rep === 'polylines'){
+        // Wobbled: no longer circles — emitted as dense polylines.
+        appendTexturedPolylinesD(d, tex.polylines, pathStats);
       } else {
-        // No wobble — each piece is still a genuine circular arc all the
-        // way through, so it can be emitted as a handful of Bezier curves
-        // instead of a dense polyline.
-        let gappedPieces = pieces;
-        if (gaps){
-          const gp = readGapParams(gaps, mmToPx);
-          gappedPieces = applyCircleGaps(pieces, gp.minLenPx, gp.maxGapPx);
-        }
-        for (const piece of gappedPieces){
+        // Every piece is still a genuine circular arc all the way through,
+        // so it can be emitted as a handful of Bezier curves instead of a
+        // dense polyline.
+        for (const piece of tex.pieces){
           const segs = arcToBezierSegments(piece.cx, piece.cy, piece.radius, piece.u0, piece.u1);
           if (!segs.length) continue;
           const sweep = Math.abs(piece.u1 - piece.u0) * 2 * Math.PI;   // u is a fraction of a full turn, not radians
@@ -2050,52 +2124,13 @@ export function onResult(m){
     } else {
       // Hatch: one path per layer, one subpath per segment: subpaths stay
       // separate pen strokes for plotter software; nothing is joined or
-      // reordered. The layer's texture stack is applied here.
-      const stack = L.texture;
-      let outSegs = segs;
-      let outCarrier = (m.hatchCarrier && m.hatchCarrier[L.id]) || null;
-      const mmToPx = pxPerMm();
-      const trim = stackEntry(stack, 'trim');
-      if (trim){
-        const trimPx = (+trim.value || 0) * mmToPx;
-        const r = applyHatchTrimExtend(outSegs, outCarrier, trimPx);
-        outSegs = r.segs; outCarrier = r.carrierIdx;
-      }
-      if (outCarrier){
-        outSegs = applyHatchTexture(outSegs, outCarrier, hatchFamilyAngleDeg(L), mmToPx, stack);
-      }
-      // From here on everything is expressed as an array of polylines (each
-      // a flat [x0,y0,x1,y1,...] array) — wobble subdivides into multi-point
-      // polylines, gaps can split any polyline into several; a segment that
-      // went through neither is just its own trivial 2-point polyline, so
-      // the d-string builder below can treat every case uniformly.
-      let polylines;
-      const wobble = stackEntry(stack, 'wobble');
-      if (wobble){
-        const wb = readWobbleParams(wobble, mmToPx);
-        polylines = applyHatchWobble(outSegs, wb.spacingPx, wb.ampPx, wb.sharedSeed, wb.variationAmount, wb.envScalePx, wb.sharedEnvSeed);
-      } else {
-        polylines = [];
-        for (let i = 0; i < outSegs.length; i += 4) polylines.push([outSegs[i], outSegs[i+1], outSegs[i+2], outSegs[i+3]]);
-      }
-      const regWobble = stackEntry(stack, 'regularWobble');
-      if (regWobble){
-        const regAmpPx = (+regWobble.amp || 0) * mmToPx;
-        const regWavelengthPx = (+regWobble.wavelength || 5) * mmToPx;
-        polylines = applyHatchRegularWobble(polylines, hatchFamilyAngleDeg(L), regAmpPx, regWavelengthPx);
-      }
-      const gaps = stackEntry(stack, 'gaps');
-      if (gaps){
-        const gp = readGapParams(gaps, mmToPx);
-        polylines = applyHatchGaps(polylines, gp.minLenPx, gp.maxGapPx);
-      }
-      for (const poly of polylines){
-        const pts = []; for (let i=0;i<poly.length;i+=2) pts.push([poly[i],poly[i+1]]);
-        const closed = pts.length>2 && Math.hypot(pts[0][0]-pts[pts.length-1][0], pts[0][1]-pts[pts.length-1][1]) < 0.02;
-        if (layerOn) accumulatePathStats(pathStats, closed ? pts.slice(0,-1) : pts, closed);
-        d.push('M', poly[0].toFixed(2), poly[1].toFixed(2));
-        for (let i = 2; i < poly.length; i += 2) d.push('L', poly[i].toFixed(2), poly[i+1].toFixed(2));
-      }
+      // reordered. The layer's texture stack is applied here; what comes
+      // back is always polylines (a segment no filter touched is its own
+      // 2-point polyline).
+      const tex = applyTextureStack(
+        { rep: 'segments', segs, carrier: (m.hatchCarrier && m.hatchCarrier[L.id]) || null }, L.texture,
+        { geometry: T.geometry, mmToPx: pxPerMm(), familyAngleDeg: hatchFamilyAngleDeg(L) });
+      appendTexturedPolylinesD(d, tex.polylines, stats);
     }
     const p = svgEl('path');
     p.setAttribute('d', d.join(' '));

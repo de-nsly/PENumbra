@@ -99,10 +99,12 @@ export function fillLayers(){ return layers.filter(L => layerType(L).kind === 'f
    parameters (with the slider ranges and defaults the stack editor uses,
    and the fallback the reader uses for a missing value) and which
    geometry kinds it applies to. The implementations live with the rest
-   of the geometry code in svg-export.js (the applyHatch… and applyCircle… functions),
-   keyed by these same type names. Key order here is the order the fixed
-   pipeline in onResult applies them in — and the order a version-1 scene's
-   enabled effects are migrated into a stack. */
+   of the geometry code in svg-export.js (TEXTURE_IMPL, run by
+   applyTextureStack in stack order), keyed by these same type names. Key
+   order here is the canonical order: the stack editor inserts a new entry
+   at its position, a version-1 scene's enabled effects are migrated in it
+   (the old fixed pipeline's order), and it keeps the three line jitters —
+   one combined step in applyTextureStack — adjacent. */
 export const TEXTURE_FILTERS = {
   trim: { name:'Trim / extend', geometry:['lines','arcs'], params:[
     { key:'value', label:'Value', min:-10, max:10, step:0.1, def:0, unit:'mm' },
@@ -145,8 +147,9 @@ export function newFilter(type){
   for (const p of TEXTURE_FILTERS[type].params) entry[p.key] = p.def;
   return entry;
 }
-// The entry of one type in a stack, or null. One entry per type today:
-// the fixed pipeline in onResult applies each effect once.
+// The entry of one type in a stack, or null. A stack holds at most one entry
+// per type today (the editor and sanitizeStack enforce it): the combined
+// line-jitter step reads its three entries through this.
 export function stackEntry(stack, type){
   return stack.find(f => f.type === type) || null;
 }

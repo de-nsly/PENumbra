@@ -53,7 +53,7 @@ js/layers.js         - layer instances (layers, LAYER_TYPES), TEXTURE_FILTERS sc
 js/texture-stack.js  - the Texture tab's per-layer stack editor
 js/viewport3d.js     - three.js scene/camera/orbit controls, gizmos, saved views, shading-buffer capture, onLoaded()
 js/paper-preview.js  - pan/zoom for the on-screen paper pane, rulers, circles-centre gizmo
-js/svg-export.js     - layer rows + dash editor, paper layout math, chaining, texture effects, onResult(), export
+js/svg-export.js     - layer rows + dash editor, paper layout math, chaining, texture effects + applyTextureStack, onResult(), export
 js/panel-controls.js - control panel wiring, gatherSettings(), generate/staleness/auto-generate state
 js/pen-library.js    - the Pen library tab, pen add/delete, matching incoming pens
 js/layout-canvas.js  - the Layout tab

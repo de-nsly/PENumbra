@@ -123,9 +123,9 @@ export function initTextureStack(){
     const type = $('texAddFilter').value;
     const L = selectedLayer();
     if (!type || !L) return;
-    // Inserted at its TEXTURE_FILTERS position, so the list reads in the
-    // order onResult applies the effects (a fixed pipeline until stacks
-    // become reorderable, refactor plan §4e).
+    // Inserted at its TEXTURE_FILTERS position: the stack applies in list
+    // order (applyTextureStack, svg-export.js), and this keeps the three line
+    // jitters, which run as one combined step, adjacent.
     const order = Object.keys(TEXTURE_FILTERS);
     const at = L.texture.findIndex(f => order.indexOf(f.type) > order.indexOf(type));
     L.texture.splice(at < 0 ? L.texture.length : at, 0, newFilter(type));
