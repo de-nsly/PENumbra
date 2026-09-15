@@ -2177,7 +2177,10 @@ export function refreshStatusR(){
     const layout = computePaperLayout();
     const scaleNow = layout ? layout.scale : 1;
     let lenMm = 0;
-    for (const key in s.rawLenByLayer) lenMm += s.rawLenByLayer[key] * dashOnFraction(layerStyle(key).dash) * scaleNow;
+    for (const key in s.rawLenByLayer){
+      if (!layerById(key)) continue;   // a scene import since that solve removed this layer
+      lenMm += s.rawLenByLayer[key] * dashOnFraction(layerStyle(key).dash) * scaleNow;
+    }
     $('statusR').textContent = s.segments.toLocaleString() + ' segments · ' +
       s.paths.toLocaleString() + ' paths (' + s.closedPaths.toLocaleString() + ' closed) · ' +
       lenMm.toLocaleString(undefined, {maximumFractionDigits:0}) + ' mm · ' + s.ms + ' ms' +

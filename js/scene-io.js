@@ -251,6 +251,9 @@ export function applyImportedScene(data){
     (typeof st.pen === 'string' && PEN_LIBRARY.some(p => p.id === st.pen))
       ? st.pen
       : resolvePen({ color: st.color, width: st.width }, penById(defaultPenId))));
+  // A layer the file doesn't describe keeps its default pen, which this
+  // library may not have: it lands on the first pen, as its dropdown would.
+  for (const L of layers) if (!PEN_LIBRARY.some(p => p.id === L.pen)) L.pen = PEN_LIBRARY[0].id;
   buildLayerRows();
   refreshPenSelects();
   renderTextureStack();
