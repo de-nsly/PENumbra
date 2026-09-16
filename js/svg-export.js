@@ -26,8 +26,10 @@
    worldOnFace()/intersectSegs()/subtractCovered are the worker's.
    ================================================================ */
 import { $, DASH_KEYS, DASH_RATIOS, MAX_DASH_SLOTS, PEN_LIBRARY, SVG_NS, dashOnFraction, dashPattern, downloadFile, penById, scaledDash, svgEl } from './main.js';
-import { LAYER_TYPES, filterSupports, layerById, layerType, layers, stackEntry } from './layers.js';
-import { activeTab, gatherSettings, generateFinished, lastGen, markStale, syncLineLayerUI, updateGroundPatternSliderRange } from './panel-controls.js';
+import { FILL_TYPES, LAYER_TYPES, copyLayer, filterSupports, layerById, layerName, layerType, layers, newFillLayer, nextFillId, stackEntry } from './layers.js';
+import { formatValue } from './settings.js';
+import { activeTab, gatherSettings, generateFinished, lastGen, makeSliderValueEditable, markStale, syncLineLayerUI, updateGroundPatternSliderRange } from './panel-controls.js';
+import { renderTextureStack } from './texture-stack.js';
 import { blockLayerPenId, blocks, computeLayoutPaperDims, computeLayoutStats, createBlockDom, gridGuidePositions, layoutOverlayOn, refreshAllBlockStyles, renderPreviewLayoutOverlay, syncLayoutPaperFrame, syncLayoutTrimMask, updateBlockStyle } from './layout-canvas.js';
 import { applyPv, resetPv, resetPvFitWithRulers, updateTextureGizmo } from './paper-preview.js';
 import { exportSoIvOverlayNow, takePendingSoIvExport } from './scene-io.js';
@@ -1434,10 +1436,11 @@ export function appendCreasePathD(d, segs, stats){
    jitter together); Circles has arc-aware variants of the first few and
    shares wobble/gaps once its arcs are polylines. applyTextureStack
    (further down) runs them in the layer's stack order. */
-// The family angle of a hatch layer's lines: the global Hatch angle slider
-// plus the instance's own offset (layers.js: angleOffsetDeg).
+// The family angle of a hatch layer's lines — the same angle its pass was
+// solved at (layers.js: angleDeg), so the texture's along-line direction
+// matches the lines it is displacing.
 function hatchFamilyAngleDeg(L){
-  return (+$('hatchAng').value || 0) + (L.angleOffsetDeg || 0);
+  return +L.angleDeg || 0;
 }
 // Smooth 2D value noise: hash the 4 surrounding integer-grid corners
 // pseudo-randomly, then smoothstep-interpolate between them. Continuous
@@ -2053,8 +2056,9 @@ export function onResult(m){
     const lenBefore = pathStats.lenPx;
     const T = layerType(L);
     if (L.type === 'circles'){
-      if (!layerStyle(L.id).on || !m.circlePatternSegs || !m.circlePatternSegs.length) continue;
-      const tex = applyTextureStack({ rep: 'arcs', pieces: m.circlePatternSegs }, L.texture,
+      const pieces = m.circlePatternSegs && m.circlePatternSegs[L.id];
+      if (!layerStyle(L.id).on || !pieces || !pieces.length) continue;
+      const tex = applyTextureStack({ rep: 'arcs', pieces }, L.texture,
         { geometry: T.geometry, mmToPx: pxPerMm() });
       const d = [];
       if (tex.rep === 'polylines'){
@@ -2860,29 +2864,199 @@ function buildPenPathsExport(isLayout, dims){
   return svg;
 }
 
-/* ================= init =================
-   Everything above only declares. This wires the DOM and starts the
-   module's live behaviour — called once by app.js, in script order. */
-// (Re)builds the Lines tab's layer rows from the current instances — at
-// boot, and again after a scene import replaced the list. Each row's
-// listeners write into its instance; applyLayerStyle renders the instance
-// back into the row.
+/* ================= layer rows (Lines tab) =================
+   One row per layer instance, built from `layers` (layers.js) at boot and
+   again whenever the list itself changes — a scene import, or the user
+   adding, duplicating, deleting or reordering a fill layer. A row is a
+   VIEW: its controls write straight into the instance, and applyLayerStyle
+   renders the instance back into the row.
+   An edge row is the plain five-column .layer grid (checkbox, swatch,
+   name, pen, dash). A fill row adds a disclosure triangle in front and
+   duplicate/delete buttons at the end, and owns a settings panel beneath
+   it holding that layer's own solve settings (its type's `settings`
+   schema), shown while the row is expanded. One row at a time is
+   expanded; the circles centre gizmo follows the expanded layer.
+   Fill rows can be dragged to reorder among themselves; edge rows keep
+   the fixed hierarchy above them. Order is drawing priority and, for the
+   hatch passes, the order the shared segment cap runs out in, so a
+   reorder re-solves. */
+let expandedId = null;
+export function expandedLayerId(){ return expandedId; }
+// Every fill row's settings sliders, by layer id then setting key, so the
+// gizmo / a paper change / the Soft shadows toggle can refresh them
+// without rebuilding the rows.
+const fillRowEls = {};
+// Half the page in each axis — the range of a circles centre slider.
+function paperHalf(axis){
+  const layout = computePaperLayout();
+  if (!layout) return 150;
+  return (axis === 'w' ? layout.paperW : layout.paperH) / 2;
+}
+function settingRange(spec){
+  return spec.paperHalf ? { min: -paperHalf(spec.paperHalf), max: paperHalf(spec.paperHalf) } : { min: spec.min, max: spec.max };
+}
+// Pushes a layer's stored values back into its own sliders (after a gizmo
+// drag, or a paper change that rescaled a centre).
+export function syncFillRowValues(id){
+  const els = fillRowEls[id], L = layerById(id);
+  if (!els || !L) return;
+  for (const key in els){ els[key].input.value = L[key]; els[key].refresh(); }
+}
+// Re-applies every circles centre slider's range after a paper change.
+export function syncFillRowRanges(){
+  for (const L of layers){
+    const els = fillRowEls[L.id];
+    if (!els) continue;
+    for (const spec of layerType(L).settings || []){
+      const el = els[spec.key];
+      if (!el || !spec.paperHalf) continue;
+      const r = settingRange(spec);
+      el.input.min = r.min; el.input.max = r.max;
+      L[spec.key] = Math.min(r.max, Math.max(r.min, L[spec.key]));
+      el.input.value = L[spec.key];
+      el.refresh();
+    }
+  }
+}
+// Dims every "below" threshold slider while Soft shadows is off, the same
+// .ctlDisabled treatment the shadow controls get — fillPasses forces those
+// thresholds to 0, so the sliders are genuinely inert.
+export function syncFillRowSoftState(){
+  const on = $('softShadows').checked;
+  for (const id in fillRowEls)
+    for (const key in fillRowEls[id]){
+      const el = fillRowEls[id][key];
+      if (el.spec.soft) el.ctl.classList.toggle('ctlDisabled', !on);
+    }
+}
+// The settings panel under one fill row: a .ctl slider per entry in the
+// type's schema, each writing its own field on the instance.
+function buildFillSettings(L){
+  const wrap = document.createElement('div');
+  wrap.className = 'layerSettings';
+  wrap.hidden = L.id !== expandedId;
+  const els = {};
+  for (const spec of layerType(L).settings){
+    const id = 'ls_' + L.id + '_' + spec.key;
+    const ctl = document.createElement('div');
+    ctl.className = 'ctl';
+    const label = document.createElement('label');
+    label.htmlFor = id;
+    label.textContent = spec.label;
+    const input = document.createElement('input');
+    input.type = 'range'; input.id = id; input.step = spec.step;
+    const r = settingRange(spec);
+    input.min = r.min; input.max = r.max;
+    input.value = L[spec.key];
+    const val = document.createElement('span');
+    val.className = 'val';
+    const refresh = () => { val.textContent = formatValue(spec, input.value); };
+    refresh();
+    input.addEventListener('input', () => {
+      L[spec.key] = +input.value;
+      refresh();
+      markStale();
+      if (spec.paperHalf) updateTextureGizmo();   // the centre moved
+    });
+    makeSliderValueEditable(input, val, spec, refresh);
+    ctl.append(label, input, val);
+    wrap.appendChild(ctl);
+    els[spec.key] = { input, val, ctl, spec, refresh };
+  }
+  fillRowEls[L.id] = els;
+  return wrap;
+}
+// Everything that has to happen when the LIST changes (add, duplicate,
+// delete, reorder): rows rebuilt, the texture tab's layer picker refilled,
+// the gizmo re-pointed, and a re-solve, since order and membership both
+// change what the worker draws.
+function fillLayersChanged(){
+  buildLayerRows();
+  renderTextureStack();
+  updateTextureGizmo();
+  markStale();
+  refreshStatusR();
+}
+function addFillLayer(type){
+  layers.push(newFillLayer(type, nextFillId(), { on: true }));
+  expandedId = layers[layers.length-1].id;
+  fillLayersChanged();
+}
+function duplicateFillLayer(L){
+  const copy = copyLayer(L, nextFillId());
+  layers.splice(layers.indexOf(L) + 1, 0, copy);
+  expandedId = copy.id;
+  fillLayersChanged();
+}
+function deleteFillLayer(L){
+  layers.splice(layers.indexOf(L), 1);
+  if (expandedId === L.id) expandedId = null;
+  delete fillRowEls[L.id];
+  // Its geometry is still in the live SVG until the next solve.
+  const g = document.getElementById('g_' + L.id);
+  if (g) g.remove();
+  fillLayersChanged();
+}
+/* Drag-reorder among fill rows. Same shape as the Layout blocks list: the
+   dragged row is marked while moving, and dropping on another fill row
+   puts it in that row's place. A fill layer can never move above the edge
+   layers, so only positions within the fill run are offered. */
+function wireFillRowDrag(row, L){
+  row.draggable = true;
+  row.addEventListener('dragstart', e => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', L.id);
+    row.classList.add('svDragging');
+  });
+  row.addEventListener('dragend', () => row.classList.remove('svDragging'));
+  row.addEventListener('dragover', e => {
+    if (dragPayloadIsFillLayer(e)) e.preventDefault();   // allow the drop
+  });
+  row.addEventListener('drop', e => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData('text/plain');
+    const from = layers.findIndex(e2 => e2.id === id);
+    const to = layers.indexOf(L);
+    if (from < 0 || from === to || layerType(layers[from]).kind !== 'fill') return;
+    const [moved] = layers.splice(from, 1);
+    layers.splice(layers.indexOf(L) + (from < to ? 1 : 0), 0, moved);
+    fillLayersChanged();
+  });
+}
+// A drag carrying one of our fill rows (the id is only readable on drop in
+// some browsers, so the types list is what's checked here).
+function dragPayloadIsFillLayer(e){
+  return [...e.dataTransfer.types].includes('text/plain');
+}
+// (Re)builds every row from the current instances.
 export function buildLayerRows(){
   for (const id in layerEls) delete layerEls[id];
+  for (const id in fillRowEls) delete fillRowEls[id];
   for (const host of new Set(Object.values(LAYER_TYPES).map(T => T.host))) $(host).replaceChildren();
   for (const L of layers){
+    const T = layerType(L);
+    const isFill = T.kind === 'fill';
+    const name = layerName(L);
     const row = document.createElement('div');
-    row.className = 'layer';
+    row.className = 'layer' + (isFill ? ' fillRow' : '');
     row.innerHTML =
-      '<input type="checkbox" aria-label="' + L.name + ' on">' +
+      (isFill ? '<button type="button" class="rowExpand" aria-label="' + name + ' settings">&#9656;</button>' : '') +
+      '<input type="checkbox" aria-label="' + name + ' on">' +
       '<svg class="swatch" viewBox="0 0 50 14" aria-hidden="true"><path d="M3 7 L47 7" fill="none"/></svg>' +
-      '<span class="nm' + (L.name.startsWith('·') ? ' hid' : '') + '"></span>' +
-      '<select class="penSelect" aria-label="' + L.name + ' pen"></select>' +
-      '<select aria-label="' + L.name + ' dash">' + dashOptionsHtml() + '</select>';
-    row.children[2].textContent = L.name;   // a fill instance's name is user text — never innerHTML
-    $(layerType(L).host).appendChild(row);
-    const [chk, , , pen, dash] = row.children;
-    const sw = row.children[1].firstChild;
+      '<span class="nm' + (name.startsWith('·') ? ' hid' : '') + '"></span>' +
+      '<select class="penSelect" aria-label="' + name + ' pen"></select>' +
+      '<select aria-label="' + name + ' dash">' + dashOptionsHtml() + '</select>' +
+      (isFill
+        ? '<button type="button" class="svBtn rowDup" title="Duplicate layer" aria-label="Duplicate ' + name + '">&#10697;</button>' +
+          '<button type="button" class="svBtn svDelete" title="Delete layer" aria-label="Delete ' + name + '">&#10005;</button>'
+        : '');
+    const host = $(T.host);
+    host.appendChild(row);
+    const expand = isFill ? row.children[0] : null;
+    const chk = row.querySelector('input[type=checkbox]');
+    const sw = row.querySelector('.swatch').firstChild;
+    const [pen, dash] = row.querySelectorAll('select');
+    row.querySelector('.nm').textContent = name;
     fillPenSelect(pen, L.pen);
     layerEls[L.id] = { chk, pen, dash, sw };
     pen.addEventListener('change', () => { L.pen = pen.value; applyLayerStyle(L.id); });
@@ -2895,8 +3069,24 @@ export function buildLayerRows(){
       syncLineLayerUI();
       updateTextureGizmo();   // the Circles centre gizmo follows its layer's checkbox
     });
+    if (isFill){
+      const panel = buildFillSettings(L);
+      host.appendChild(panel);
+      row.classList.toggle('rowExpanded', L.id === expandedId);
+      expand.addEventListener('click', () => {
+        expandedId = expandedId === L.id ? null : L.id;
+        for (const other of host.querySelectorAll('.fillRow')) other.classList.remove('rowExpanded');
+        for (const other of host.querySelectorAll('.layerSettings')) other.hidden = true;
+        if (expandedId === L.id){ row.classList.add('rowExpanded'); panel.hidden = false; }
+        updateTextureGizmo();   // the gizmo follows whichever circles layer is open
+      });
+      row.querySelector('.rowDup').addEventListener('click', () => duplicateFillLayer(L));
+      row.querySelector('.svDelete').addEventListener('click', () => deleteFillLayer(L));
+      wireFillRowDrag(row, L);
+    }
     applyLayerStyle(L.id);
   }
+  syncFillRowSoftState();
 }
 
 /* ================= init =================
@@ -2904,6 +3094,19 @@ export function buildLayerRows(){
    module's live behaviour — called once by app.js, in script order. */
 export function initSvgExport(){
   buildLayerRows();
+  // "+ Add layer": one option per fill type, and back to the placeholder
+  // after each pick (it is an action, not a stored choice).
+  const addSel = $('addLayerSelect');
+  addSel.replaceChildren(...[['', '+ Add layer…'], ...FILL_TYPES.map(t => [t, LAYER_TYPES[t].name])].map(([value, text]) => {
+    const opt = document.createElement('option');
+    opt.value = value; opt.textContent = text;
+    return opt;
+  }));
+  addSel.addEventListener('change', () => {
+    const type = addSel.value;
+    addSel.value = '';
+    if (type) addFillLayer(type);
+  });
   buildDashFields('D1');
   buildDashFields('D2');
   $('addDashBtn').addEventListener('click', addDashSlot);

@@ -30,8 +30,13 @@
                  function named by several entries runs once, in the
                  order entries appear here (see restoreHooks)
 
-   Not here: each layer's on/pen/dash and its texture stack — those are
-   the layer instances (layers.js), saved as their own block of a .pen.
+   Not here: everything that belongs to one layer — on/pen/dash, the fill
+   settings (angle, spacing, threshold, circles centre) and the texture
+   stack. Those are the layer instances (layers.js), saved as their own
+   block of a .pen. Ids of controls this registry no longer has
+   (hatchAng, hatchMin/Max, hatchThr, crossThr, deepThr, texCirclesThr,
+   texGroundPatternCenterX/Y, the texture ids) live on only in that
+   file's loaders, which read them out of an older scene's settings.
 
    Every onRestore target is a hoisted `function` declaration in its
    module, so referencing it here at module top level is safe inside the
@@ -74,18 +79,11 @@ export const SETTINGS = [
   /* ---- light ---- */
   range('lightAz', { unit:'°', light:true, clearsView:true, onRestore: [updateLight, updateLightGizmo] }),
   range('lightEl', { unit:'°', light:true, clearsView:true, onRestore: [updateLight, updateLightGizmo] }),
-  /* ---- hatching ---- */
-  range('hatchAng', { unit:'°' }),
-  range('hatchMin', { unit:'mm' }),
-  range('hatchMax', { unit:'mm' }),
+  /* ---- hatching ----
+     Angle, spacing, threshold and the circles centre are per fill layer
+     now (LAYER_TYPES[...].settings in layers.js, saved with the layer);
+     only the segment cap is still shared by every pass. */
   range('hatchCap', { presets: HATCH_CAP_PRESETS }),
-  range('hatchThr', { unit:'' }),
-  range('crossThr', { unit:'' }),
-  range('deepThr',  { unit:'' }),
-  /* ---- circles pattern ---- */
-  range('texGroundPatternCenterX', { unit:'mm', decimals:1 }),
-  range('texGroundPatternCenterY', { unit:'mm', decimals:1 }),
-  range('texCirclesThr', { unit:'', decimals:2 }),
   /* ---- lines ---- */
   chk('watertight'),
   range('dedupOffMult', { unit:'×', decimals:2 }),

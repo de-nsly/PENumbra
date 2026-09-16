@@ -133,11 +133,12 @@ function buildEdgeChains(mask, ne, ea, eb, pos){
    then. */
 function legacyFillPasses(S){
   const h = S.hatch || {};
+  const sp = { minS:h.minS, maxS:h.maxS };   // one global spacing back then
   const out = [];
-  if (h.p1) out.push({ id:'h1', type:'hatch', angleDeg:h.ang,    thr:h.hatchThr });
-  if (h.p2) out.push({ id:'h2', type:'hatch', angleDeg:h.ang+90, thr:h.crossThr });
-  if (h.p3) out.push({ id:'h3', type:'hatch', angleDeg:h.ang+45, thr:h.deepThr });
-  if (S.circlesOn) out.push({ id:'cr', type:'circles', thr:S.circlesThr, centerX:S.groundPatternCenterX, centerY:S.groundPatternCenterY });
+  if (h.p1) out.push({ id:'h1', type:'hatch', angleDeg:h.ang,    thr:h.hatchThr, ...sp });
+  if (h.p2) out.push({ id:'h2', type:'hatch', angleDeg:h.ang+90, thr:h.crossThr, ...sp });
+  if (h.p3) out.push({ id:'h3', type:'hatch', angleDeg:h.ang+45, thr:h.deepThr,  ...sp });
+  if (S.circlesOn) out.push({ id:'cr', type:'circles', thr:S.circlesThr, ...sp, centerX:S.groundPatternCenterX, centerY:S.groundPatternCenterY });
   return out;
 }
 
@@ -178,12 +179,13 @@ function generate(cam, S, shadingBuffer){
   const SHADOW_ONLY_THR = 0.01;
   const castOnly = !!(S.shadow && S.shadow.on) && !S.hatch.softShadowsOn;
   // Fill passes — one descriptor per enabled fill layer, in layer order (see
-  // fillPasses in js/panel-controls.js): hatch {id, type, angleDeg, thr},
-  // circles {id, type, thr, centerX, centerY}. Only the first circles pass is
-  // drawn: the result carries one circlePatternSegs list.
+  // fillPasses in js/panel-controls.js): hatch {id, type, angleDeg, thr,
+  // minS, maxS}, circles {id, type, thr, minS, maxS, centerX, centerY}.
+  // Every setting is the layer's own; groups, hatchCarrier and
+  // circlePatternSegs in the result are keyed by these ids.
   const fillPasses = Array.isArray(S.passes) ? S.passes : legacyFillPasses(S);
   const hatchPasses = fillPasses.filter(p => p.type === 'hatch');
-  const circlesPass = fillPasses.find(p => p.type === 'circles') || null;
+  const circlesPasses = fillPasses.filter(p => p.type === 'circles');
   // depth key, affine in screen space, bigger = closer:
   //   perspective → 1/dist   ·   orthographic → view-space z (negative dist)
   const { nv, nt, tri } = M;
@@ -434,7 +436,7 @@ function generate(cam, S, shadingBuffer){
      needed its own copy, matching the union of their individual trigger
      conditions exactly. */
   const needSharedShadowMap = (S.shadow && S.shadow.on) ||
-    (circlesPass && S.ground && S.ground.on && Ly > 1e-6);
+    (circlesPasses.length && S.ground && S.ground.on && Ly > 1e-6);
   const sharedShadowMap = needSharedShadowMap
     ? buildShadowMap(pos, tri, fn, nt, S.light, S.watertight, M.radius*2e-3)
     : null;
@@ -1940,9 +1942,10 @@ function generate(cam, S, shadingBuffer){
      isn't a meaningful concept the way a model face's is) — they're
      purely boolean, always densest wherever the ground shadow test is
      true, matching the same override-only treatment. */
-  let circlePatternSegs = null;
-  if (circlesPass){
-    const minS = Math.max(1, S.hatch.minS), maxS = Math.max(minS+0.5, S.hatch.maxS);
+  // One entry per circles pass that produced arcs, keyed by its layer id.
+  const circlePatternSegs = {};
+  for (const circlesPass of circlesPasses){
+    const minS = Math.max(1, circlesPass.minS), maxS = Math.max(minS+0.5, circlesPass.maxS);
     // See SHADOW_ONLY_THR/castOnly at the top of generate() — automates
     // the "set every below slider to 0.01" manual trick for Cast-shadow-
     // only mode, now that buffer mode tests one combined threshold.
@@ -2083,7 +2086,7 @@ function generate(cam, S, shadingBuffer){
     // model arrives here as two abutting arcs. Rejoin them into one, the way
     // hatch already merges its own per-carrier intervals from both sources
     // (lineVis, further down) — same MIN_SEG*0.5 tolerance, same reasoning.
-    if (segs.length) circlePatternSegs = mergeRingPieces(segs, MIN_SEG*0.5);
+    if (segs.length) circlePatternSegs[circlesPass.id] = mergeRingPieces(segs, MIN_SEG*0.5);
   }
 
   /* 8 · hatching */
@@ -2098,7 +2101,10 @@ function generate(cam, S, shadingBuffer){
     // had this problem.
     const meshInvertActive = !!S.invertShadows &&
       (!!(S.hatch && S.hatch.softShadowsOn) || !!(S.shadow && S.shadow.on));
-    const minS=Math.max(1, S.hatch.minS), maxS=Math.max(minS+0.5, S.hatch.maxS);
+    // Spacing is per pass (each hatch layer has its own), so these are set at
+    // the top of the pass loop below and read by the carrier walk and by the
+    // closures defined here, which all run inside that loop.
+    let minS = 1, maxS = 1.5;
     // user-configurable (see the Hatch cap slider) — higher allows denser
     // hatching before it gets cut off, at the cost of a slower solve; shadows
     // the module-level default, which stays as the fallback for stale/older
@@ -2281,7 +2287,8 @@ function generate(cam, S, shadingBuffer){
     };
     // In the order the settings list them: hatchTotal/capped are shared
     // across passes, so order decides which pass the cap cuts short.
-    const passes = hatchPasses.map(p => ({ key: p.id, ang: p.angleDeg, thr: castOnly ? SHADOW_ONLY_THR : p.thr }));
+    const passes = hatchPasses.map(p => ({ key: p.id, ang: p.angleDeg, thr: castOnly ? SHADOW_ONLY_THR : p.thr,
+      minS: p.minS, maxS: p.maxS }));
     // global screen bbox of projected verts (keeps hatch families aligned across faces)
     let gx0=1/0,gy0=1/0,gx1=-1/0,gy1=-1/0, any=false;
     for (let i=0;i<nv;i++) if (ok[i]){
@@ -2358,6 +2365,7 @@ function generate(cam, S, shadingBuffer){
     };
     if (any) for (let pi=0; pi<passes.length && !capped; pi++){
       const pass=passes[pi], grp=groups[pass.key];
+      minS = Math.max(1, pass.minS); maxS = Math.max(minS+0.5, pass.maxS);   // this layer's own spacing
       const rad=pass.ang*Math.PI/180;
       const dx=Math.cos(rad), dy=Math.sin(rad), nx=-dy, ny=dx;   // line dir · family normal
       // global extent along dir/normal

@@ -99,20 +99,27 @@ you're editing first.
 solve, reply `result`) -> `recomputeSmoothAngle`, `debugRawEdges`, `testShadingSample` for narrower
 recompute/debug paths. The worker keeps mesh state in a module-level `M`, rebuilt only on `load`/`demo`.
 The `generate` settings (`gatherSettings`, `panel-controls.js`) carry the edge layers as `layerOn` and the
-fill layers as `passes`, one descriptor per enabled fill layer in layer order (`fillPasses`); the result's
-`groups` and `hatchCarrier` are keyed by layer id.
+fill layers as `passes`, one descriptor per enabled fill layer in layer order (`fillPasses`), each with
+that layer's own angle/spacing/threshold/centre; the result's `groups`, `hatchCarrier` and
+`circlePatternSegs` are keyed by layer id.
 
 **HLR pipeline** (inside the worker, see `generate()`): build mesh + adjacency -> compute a shadow map for
 soft-shadow sampling -> per-face/per-edge visibility via ray occlusion (`occlude`, `buildShadowMap`) ->
 classify edges into silhouette/contour/crease, each split into visible/hidden -> generate hatch/crosshatch/
 circle fill patterns for shaded faces -> post back flat segment arrays per layer.
 
-**Layer model** (`layers` in `layers.js`): an ordered array of layer instances `{id, type, name, on, pen,
-dash, texture}`. Ids `so` silhouette, `iv`/`ih` silhouette individual, `sv`/`sh` contour (historically
-"silhouette visible/hidden"), `cv`/`ch` crease, `h1`/`h2`/`h3` hatch/crosshatch/deep shadow (type `hatch`),
-`cr` circles (type `circles`). The instance is the state; the Lines-tab rows (`layerEls`, `svg-export.js`)
-are a view of it. `texture` is an ordered stack of filter entries typed by `TEXTURE_FILTERS`; an empty
-stack is no texture, and only fill layers apply theirs today. Order is the drawing-priority hierarchy:
+**Layer model** (`layers` in `layers.js`): an ordered array of layer instances `{id, type, on, pen, dash,
+texture, …fill settings}`. Ids `so` silhouette, `iv`/`ih` silhouette individual, `sv`/`sh` contour
+(historically "silhouette visible/hidden"), `cv`/`ch` crease, `h1`/`h2`/`h3` the first three hatch layers
+(once Hatch/Crosshatch/Deep shadow), `cr` the first circles layer; layers the user adds get `f1`, `f2`, …
+(`nextFillId`, never reused in a session). Edge layers are fixed singletons; fill layers can be added,
+duplicated, deleted and reordered among themselves, any number of each type. Every fill setting is the
+layer's own — `angleDeg` (hatch), `minSpacing`/`maxSpacing` in mm, `threshold`, and `centerX`/`centerY` for
+circles — declared by its type's `settings` schema, which also drives the row's sliders. Names are derived
+from the type plus the layer's number among its type (`layerName`), never stored. The instance is the
+state; the Lines-tab rows (`layerEls`, `svg-export.js`) are a view of it. `texture` is an ordered stack of
+filter entries typed by `TEXTURE_FILTERS`; an empty stack is no texture, and only fill layers apply theirs
+today. Order is the drawing-priority hierarchy:
 higher entries win ink-avoidance against lower ones, and the array is walked in reverse when painting so
 the highest-priority layer ends up on top. Toggling any single layer can change what survives in every
 layer below it, so every layer checkbox re-runs the pipeline; there is no display-only toggle.
@@ -138,8 +145,10 @@ or writing code that touches either.
 **Scene files (`.pen`):** `scene-io.js` handles save/load of the entire app state (model geometry, camera,
 every setting, the pen library, the layer instances with their texture stacks) as a single JSON-ish `.pen`
 file, with the model embedded as base64. It writes `penumbraScene: 2` (layers as the instance array) and
-loads version 1 too (`sceneLayers` in `layers.js` rebuilds each fill layer's stack from the old General /
-per-layer texture settings).
+loads version 1 too: `sceneLayers` in `layers.js` gives each fill layer its own copy of what used to be
+global (hatch angle plus its offset, spacing, its threshold slider, the circles centre) and rebuilds its
+texture stack from the old General / per-layer texture settings. Those control ids exist only in that
+loader now. A version-2 file written before fill settings moved onto the layers is read the same way.
 
 ## Working in this codebase
 

@@ -663,6 +663,17 @@ input[type=number]{width:58px}
    above, only with their own columns: preview | name | color | width | delete. */
 .layer.penLibRow,.rowsHead.penLibRow{grid-template-columns:50px 1fr 26px 56px 24px}
 .penLibRow .nm{cursor:text}
+/* A fill layer's row: the same .layer grid with a disclosure triangle in
+   front and duplicate/delete at the end, and its own settings panel
+   (.layerSettings, a stack of ordinary .ctl rows) shown while expanded. */
+.layer.fillRow{grid-template-columns:14px 16px 50px 1fr 72px 44px 24px 24px}
+.fillRow[draggable="true"]{cursor:grab}
+.fillRow.svDragging{opacity:.4}
+.rowExpand{background:none;border:0;padding:0;color:var(--muted);cursor:pointer;
+  font-size:var(--fs-data);line-height:1;transition:transform .12s}
+.rowExpand:hover{color:var(--accent)}
+.fillRow.rowExpanded .rowExpand{transform:rotate(90deg);color:var(--accent)}
+.layerSettings{padding:2px 0 6px 20px;border-bottom:1px dashed var(--divider)}
 .swatch{width:50px;height:14px;background:var(--paper);border-radius:2px;display:block}
 #pageColor{width:56px;height:24px;border:1px solid var(--line);border-radius:4px;background:none;cursor:pointer}
 .rowsHead{display:grid;grid-template-columns:16px 50px 1fr 88px 58px;gap:6px;

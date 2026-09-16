@@ -11,7 +11,7 @@
    replaces the layer list.
    ================================================================ */
 import { $ } from './main.js';
-import { TEXTURE_FILTERS, fillLayers, filterSupports, layerById, layerType, newFilter } from './layers.js';
+import { TEXTURE_FILTERS, fillLayers, filterSupports, layerById, layerName, layerType, newFilter } from './layers.js';
 import { formatValue } from './settings.js';
 import { makeSliderValueEditable, markStale } from './panel-controls.js';
 
@@ -86,7 +86,7 @@ export function renderTextureStack(){
   const L = selectedLayer();
   layerSel.replaceChildren(...fillLayers().map(F => {
     const opt = document.createElement('option');
-    opt.value = F.id; opt.textContent = F.name;   // user text — never innerHTML
+    opt.value = F.id; opt.textContent = layerName(F);
     return opt;
   }));
   list.replaceChildren();

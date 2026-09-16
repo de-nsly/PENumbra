@@ -24,7 +24,7 @@
    selecting/dragging never touches block content nodes and vice versa.
    ================================================================ */
 import { $, DASH_KEYS, PEN_LIBRARY, dashOnFraction, isFormControlTarget, isTextEntryTarget, penById, positionSegPill, scaledDash, svgEl } from './main.js';
-import { layerById, layers } from './layers.js';
+import { layerById, layerName, layers } from './layers.js';
 import { PAPERS, buildTrimMaskGroup, computeDStats, computePaperLayout, dashOptionsHtml, fillPenSelect, getMargins, refreshStatusR, renderPaper, syncPreviewTrimMask } from './svg-export.js';
 import { activeTab, setActiveTab, lastGen, makeNameEditable, markStale } from './panel-controls.js';
 import { setActiveSheet, applyPv, resetPvFitWithRulers, updateRuler } from './paper-preview.js';
@@ -1529,9 +1529,10 @@ function openLayerContextMenu(block, clientX, clientY){
     if (!(L.id in block.layerPaths)) continue;
     const row = document.createElement('div');
     row.className = 'savedView';
+    const name = layerName(L);
     let html =
-      '<span class="svName">' + L.name + '</span>' +
-      '<button type="button" class="svBtn svEye" title="Toggle visibility" aria-label="Toggle ' + L.name + ' visibility">' +
+      '<span class="svName">' + name + '</span>' +
+      '<button type="button" class="svBtn svEye" title="Toggle visibility" aria-label="Toggle ' + name + ' visibility">' +
         (block.layerVisible[L.id] ? '&#9673;' : '&#9675;') + '</button>';
     if (block.override){
       if (!block.overrideStyle[L.id]){
@@ -1543,8 +1544,8 @@ function openLayerContextMenu(block, clientX, clientY){
         // separating "visibility" from "the rest of the per-layer style".
         '<span class="ctxSpacer" aria-hidden="true"></span>' +
         // Options filled below via fillPenSelect (pen names are user text).
-        '<select class="penSelect" aria-label="' + L.name + ' override pen"></select>' +
-        '<select aria-label="' + L.name + ' override dash">' + dashOptionsHtml() + '</select>';
+        '<select class="penSelect" aria-label="' + name + ' override pen"></select>' +
+        '<select aria-label="' + name + ' override dash">' + dashOptionsHtml() + '</select>';
     }
     // Assigned ONCE, in full, before any listener gets attached below — an
     // earlier version built this with a second row.innerHTML += for the

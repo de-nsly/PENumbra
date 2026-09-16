@@ -16,10 +16,18 @@
    viewport to fit) lives in layout-canvas.js.
    ================================================================ */
 import { $, onMiddleDblClick, svgEl } from './main.js';
-import { fillLayers, layerType, layers } from './layers.js';
-import { baseSheetSize, computePaperLayout, layerStyle } from './svg-export.js';
+import { layerType, layers } from './layers.js';
+import { baseSheetSize, computePaperLayout, expandedLayerId, layerStyle, syncFillRowValues } from './svg-export.js';
 import { computeLayoutPaperDims, selectedBlocks, updateSelectionOverlay } from './layout-canvas.js';
-import { activeTab } from './panel-controls.js';
+import { activeTab, markStale } from './panel-controls.js';
+
+// Which circles layer the centre gizmo belongs to: the one whose row is
+// open in the Lines tab, else the first enabled circles layer. Null when no
+// circles layer is on, which also hides the gizmo.
+function gizmoCirclesLayer(){
+  const open = layers.find(L => L.type === 'circles' && L.id === expandedLayerId() && L.on);
+  return open || layers.find(L => L.type === 'circles' && L.on) || null;
+}
 
 const pane2 = $('paperPane');
 export const pv = { z: 1, tx: 0, ty: 0 };            // tx/ty: sheet-center offset from pane-center, in CSS px
@@ -219,17 +227,14 @@ export function updateTextureGizmo(){
   // redrawn here, before any of the gizmo's own early returns below.
   updateRuler();
   drawPathEndpointMarkers();
-  // The centre is one global setting today (texGroundPatternCenterX/Y), so
-  // any enabled Circles layer shows the gizmo.
-  const circlesOn = fillLayers().some(L => L.type === 'circles' && L.on);
-  const visible = activeTab === 'preview' && circlesOn && $('texGizmoShow').checked;
+  // The gizmo drags ONE circles layer's centre: the expanded row's layer if
+  // that is a circles layer, else the first enabled one (gizmoCirclesLayer).
+  const L = gizmoCirclesLayer();
+  const visible = activeTab === 'preview' && L && $('texGizmoShow').checked;
   if (!visible) return;
   const layout = computePaperLayout();
   if (!layout) return;
-  const pos = previewMmToScreen(
-    layout.paperW/2 + (+$('texGroundPatternCenterX').value || 0),
-    layout.paperH/2 + (+$('texGroundPatternCenterY').value || 0)
-  );
+  const pos = previewMmToScreen(layout.paperW/2 + L.centerX, layout.paperH/2 + L.centerY);
   if (!pos) return;
   const [gx, gy] = pos;
   const c = svgEl('circle');
@@ -476,21 +481,21 @@ export function initPaperPreview(){
     if (!layout) return;
     const mm = screenToPreviewMm(e.clientX, e.clientY);
     if (!mm) return;
-    const xSlider = $('texGroundPatternCenterX'), ySlider = $('texGroundPatternCenterY');
-    xSlider.value = Math.min(+xSlider.max, Math.max(+xSlider.min, mm[0] - layout.paperW/2));
-    ySlider.value = Math.min(+ySlider.max, Math.max(+ySlider.min, mm[1] - layout.paperH/2));
-    // Dispatching real 'input' events reuses the existing slider pipeline
-    // (markStale + refreshValLabel) instead of duplicating it — markStale's
-    // own debounce means the actual regenerate naturally only fires once
-    // the drag settles, not on every pointermove.
-    xSlider.dispatchEvent(new Event('input'));
-    ySlider.dispatchEvent(new Event('input'));
+    const L = gizmoCirclesLayer();
+    if (!L) return;
+    // Clamped to the page, the same range that layer's own Center sliders
+    // have (half the page either way from its centre).
+    L.centerX = Math.min(layout.paperW/2, Math.max(-layout.paperW/2, mm[0] - layout.paperW/2));
+    L.centerY = Math.min(layout.paperH/2, Math.max(-layout.paperH/2, mm[1] - layout.paperH/2));
+    // Push the new values into that row's sliders and re-solve — markStale's
+    // own debounce means the actual regenerate naturally only fires once the
+    // drag settles, not on every pointermove.
+    syncFillRowValues(L.id);
+    markStale();
     updateTextureGizmo();
   });
   document.addEventListener('pointerup', () => { gizmoDragging = false; });
   document.addEventListener('pointercancel', () => { gizmoDragging = false; });
-  $('texGroundPatternCenterX').addEventListener('input', updateTextureGizmo);
-  $('texGroundPatternCenterY').addEventListener('input', updateTextureGizmo);
   $('texGizmoShow').addEventListener('change', updateTextureGizmo);
   // updateTextureGizmo is the single redraw entry point for previewOverlaySvg —
   // it owns the wipe — so toggling the endpoint markers goes through it too.

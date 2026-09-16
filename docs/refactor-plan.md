@@ -276,7 +276,32 @@ never byte-stable and the harness ignores it.
 Byte-identity check: the demo golden covers h1/h2/h3 with cast shadows; the arches golden covers ground
 shadow too. Run both after this step.
 
-### 4d. Dynamic fill layers (the user's feature 1, UI part only)
+### 4d. Dynamic fill layers (the user's feature 1) — DONE 2026-09-16
+
+Done as specified, with the user's answers on the open UI questions:
+- **Settings inline under the row.** Each fill row has a disclosure triangle; opening it shows that
+  layer's own sliders (`LAYER_TYPES[type].settings` drives them, `.layerSettings` under the row). One row
+  open at a time; the circles centre gizmo follows the open circles layer, else the first enabled one.
+- **Row actions: duplicate, delete, drag-reorder.** No rename — names are derived (`layerName`): the
+  type plus the layer's number among its type, so deleting renumbers. The three hatch layers are now
+  "Hatch 1/2/3", not Hatch/Crosshatch/Deep shadow; only their names changed, their angles and thresholds
+  are the same values those layers always solved with.
+- **"+ Add layer" offers each fill type**, any number of each; a new layer starts at its type's fixed
+  defaults (hatch 45°, 1–7mm, 0.92), not a copy of a neighbour.
+- **Angle range is 0–360, not 0–180.** A family's carrier lines at 217° are anchored from the opposite
+  end of the drawing than at 37°, so wrapping into a half turn moves the lines; scenes whose global angle
+  plus offset exceeded 180 need the wide range to migrate to exactly what they drew. The harness caught
+  this: 21 of 144 configurations differed until the clamp was removed.
+- **Worker:** spacing is per pass (`minS`/`maxS` assigned at the top of the pass loop, read by the
+  carrier walk and the closures defined above it); every circles pass draws, and `circlePatternSegs` is
+  keyed by layer id.
+- **Deleting a layer also drops its frozen ink from existing Layout blocks** (`createBlockDom` builds
+  groups from the current layers), since there is no longer a layer to take the pen/dash from.
+- **Verified:** verify-golden identical; the old-vs-new worker comparison (72 random configurations,
+  each also fed through the version-1 migration into per-layer settings) 144/144 identical; the texture
+  comparison against the pre-4b `onResult` still 168/168; plus a new check with 5 hatch + 2 circles
+  layers confirming per-layer settings reach the worker and a version-2 save/load round trip reproduces
+  the same result exactly.
 
 After 4b/4c this is additive: an "+ Add layer" control on the Lines tab offering the fill types, a delete
 button per fill row, `layers.push({ id: nextFillId(), type, …defaults })`, drag-reorder among fill rows

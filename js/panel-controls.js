@@ -10,7 +10,7 @@ import { $, APP_VERSION, isFormControlTarget, positionSegPill, worker } from './
 import { HATCH_CAP_PRESETS, SETTINGS, SHADOW_BUDGET_PRESETS, formatValue, settingById } from './settings.js';
 import { camera, captureShadingBuffer, clearActiveView, lightVec, modelMesh, modelPivot, syncGroundCatcher, syncShadowCasting, updateLight, updateLightGizmo, updateModelRotation, vp } from './viewport3d.js';
 import { layerType, layers } from './layers.js';
-import { computePaperLayout, layerStyle } from './svg-export.js';
+import { computePaperLayout, layerStyle, syncFillRowRanges, syncFillRowSoftState } from './svg-export.js';
 import { updateTextureGizmo } from './paper-preview.js';
 import { pendingSoIvExport } from './scene-io.js';
 
@@ -166,32 +166,30 @@ export function clearStale(){
    order (the hatch cap is shared across hatch passes, so order matters).
      hatch   { id, type, angleDeg, thr }
      circles { id, type, thr, centerX, centerY }   (centre in worker px)
+   Every value is the layer's own (layers.js); nothing is shared between
+   passes except the segment cap. Spacing is authored in mm and converted
+   here, as is the circles centre, which the user sets as an offset from
+   the page centre and the solver wants in its own pixel space.
    thr is the layer's "below" threshold. Soft shadows off → 0 for every
    pass (unreachable since brightness is always >=0), disabling the ambient
    brightness-based bands while leaving Cast/Ground shadow fills (which
-   don't go through this threshold) untouched; the sliders' own values are
+   don't go through this threshold) untouched; the layers' own values are
    left alone so re-enabling Soft shadows restores exactly what the user
-   had. Angle, threshold and centre still come from global controls, which
-   each instance references (angleOffsetDeg / thrControl, layers.js). */
+   had. */
 function fillPasses(layout, mmToPx){
   const soft = $('softShadows').checked;
   const out = [];
   for (const L of layers){
     const T = layerType(L);
     if (T.kind !== 'fill' || !L.on) continue;
-    const v = +$(L.thrControl).value;
-    const thr = soft ? (T.thrFallback ? (v || T.thrFallback) : v) : 0;
-    if (L.type === 'hatch'){
-      out.push({ id: L.id, type: L.type, angleDeg: +$('hatchAng').value + L.angleOffsetDeg, thr });
-    } else {
-      out.push({ id: L.id, type: L.type, thr,
-        centerX: layout
-          ? mmToPx(layout.paperW/2 + (+$('texGroundPatternCenterX').value || 0) - layout.offX)
-          : (+$('texGroundPatternCenterX').value || 0),
-        centerY: layout
-          ? mmToPx(layout.paperH/2 + (+$('texGroundPatternCenterY').value || 0) - layout.offY)
-          : (+$('texGroundPatternCenterY').value || 0) });
+    const pass = { id: L.id, type: L.type, thr: soft ? L.threshold : 0,
+      minS: mmToPx(L.minSpacing), maxS: mmToPx(L.maxSpacing) };
+    if (L.type === 'hatch') pass.angleDeg = L.angleDeg;
+    else {
+      pass.centerX = layout ? mmToPx(layout.paperW/2 + L.centerX - layout.offX) : L.centerX;
+      pass.centerY = layout ? mmToPx(layout.paperH/2 + L.centerY - layout.offY) : L.centerY;
     }
+    out.push(pass);
   }
   return out;
 }
@@ -233,14 +231,12 @@ export function gatherSettings(){
     layerOn: Object.fromEntries(layers.filter(L => layerType(L).kind === 'edge').map(L => [L.id, L.on])),
     // One descriptor per ENABLED fill layer, in layer order (fillPasses).
     passes: fillPasses(layout, mmToPx),
-    // Fill settings still shared by every pass (they move onto the
-    // instances in refactor plan §4d).
+    // All that is left shared by every fill pass: the segment cap, and
+    // whether Soft shadows is on at all. softShadowsOn is sent explicitly
+    // (not inferred from thr===0) so the worker can tell "soft shadows
+    // genuinely off" apart from "a threshold just happens to be low" —
+    // see castOnly / SHADOW_ONLY_THR at the top of generate().
     hatch: {
-      minS: mmToPx(+$('hatchMin').value), maxS: mmToPx(+$('hatchMax').value),
-      // softShadowsOn is sent explicitly (not inferred from thr===0) so the
-      // worker can tell "soft shadows genuinely off" apart from "a
-      // threshold slider just happens to be low" — see castOnly /
-      // SHADOW_ONLY_THR at the top of generate().
       softShadowsOn: $('softShadows').checked,
       cap: HATCH_CAP_PRESETS[+$('hatchCap').value],
     },
@@ -352,46 +348,41 @@ export function syncLineLayerUI(){
   $('contourMaxHopsCtl').classList.toggle('ctlDisabled', !contourOn);
   $('creaseDegCtl').classList.toggle('ctlDisabled', !creaseOn);
 }
-// Texture pattern's Center X/Y are offsets from the page's own center
-// (redefined from the solver's arbitrary origin — see groundPatternCenterX/Y
-// in gatherSettings above), so the natural range is exactly half the page
-// in each direction: reaching the slider's max/min lands exactly on the
-// page edge, never beyond it. Reapplies the position as a fraction of the
-// page's half-width/half-height whenever the page size or orientation
-// actually changes (tracked via the last-seen paperW/paperH below), so a
-// point 30% of the way to the edge stays 30% of the way to the edge on the
-// new page — rescaling both up and down, not just clamping. This also
-// makes the old "auto-center on first activation" logic unnecessary: 0,0
-// already means page center by definition now, so there's nothing left to
-// default away from.
+// A circles layer's Center X/Y are offsets from the page's own center, so
+// the natural range is exactly half the page in each direction: reaching a
+// slider's max/min lands exactly on the page edge, never beyond it. When the
+// page size or orientation actually changes, each centre is reapplied as a
+// fraction of the page's half-width/half-height (tracked via the last-seen
+// paperW/paperH below), so a point 30% of the way to the edge stays 30% of
+// the way to the edge on the new page — rescaling both up and down, not just
+// clamping. 0,0 is the page centre by definition, so there is nothing to
+// default away from. Called from renderPaper; the row sliders' own ranges
+// are refreshed by syncFillRowRanges (svg-export.js).
 let _gpLastPaperW = null, _gpLastPaperH = null;
 export function updateGroundPatternSliderRange(){
   const layout = computePaperLayout();
   if (!layout) return;
-  const xEl = $('texGroundPatternCenterX'), yEl = $('texGroundPatternCenterY');
   if (_gpLastPaperW !== null && (_gpLastPaperW !== layout.paperW || _gpLastPaperH !== layout.paperH)){
-    const oldHalfW = _gpLastPaperW/2, oldHalfH = _gpLastPaperH/2;
-    const fracX = oldHalfW > 0 ? (+xEl.value)/oldHalfW : 0;
-    const fracY = oldHalfH > 0 ? (+yEl.value)/oldHalfH : 0;
-    xEl.value = fracX * (layout.paperW/2);
-    yEl.value = fracY * (layout.paperH/2);
+    const kx = _gpLastPaperW > 0 ? layout.paperW/_gpLastPaperW : 1;
+    const ky = _gpLastPaperH > 0 ? layout.paperH/_gpLastPaperH : 1;
+    for (const L of layers){
+      if (L.type !== 'circles') continue;
+      L.centerX *= kx;
+      L.centerY *= ky;
+    }
   }
-  xEl.min = -layout.paperW/2; xEl.max = layout.paperW/2;
-  yEl.min = -layout.paperH/2; yEl.max = layout.paperH/2;
   _gpLastPaperW = layout.paperW; _gpLastPaperH = layout.paperH;
-  refreshValLabel(xEl); refreshValLabel(yEl);
+  syncFillRowRanges();
 }
-// Soft shadows: the per-face ambient brightness bands (Hatch/Cross/Deep
-// below) that give gradual, soft-looking shading — distinct from Cast
-// shadows / Ground shadow, which are hard, occlusion-based shadows and stay
-// fully independent of this toggle. Turning it off grays out the three
-// threshold sliders and (in gatherSettings) forces their effective value to
-// 0 so no face qualifies for ambient hatching, without touching the sliders'
-// own stored positions — turning Soft shadows back on restores them exactly.
+// Soft shadows: the per-face ambient brightness bands that give gradual,
+// soft-looking shading — distinct from Cast shadows / Ground shadow, which
+// are hard, occlusion-based shadows and stay fully independent of this
+// toggle. Turning it off grays out every fill layer's "below" slider and (in
+// fillPasses) forces its effective value to 0 so no face qualifies for
+// ambient hatching, without touching the layers' own stored values —
+// turning Soft shadows back on restores them exactly.
 export function syncSoftShadowsUI(){
-  const on = $('softShadows').checked;
-  for (const id of ['hatchThrCtl','crossThrCtl','deepThrCtl'])
-    $(id).classList.toggle('ctlDisabled', !on);
+  syncFillRowSoftState();
 }
 export function buildCamMessage(){
   camera.updateMatrixWorld(true);
