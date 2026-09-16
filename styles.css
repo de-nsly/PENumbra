@@ -323,8 +323,12 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
 #blocksList .svDragHandle{width:18px;height:22px;display:flex;align-items:center;justify-content:center;
   cursor:grab;color:var(--muted);touch-action:none}
 #blocksList .svDragHandle:hover{color:var(--text)}
-#blocksList .savedView.svDragging{opacity:.4}
-#blocksList .svInsertLine{position:absolute;left:6px;right:6px;height:2px;background:var(--accent);border-radius:1px;pointer-events:none}
+/* Drag-reorder feedback, shared by the Layout blocks list and the fill layer
+   rows: the dragged row dims in place while an accent line shows where it
+   would land. The line is absolutely positioned inside its list, so it never
+   adds to the list's own height (see the Layout drag handler). */
+.svDragging{opacity:.4}
+.svInsertLine{position:absolute;left:6px;right:6px;height:2px;background:var(--accent);border-radius:1px;pointer-events:none}
 .savedView .svName{font-size:var(--fs-control);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:text;width:fit-content;max-width:100%}
 .savedView .svName[contenteditable="true"],.penLibRow .nm[contenteditable="true"]{outline:none;-webkit-user-select:text;user-select:text;overflow:visible}
 .svBtn.svDelete:hover{border-color:var(--warn);color:var(--warn)}
@@ -623,8 +627,9 @@ input[type=number]{width:58px}
    .textureGroup: a .dashGroupLabel header, then its parameter controls. */
 .textureGroup{margin:10px 0}
 
-/* layer rows — pen swatch style */
-#hatchLayers{border-top:1px solid var(--line);margin-top:6px;padding-top:2px}
+/* layer rows — pen swatch style. #hatchLayers holds the fill rows and their
+   settings panels, and anchors the drag-reorder insertion line. */
+#hatchLayers{position:relative}
 /* Applied to #plot itself (the shared parent of #paperContent AND
    #previewLayoutOverlay — see the "Layout overlay" toggle), not to
    #paperContent alone, so the live drawing's own strokes and the Preview
@@ -666,11 +671,9 @@ input[type=number]{width:58px}
 /* A fill layer's row: the same .layer grid with a disclosure triangle in
    front and duplicate/delete at the end, and its own settings panel
    (.layerSettings, a stack of ordinary .ctl rows) shown while expanded. */
-.layer.fillRow{grid-template-columns:14px 16px 50px 1fr 72px 44px 24px 24px}
-.fillRow[draggable="true"]{cursor:grab}
-.fillRow.svDragging{opacity:.4}
+.layer.fillRow{grid-template-columns:20px 16px 50px 1fr 72px 44px 24px 24px;cursor:grab}
 .rowExpand{background:none;border:0;padding:0;color:var(--muted);cursor:pointer;
-  font-size:var(--fs-data);line-height:1;transition:transform .12s}
+  font-size:calc(var(--fs-data)*2);line-height:1;transition:transform .12s}
 .rowExpand:hover{color:var(--accent)}
 .fillRow.rowExpanded .rowExpand{transform:rotate(90deg);color:var(--accent)}
 .layerSettings{padding:2px 0 6px 20px;border-bottom:1px dashed var(--divider)}

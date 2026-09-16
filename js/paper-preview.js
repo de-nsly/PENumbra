@@ -21,12 +21,13 @@ import { baseSheetSize, computePaperLayout, expandedLayerId, layerStyle, syncFil
 import { computeLayoutPaperDims, selectedBlocks, updateSelectionOverlay } from './layout-canvas.js';
 import { activeTab, markStale } from './panel-controls.js';
 
-// Which circles layer the centre gizmo belongs to: the one whose row is
-// open in the Lines tab, else the first enabled circles layer. Null when no
-// circles layer is on, which also hides the gizmo.
+// The circles layer the centre gizmo belongs to: the one whose row is open
+// in the Lines tab, and only that one — with every row collapsed there is no
+// layer the gizmo would be dragging, so it stays hidden. Whether that layer
+// is currently drawing doesn't matter: its centre is worth placing before
+// switching it on.
 function gizmoCirclesLayer(){
-  const open = layers.find(L => L.type === 'circles' && L.id === expandedLayerId() && L.on);
-  return open || layers.find(L => L.type === 'circles' && L.on) || null;
+  return layers.find(L => L.type === 'circles' && L.id === expandedLayerId()) || null;
 }
 
 const pane2 = $('paperPane');
@@ -227,11 +228,10 @@ export function updateTextureGizmo(){
   // redrawn here, before any of the gizmo's own early returns below.
   updateRuler();
   drawPathEndpointMarkers();
-  // The gizmo drags ONE circles layer's centre: the expanded row's layer if
-  // that is a circles layer, else the first enabled one (gizmoCirclesLayer).
+  // The gizmo drags the centre of the circles layer whose row is expanded
+  // (gizmoCirclesLayer) — that is also what makes it appear at all.
   const L = gizmoCirclesLayer();
-  const visible = activeTab === 'preview' && L && $('texGizmoShow').checked;
-  if (!visible) return;
+  if (activeTab !== 'preview' || !L) return;
   const layout = computePaperLayout();
   if (!layout) return;
   const pos = previewMmToScreen(layout.paperW/2 + L.centerX, layout.paperH/2 + L.centerY);
@@ -496,7 +496,6 @@ export function initPaperPreview(){
   });
   document.addEventListener('pointerup', () => { gizmoDragging = false; });
   document.addEventListener('pointercancel', () => { gizmoDragging = false; });
-  $('texGizmoShow').addEventListener('change', updateTextureGizmo);
   // updateTextureGizmo is the single redraw entry point for previewOverlaySvg —
   // it owns the wipe — so toggling the endpoint markers goes through it too.
   // Nothing needs re-solving: the dots are read off the already-rendered paths.

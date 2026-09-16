@@ -26,7 +26,7 @@
    worldOnFace()/intersectSegs()/subtractCovered are the worker's.
    ================================================================ */
 import { $, DASH_KEYS, DASH_RATIOS, MAX_DASH_SLOTS, PEN_LIBRARY, SVG_NS, dashOnFraction, dashPattern, downloadFile, penById, scaledDash, svgEl } from './main.js';
-import { FILL_TYPES, LAYER_TYPES, copyLayer, filterSupports, layerById, layerName, layerType, layers, newFillLayer, nextFillId, stackEntry } from './layers.js';
+import { FILL_TYPES, LAYER_TYPES, copyLayer, filterSupports, layerById, layerName, layerType, layers, newFillLayer, nextFillId, replaceLayers, stackEntry } from './layers.js';
 import { formatValue } from './settings.js';
 import { activeTab, gatherSettings, generateFinished, lastGen, makeSliderValueEditable, markStale, syncLineLayerUI, updateGroundPatternSliderRange } from './panel-controls.js';
 import { renderTextureStack } from './texture-stack.js';
@@ -2997,36 +2997,70 @@ function deleteFillLayer(L){
   if (g) g.remove();
   fillLayersChanged();
 }
-/* Drag-reorder among fill rows. Same shape as the Layout blocks list: the
-   dragged row is marked while moving, and dropping on another fill row
-   puts it in that row's place. A fill layer can never move above the edge
-   layers, so only positions within the fill run are offered. */
-function wireFillRowDrag(row, L){
-  row.draggable = true;
-  row.addEventListener('dragstart', e => {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', L.id);
-    row.classList.add('svDragging');
-  });
-  row.addEventListener('dragend', () => row.classList.remove('svDragging'));
-  row.addEventListener('dragover', e => {
-    if (dragPayloadIsFillLayer(e)) e.preventDefault();   // allow the drop
-  });
-  row.addEventListener('drop', e => {
-    e.preventDefault();
-    const id = e.dataTransfer.getData('text/plain');
-    const from = layers.findIndex(e2 => e2.id === id);
-    const to = layers.indexOf(L);
-    if (from < 0 || from === to || layerType(layers[from]).kind !== 'fill') return;
-    const [moved] = layers.splice(from, 1);
-    layers.splice(layers.indexOf(L) + (from < to ? 1 : 0), 0, moved);
-    fillLayersChanged();
-  });
+/* Drag-reorder among fill rows — the same gesture and feedback as the
+   Layout blocks list (see its own handler in layout-canvas.js): plain
+   pointer events rather than native drag-and-drop, the dragged row dimmed
+   in place, and an accent insertion line showing where it would land among
+   the rows that aren't moving. The reorder happens on release.
+   A drag starts anywhere on the row except its own controls, so the name,
+   the swatch and the empty space are all grips while the checkbox, the
+   dropdowns and the buttons keep working.
+   Fill layers can never move above the edge layers, so only positions
+   within the fill run are offered. */
+const INSERT_LINE_HEIGHT = 2;
+let fillDragState = null;
+function startFillRowDrag(e, row, L){
+  if (e.button !== 0 || e.target.closest('input,select,button')) return;
+  const host = row.parentNode;
+  const others = [...host.querySelectorAll('.fillRow')].filter(r => r !== row);
+  fillDragState = { L, row, host, others, insertLine: svgInsertLine(), target: null, moved: false, startY: e.clientY };
+  row.setPointerCapture(e.pointerId);
 }
-// A drag carrying one of our fill rows (the id is only readable on drop in
-// some browsers, so the types list is what's checked here).
-function dragPayloadIsFillLayer(e){
-  return [...e.dataTransfer.types].includes('text/plain');
+// How far the pointer must travel before a press on a row counts as a drag
+// rather than a click on the row's own controls.
+const FILL_DRAG_SLOP = 4;
+function svgInsertLine(){
+  const line = document.createElement('div');
+  line.className = 'svInsertLine';
+  return line;
+}
+function onFillRowDragMove(e){
+  if (!fillDragState) return;
+  const { host, others, insertLine, row } = fillDragState;
+  if (!fillDragState.moved){
+    if (Math.abs(e.clientY - fillDragState.startY) < FILL_DRAG_SLOP) return;
+    fillDragState.moved = true;
+    row.classList.add('svDragging');
+  }
+  let target = null;
+  for (const r of others){
+    const rect = r.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height/2){ target = r; break; }
+  }
+  fillDragState.target = target;          // null means "after every other row"
+  if (!insertLine.parentNode) host.appendChild(insertLine);
+  const hostRect = host.getBoundingClientRect();
+  let top = 0;
+  if (target) top = target.getBoundingClientRect().top - hostRect.top;
+  else if (others.length) top = others[others.length-1].getBoundingClientRect().bottom - hostRect.top - INSERT_LINE_HEIGHT;
+  insertLine.style.top = top + 'px';
+}
+function endFillRowDrag(){
+  if (!fillDragState) return;
+  const { L, row, others, insertLine, target, moved } = fillDragState;
+  insertLine.remove();
+  row.classList.remove('svDragging');
+  fillDragState = null;
+  if (!moved) return;                     // pressed but never dragged
+  // `others` is the fill run without the dragged layer, in the same order,
+  // so the row index carries straight over to the layer list.
+  const before = layers.filter(e2 => layerType(e2).kind === 'fill');
+  const rest = before.filter(e2 => e2 !== L);
+  const at = target ? others.indexOf(target) : others.length;
+  rest.splice(at, 0, L);
+  if (rest.every((e2, i) => e2 === before[i])) return;   // dropped where it already was
+  replaceLayers([...layers.filter(e2 => layerType(e2).kind !== 'fill'), ...rest]);
+  fillLayersChanged();
 }
 // (Re)builds every row from the current instances.
 export function buildLayerRows(){
@@ -3082,7 +3116,7 @@ export function buildLayerRows(){
       });
       row.querySelector('.rowDup').addEventListener('click', () => duplicateFillLayer(L));
       row.querySelector('.svDelete').addEventListener('click', () => deleteFillLayer(L));
-      wireFillRowDrag(row, L);
+      row.addEventListener('pointerdown', e => startFillRowDrag(e, row, L));
     }
     applyLayerStyle(L.id);
   }
@@ -3107,6 +3141,11 @@ export function initSvgExport(){
     addSel.value = '';
     if (type) addFillLayer(type);
   });
+  // The fill rows' drag-reorder (startFillRowDrag) tracks and ends here, so
+  // a release outside the row still finishes the gesture.
+  document.addEventListener('pointermove', onFillRowDragMove);
+  document.addEventListener('pointerup', endFillRowDrag);
+  document.addEventListener('pointercancel', endFillRowDrag);
   buildDashFields('D1');
   buildDashFields('D2');
   $('addDashBtn').addEventListener('click', addDashSlot);

@@ -406,21 +406,22 @@
         <input type="range" id="creaseDeg" min="0" max="120" step="0.1" value="1">
         <span class="val" id="creaseDegVal">1.0°</span>
       </div>
-      <div id="hatchLayers"></div>
-      <!-- Fill layers are added here (svg-export.js): one per type, as many
-           as wanted; each row carries its own settings and texture stack. -->
-      <div class="ctl">
-        <label for="addLayerSelect">Add layer</label>
-        <select id="addLayerSelect" aria-label="Add a fill layer"></select>
-      </div>
-      <label class="chk chk-gap">
-        <input type="checkbox" id="texGizmoShow" checked>
-        Show circles center gizmo
-      </label>
       <label class="chk">
         <input type="checkbox" id="blendMultiplyOn">
         Blend overlapping colors (preview only)
       </label>
+    </div>
+
+    <h2>Fill layers</h2>
+    <div class="sec">
+      <!-- Fill layer rows are built into #hatchLayers (svg-export.js): as many
+           of each type as wanted, each row carrying its own settings (its
+           expander) and its own texture stack (the Texture tab). -->
+      <div class="ctl">
+        <label for="addLayerSelect">Add layer</label>
+        <select id="addLayerSelect" aria-label="Add a fill layer"></select>
+      </div>
+      <div id="hatchLayers"></div>
     </div>
 
     <h2>Shadows</h2>
