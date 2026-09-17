@@ -16,6 +16,7 @@ import { initPanelControls } from './panel-controls.js';
 import { initTextureStack } from './texture-stack.js';
 import { initPenLibrary } from './pen-library.js';
 import { initLayoutCanvas } from './layout-canvas.js';
+import { initLayoutClipboard } from './layout-clipboard.js';
 import { initSceneIO } from './scene-io.js';
 
 initSegPills();
@@ -29,4 +30,5 @@ initPanelControls();
 initTextureStack();
 initPenLibrary();
 initLayoutCanvas();
+initLayoutClipboard();
 initSceneIO();
