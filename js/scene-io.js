@@ -12,7 +12,8 @@ import { $, APP_VERSION, DASH_KEYS, DASH_RATIOS, MAX_DASH_SLOTS, PEN_LIBRARY, do
 import { restoreHooks, sceneSettingIds } from './settings.js';
 import { layerById, layers, replaceLayers, sceneLayers } from './layers.js';
 import { camera, modelMesh, modelName, onLoaded, onSmoothAngleResult, orbit, orthoCam, renderSavedViews, savedViewCounter, savedViews, setSavedViews, setProjMode } from './viewport3d.js';
-import { addDashSlot, applyLayerStyle, buildLayerRows, computePaperLayout, onResult, refreshDashPreview, refreshStatusR } from './svg-export.js';
+import { onResult, refreshStatusR } from './render-result.js';
+import { addDashSlot, applyLayerStyle, buildLayerRows, computePaperLayout, refreshDashPreview } from './svg-export.js';
 import { activeTab, buildCamMessage, doGenerate, generateFailed, lastGen, refreshValLabel, syncLineLayerUI } from './panel-controls.js';
 import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncPenLibraryUI } from './pen-library.js';
 import { blockCounter, blocks, replaceBlocks, renderBlocksList, renderLayoutCanvas } from './layout-canvas.js';
