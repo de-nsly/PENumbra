@@ -10,7 +10,8 @@ import { $, APP_VERSION, isFormControlTarget, positionSegPill, worker } from './
 import { HATCH_CAP_PRESETS, SETTINGS, SHADOW_BUDGET_PRESETS, formatValue, settingById } from './settings.js';
 import { camera, captureShadingBuffer, clearActiveView, lightVec, modelMesh, modelPivot, syncGroundCatcher, syncShadowCasting, updateLight, updateLightGizmo, updateModelRotation, vp } from './viewport3d.js';
 import { layerType, layers } from './layers.js';
-import { computePaperLayout, layerStyle, syncFillRowRanges, syncFillRowSoftState } from './svg-export.js';
+import { computePaperLayout } from './paper-layout.js';
+import { layerStyle, syncFillRowRanges, syncFillRowSoftState } from './svg-export.js';
 import { updateTextureGizmo } from './paper-preview.js';
 import { pendingSoIvExport } from './scene-io.js';
 

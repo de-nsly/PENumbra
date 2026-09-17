@@ -27,7 +27,8 @@ import { $, DASH_KEYS, PEN_LIBRARY, dashOnFraction, isFormControlTarget, isTextE
 import { layerById, layerName, layers } from './layers.js';
 import { computeDStats } from './path-model.js';
 import { refreshStatusR } from './render-result.js';
-import { PAPERS, buildTrimMaskGroup, computePaperLayout, dashOptionsHtml, fillPenSelect, getMargins, renderPaper, syncPreviewTrimMask } from './svg-export.js';
+import { PAPERS, buildTrimMaskGroup, computePaperLayout, getMargins, renderPaper, syncPreviewTrimMask } from './paper-layout.js';
+import { dashOptionsHtml, fillPenSelect } from './svg-export.js';
 import { activeTab, setActiveTab, lastGen, makeNameEditable, markStale } from './panel-controls.js';
 import { setActiveSheet, applyPv, resetPvFitWithRulers, updateRuler } from './paper-preview.js';
 import { resolveOverridePen, syncPenLibraryUI } from './pen-library.js';

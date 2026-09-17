@@ -43,7 +43,7 @@
    import cycles this module sits in (a `const`/`let` export would not be).
    ================================================================ */
 import { applySmoothAngleChange, applySmoothShadingToggle, syncGroundCatcher, syncShadowCasting, syncSmoothAngleVisibility, updateLight, updateLightGizmo, updateModelRotation } from './viewport3d.js';
-import { applyPageColor, syncMarginMode } from './svg-export.js';
+import { applyPageColor, syncMarginMode } from './paper-layout.js';
 import { syncShadowUI, syncSoftShadowsUI } from './panel-controls.js';
 import { syncPenPathsExportUI, syncSplitDashChoiceFromDom } from './pen-library.js';
 

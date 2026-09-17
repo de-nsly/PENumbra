@@ -7,7 +7,7 @@
    ================================================================ */
 import { $, onMiddleDblClick, positionSegPill, svgEl, worker } from './main.js';
 import { activeTab, doGenerate, makeNameEditable, markStale, refreshValLabel } from './panel-controls.js';
-import { computePaperLayout } from './svg-export.js';
+import { computePaperLayout } from './paper-layout.js';
 import { applyPv } from './paper-preview.js';
 import { applyImportedScene, takePendingSceneImport } from './scene-io.js';
 

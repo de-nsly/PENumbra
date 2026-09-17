@@ -17,7 +17,8 @@
    ================================================================ */
 import { $, onMiddleDblClick, svgEl } from './main.js';
 import { layerType, layers } from './layers.js';
-import { baseSheetSize, computePaperLayout, expandedLayerId, layerStyle, syncFillRowValues } from './svg-export.js';
+import { baseSheetSize, computePaperLayout } from './paper-layout.js';
+import { expandedLayerId, layerStyle, syncFillRowValues } from './svg-export.js';
 import { computeLayoutPaperDims, selectedBlocks, updateSelectionOverlay } from './layout-canvas.js';
 import { activeTab, markStale } from './panel-controls.js';
 

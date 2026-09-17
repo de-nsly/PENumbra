@@ -21,7 +21,8 @@ import { activeTab, generateFinished } from './panel-controls.js';
 import { computeLayoutStats } from './layout-canvas.js';
 import { resetPvFitWithRulers } from './paper-preview.js';
 import { exportSoIvOverlayNow, takePendingSoIvExport } from './scene-io.js';
-import { applyLayerStyle, computePaperLayout, layerStyle, pxPerMm, renderPaper } from './svg-export.js';
+import { computePaperLayout, pxPerMm, renderPaper } from './paper-layout.js';
+import { applyLayerStyle, layerStyle } from './svg-export.js';
 export function onResult(m){
   generateFinished(m);
   if (takePendingSoIvExport()) exportSoIvOverlayNow();
