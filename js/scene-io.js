@@ -17,7 +17,8 @@ import { computePaperLayout } from './paper-layout.js';
 import { addDashSlot, buildLayerRows, refreshDashPreview } from './layer-rows.js';
 import { activeTab, buildCamMessage, doGenerate, generateFailed, lastGen, refreshValLabel, syncLineLayerUI } from './panel-controls.js';
 import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncPenLibraryUI } from './pen-library.js';
-import { blockCounter, blocks, replaceBlocks, renderBlocksList, renderLayoutCanvas } from './layout-canvas.js';
+import { blockCounter, blocks, replaceBlocks, renderLayoutCanvas } from './layout-canvas.js';
+import { renderBlocksList } from './layout-list.js';
 import { resetPvFitWithRulers, updateTextureGizmo } from './paper-preview.js';
 import { renderTextureStack } from './texture-stack.js';
 
