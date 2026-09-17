@@ -8,11 +8,11 @@
    (resolvePen/resolveOverridePen/setPenLibrary: .pen scene import in
    scene-io.js, clipboard paste in layout-canvas.js). Also the "Export one
    path per pen" checkbox's tie to "Split dashes" (the export itself is
-   buildPenPathsExport in svg-export.js).
+   buildPenPathsExport in export.js).
    ================================================================ */
 import { $, PEN_LIBRARY, defaultPens, penById } from './main.js';
 import { layerById, layers } from './layers.js';
-import { applyLayerStyle, fillPenSelect, fmtWidth, layerEls } from './svg-export.js';
+import { applyLayerStyle, fillPenSelect, fmtWidth, layerEls } from './layer-rows.js';
 import { makeNameEditable } from './panel-controls.js';
 import { blocks } from './layout-canvas.js';
 
@@ -216,7 +216,7 @@ export function initPenLibrary(){
   $('addPenBtn').addEventListener('click', addPen);
   /* ================= "Export one path per pen" =================
      While on, Export SVG builds one path per pen (buildPenPathsExport in
-     svg-export.js), which always splits dashes — so "Split dashes" is shown
+     export.js), which always splits dashes — so "Split dashes" is shown
      ticked and locked. The user's own choice is remembered separately in
      splitDashChoice and put back when this is switched off; that remembered
      value, not the forced tick, is also what a scene saves (scene-io.js). */

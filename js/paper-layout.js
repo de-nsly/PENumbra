@@ -17,7 +17,7 @@ import { refreshStatusR } from './render-result.js';
 import { lastGen, markStale, updateGroundPatternSliderRange } from './panel-controls.js';
 import { gridGuidePositions, renderPreviewLayoutOverlay, syncLayoutPaperFrame, syncLayoutTrimMask } from './layout-canvas.js';
 import { applyPv, resetPv } from './paper-preview.js';
-import { applyLayerStyle } from './svg-export.js';
+import { applyLayerStyle } from './layer-rows.js';
 /* ================= paper layout =================
    The preview pane represents the true selected paper sheet (size +
    orientation), not the raw solver viewport aspect ratio. The drawing is
@@ -270,7 +270,7 @@ export function syncMarginMode(){
 
 /* The controls that change the sheet itself: the trim-mask toggle, paper
    size/orientation/margins, page colour and the preview compositing
-   toggle. Called from app.js after initSvgExport, which is the order
+   toggle. Called from app.js after initLayerRows, which is the order
    these listeners were registered in when they lived in it. */
 export function initPaperLayout(){
   // Display-only, exactly like the mask it drives: no markStale(), no

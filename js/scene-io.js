@@ -1,7 +1,7 @@
 /* ================================================================
    scene-io.js — everything that reads/writes files
    The worker message dispatcher (routes 'loaded' -> onLoaded in
-   viewport3d.js, 'result' -> onResult in svg-export.js), STL/OBJ
+   viewport3d.js, 'result' -> onResult in render-result.js), STL/OBJ
    file loading (drag-drop + file picker + Z-up toggle), .pen scene
    save/load (base64 model embedding + settings/layers/pens/camera
    round-trip, migrating pre-pen-library scenes), and the demo-scene boot
@@ -14,7 +14,7 @@ import { layerById, layers, replaceLayers, sceneLayers } from './layers.js';
 import { camera, modelMesh, modelName, onLoaded, onSmoothAngleResult, orbit, orthoCam, renderSavedViews, savedViewCounter, savedViews, setSavedViews, setProjMode } from './viewport3d.js';
 import { onResult, refreshStatusR } from './render-result.js';
 import { computePaperLayout } from './paper-layout.js';
-import { addDashSlot, buildLayerRows, refreshDashPreview } from './svg-export.js';
+import { addDashSlot, buildLayerRows, refreshDashPreview } from './layer-rows.js';
 import { activeTab, buildCamMessage, doGenerate, generateFailed, lastGen, refreshValLabel, syncLineLayerUI } from './panel-controls.js';
 import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncPenLibraryUI } from './pen-library.js';
 import { blockCounter, blocks, replaceBlocks, renderBlocksList, renderLayoutCanvas } from './layout-canvas.js';
@@ -146,7 +146,7 @@ export function exportSoIvOverlayNow(){
   $('statusL').textContent = 'exported so/iv overlay (so: ' + (so.length/4) + ' segs, iv: ' + (iv.length/4) + ' segs)';
 }
 export let pendingSoIvExport = false;
-// onResult (svg-export.js) asks whether the result it just received was the
+// onResult (render-result.js) asks whether the result it just received was the
 // one this export requested; asking clears the flag.
 export function takePendingSoIvExport(){ const v = pendingSoIvExport; pendingSoIvExport = false; return v; }
 

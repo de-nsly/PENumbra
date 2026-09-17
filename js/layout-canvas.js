@@ -28,7 +28,7 @@ import { layerById, layerName, layers } from './layers.js';
 import { computeDStats } from './path-model.js';
 import { refreshStatusR } from './render-result.js';
 import { PAPERS, buildTrimMaskGroup, computePaperLayout, getMargins, renderPaper, syncPreviewTrimMask } from './paper-layout.js';
-import { dashOptionsHtml, fillPenSelect } from './svg-export.js';
+import { dashOptionsHtml, fillPenSelect } from './layer-rows.js';
 import { activeTab, setActiveTab, lastGen, makeNameEditable, markStale } from './panel-controls.js';
 import { setActiveSheet, applyPv, resetPvFitWithRulers, updateRuler } from './paper-preview.js';
 import { resolveOverridePen, syncPenLibraryUI } from './pen-library.js';
@@ -208,7 +208,7 @@ export function syncLayoutPaperFrame(){
 }
 // Layout's half of the trim preview — same frame, same page-colour fill,
 // same "the export clips, the screen only masks" contract as the Preview
-// tab (see buildTrimMaskGroup/syncPreviewTrimMask in svg-export.js, the
+// tab (see buildTrimMaskGroup/syncPreviewTrimMask in paper-layout.js, the
 // shared builder). Blocks keep their full geometry underneath: a block
 // dragged half off the margin is still whole, still draggable back, just
 // not visible (and not exported) past the margin.
@@ -480,7 +480,7 @@ export function createBlockDom(block){
   // needs the OPPOSITE — later-appended SVG elements draw on top, so
   // iterating in reverse here puts Silhouette last/on top and Hatch/
   // Crosshatch/Deep shadow first/underneath, matching exactly how
-  // svg-export.js's onResult() builds the live preview's paint order
+  // render-result.js's onResult() builds the live preview's paint order
   // (layers.slice().reverse()). A previous version iterated forward here,
   // which inverted every block's layer stacking versus the live preview.
   for (const L of layers.slice().reverse()){
@@ -555,7 +555,7 @@ export function updateBlockStyle(block){
 }
 // The pen one of a block's layers draws with: its own override pen while
 // Override is on, the live panel's otherwise. Shared by updateBlockStyle
-// and the one-path-per-pen export (buildPenPathsExport, svg-export.js), so
+// and the one-path-per-pen export (buildPenPathsExport, export.js), so
 // the file can never group a layer under a different pen than it shows.
 export function blockLayerPenId(block, key){
   const ov = block.override && block.overrideStyle ? block.overrideStyle[key] : null;
@@ -594,7 +594,7 @@ export function renderLayoutCanvas(){
 // Preview tab's own #plot — for live-compositing reference only (see the
 // "Layout overlay" toggle further down). Always fully torn down and rebuilt
 // rather than incrementally patched: #plot itself gets wiped on every
-// regenerate (see onResult in svg-export.js), and blocks can only ever
+// regenerate (see onResult in render-result.js), and blocks can only ever
 // change while the Layout tab is active anyway (Preview/Layout are mutually
 // exclusive), so there's no continuous sync to maintain — just a refresh on
 // tab-switch/regenerate/control-change (see the call sites of this
@@ -609,7 +609,7 @@ export function renderLayoutCanvas(){
 // drawing). A plain clone has no such ambiguity. block.dom's OWN style is
 // refreshed right before cloning (updateBlockStyle) because Preview being
 // the active tab means refreshAllBlockStyles() isn't otherwise called for
-// it (see applyLayerStyle in svg-export.js) — without this a live color/
+// it (see applyLayerStyle in layer-rows.js) — without this a live color/
 // width/dash edit would clone stale style. Block-level visibility
 // (block.visible, which block.dom.outer's OWN display:none tracks) is
 // applied here directly to this function's own wrapper instead, since
@@ -648,7 +648,7 @@ export function renderPreviewLayoutOverlay(){
   // and the append above just moved this overlay past it.
   syncPreviewTrimMask();
 }
-// Feeds refreshStatusR() (svg-export.js) — sums computeDStats() over every
+// Feeds refreshStatusR() (render-result.js) — sums computeDStats() over every
 // visible layer of every visible block, skipping a hidden block entirely
 // and, within a visible block, skipping any individual layer hidden via
 // the right-click layer menu (block.layerVisible). freezeScale (px->mm at
@@ -1909,7 +1909,7 @@ export function initLayoutCanvas(){
     $(id).addEventListener('input', () => {
       syncLayoutPaperFrame();
       // Preview draws the same guides (display-only there, see renderPaper in
-      // svg-export.js) — keep it in step even while Layout is the active tab.
+      // paper-layout.js) — keep it in step even while Layout is the active tab.
       renderPaper();
     }));
   /* ================= tab switching =================

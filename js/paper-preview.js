@@ -11,14 +11,14 @@
    only one sheet is ever visible at a time, so one shared pv state is
    enough, reset on tab switch.
    Paper-layout math itself (computePaperLayout, baseSheetSize) lives in
-   svg-export.js since computePaperLayout is shared with the actual SVG
+   paper-layout.js since computePaperLayout is shared with the actual SVG
    export; computeLayoutPaperDims (the Layout-tab equivalent, no solver
    viewport to fit) lives in layout-canvas.js.
    ================================================================ */
 import { $, onMiddleDblClick, svgEl } from './main.js';
 import { layerType, layers } from './layers.js';
 import { baseSheetSize, computePaperLayout } from './paper-layout.js';
-import { expandedLayerId, layerStyle, syncFillRowValues } from './svg-export.js';
+import { expandedLayerId, layerStyle, syncFillRowValues } from './layer-rows.js';
 import { computeLayoutPaperDims, selectedBlocks, updateSelectionOverlay } from './layout-canvas.js';
 import { activeTab, markStale } from './panel-controls.js';
 

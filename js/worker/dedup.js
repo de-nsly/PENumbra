@@ -430,7 +430,7 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
    ever trims or removes — it never merges two lo segments together — so
    every surviving piece simply copies its source lo segment's runId/seq
    verbatim; a split just yields two pieces sharing that same pair, which
-   chainByRun's endpoint-adjacency walk (js/svg-export.js) resolves correctly
+   chainByRun's endpoint-adjacency walk (js/chain.js) resolves correctly
    on its own. When supplied, returns { arr, runIds, seqs } instead of a bare
    array; every other caller omits them and gets the plain-array return. */
 export function subtractCovered(loArr, hiArr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL, runIds=null, seqs=null){

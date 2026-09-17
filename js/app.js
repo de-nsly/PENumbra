@@ -9,7 +9,7 @@
 import { initSegPills, bootWorker } from './main.js';
 import { initViewport3d } from './viewport3d.js';
 import { initPaperPreview } from './paper-preview.js';
-import { initSvgExport } from './svg-export.js';
+import { initLayerRows } from './layer-rows.js';
 import { initPaperLayout } from './paper-layout.js';
 import { initExport } from './export.js';
 import { initPanelControls } from './panel-controls.js';
@@ -22,7 +22,7 @@ initSegPills();
 bootWorker();
 initViewport3d();
 initPaperPreview();
-initSvgExport();
+initLayerRows();
 initPaperLayout();
 initExport();
 initPanelControls();

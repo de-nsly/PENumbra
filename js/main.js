@@ -102,7 +102,7 @@ export const DASH_RATIOS = { solid: null, D1: [3.5, 2.5, 0, 0, 0, 0], D2: [0.5, 
 // is implicit and always offered first in any dropdown, so it's not part
 // of this list. New slots are only ever appended (D3, D4, ... up to
 // MAX_DASH_SLOTS) via the "+ Add dash style" button — see addDashSlot in
-// svg-export.js — never removed, so nothing downstream needs to handle a
+// layer-rows.js — never removed, so nothing downstream needs to handle a
 // slot disappearing out from under a layer/scene that's already using it.
 export const DASH_KEYS = ['D1', 'D2'];
 export const MAX_DASH_SLOTS = 9;

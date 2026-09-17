@@ -309,7 +309,7 @@ function walkCircleSplit(cx, cy, radius, testFn, seedPx, cutPx){
 // per texture type.
 // One kept arc of one ring, in the shape the whole downstream pipeline
 // expects: the rich circle description (cx/cy/radius/u0/u1) that lets
-// svg-export emit true Beziers, plus the sampled `poly` the wobble path
+// render-result.js emit true Beziers, plus the sampled `poly` the wobble path
 // falls back to. Shared by the walk below and by mergeRingPieces, so a
 // merged arc is built exactly like a walked one.
 function makeRingPiece(cx, cy, radius, ringIdx, u0, u1, closed){

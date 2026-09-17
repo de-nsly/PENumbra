@@ -45,7 +45,7 @@ const vp = vpAt >= 0
   ? (([w,h]) => ({w,h}))(argv[vpAt+1].split('x').map(Number))
   : DEFAULT_VIEWPORT;
 
-// the real tolerances, lifted from js/svg-export.js — never a second copy
+// the real tolerances, lifted from js/chain.js — never a second copy
 const TOL = SIMPLIFY_COLLINEAR_TOL, FOLD_TOL = SIMPLIFY_FOLDBACK_TOL;
 
 const app = await openScene(pen, { viewport: vp });
@@ -53,7 +53,7 @@ app.setLayers({ so:false, iv:false, ih:false, cv:false, ch:false, sv:true, sh:wi
 const m = app.generate();
 
 /* ---- 1. fold-back drops ---- */
-// A transcription of simplifyCollinear's sweep (js/svg-export.js) that
+// A transcription of simplifyCollinear's sweep (js/chain.js) that
 // records, rather than performs, each drop — the audit needs the a/b/c
 // triple and the projection parameter, which the real function doesn't
 // return. Any change to the real sweep must be mirrored here.

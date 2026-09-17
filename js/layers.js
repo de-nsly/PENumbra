@@ -21,7 +21,7 @@
               blocks still match), new ones get f1, f2, … (nextFillId).
      type     a key of LAYER_TYPES
      on/pen/dash   the row's state — the instance IS the state, the row
-              DOM (svg-export.js) is a view of it
+              DOM (layer-rows.js) is a view of it
      texture  the ordered texture stack: [{ type, ...params }] with types
               from TEXTURE_FILTERS. Empty = no texture. Only fill layers
               apply theirs today (onResult); edge layers carry [].
@@ -164,7 +164,7 @@ export function noteFillIds(list){
    parameters (with the slider ranges and defaults the stack editor uses,
    and the fallback the reader uses for a missing value) and which
    geometry kinds it applies to. The implementations live with the rest
-   of the geometry code in svg-export.js (TEXTURE_IMPL, run by
+   of the geometry code in hatch-texture.js (TEXTURE_IMPL, run by
    applyTextureStack in stack order), keyed by these same type names. Key
    order here is the canonical order: the stack editor inserts a new entry
    at its position, a version-1 scene's enabled effects are migrated in it
@@ -275,7 +275,7 @@ const V1_TEXTURE_IDS = {
 };
 // Values are coerced the way the old app read its controls: a checkbox is
 // `!!value`; a number that doesn't parse becomes 0, so the reader's own
-// `|| fallback` (readWobbleParams etc. in svg-export.js) lands on exactly
+// `|| fallback` (readWobbleParams etc. in hatch-texture.js) lands on exactly
 // the value the old `+el.value || fallback` read produced.
 export function v1TextureStack(settings, layerId, geometry){
   const suffix = settings.texIndividualOn ? '_' + layerId : '';

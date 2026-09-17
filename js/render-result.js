@@ -22,7 +22,7 @@ import { computeLayoutStats } from './layout-canvas.js';
 import { resetPvFitWithRulers } from './paper-preview.js';
 import { exportSoIvOverlayNow, takePendingSoIvExport } from './scene-io.js';
 import { computePaperLayout, pxPerMm, renderPaper } from './paper-layout.js';
-import { applyLayerStyle, layerStyle } from './svg-export.js';
+import { applyLayerStyle, layerStyle } from './layer-rows.js';
 export function onResult(m){
   generateFinished(m);
   if (takePendingSoIvExport()) exportSoIvOverlayNow();

@@ -11,7 +11,7 @@ import { HATCH_CAP_PRESETS, SETTINGS, SHADOW_BUDGET_PRESETS, formatValue, settin
 import { camera, captureShadingBuffer, clearActiveView, lightVec, modelMesh, modelPivot, syncGroundCatcher, syncShadowCasting, updateLight, updateLightGizmo, updateModelRotation, vp } from './viewport3d.js';
 import { layerType, layers } from './layers.js';
 import { computePaperLayout } from './paper-layout.js';
-import { layerStyle, syncFillRowRanges, syncFillRowSoftState } from './svg-export.js';
+import { layerStyle, syncFillRowRanges, syncFillRowSoftState } from './layer-rows.js';
 import { updateTextureGizmo } from './paper-preview.js';
 import { pendingSoIvExport } from './scene-io.js';
 
@@ -288,7 +288,7 @@ export function gatherSettings(){
 /* ================= generate ================= */
 let busy = false;
 export let lastGen = null;             // the worker's last 'result' message
-// Called by onResult (svg-export.js) with the worker's result: releases the
+// Called by onResult (render-result.js) with the worker's result: releases the
 // Generate button, records the result, and either clears the stale state or
 // re-arms auto-generate if the view moved while solving.
 export function generateFinished(m){
@@ -339,7 +339,7 @@ export function syncShadowUI(){
 // Never clears or rewrites a slider's value — re-enabling a layer resumes
 // whatever was set before, exactly as syncShadowUI leaves Invert shadows
 // alone. Called from three places, because layer checkboxes change in three
-// ways: the user clicking one (svg-export.js's own change handler), a .pen
+// ways: the user clicking one (layer-rows.js's own change handler), a .pen
 // scene restoring them by assignment (scene-io.js — assignment fires no
 // change event), and here at load for the initial state.
 export function syncLineLayerUI(){
@@ -358,7 +358,7 @@ export function syncLineLayerUI(){
 // the way to the edge on the new page — rescaling both up and down, not just
 // clamping. 0,0 is the page centre by definition, so there is nothing to
 // default away from. Called from renderPaper; the row sliders' own ranges
-// are refreshed by syncFillRowRanges (svg-export.js).
+// are refreshed by syncFillRowRanges (layer-rows.js).
 let _gpLastPaperW = null, _gpLastPaperH = null;
 export function updateGroundPatternSliderRange(){
   const layout = computePaperLayout();

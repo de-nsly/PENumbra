@@ -1,6 +1,6 @@
 /* ================================================================
    tools/harness/svg.mjs — the main thread's half of the pipeline
-   onResult() (js/svg-export.js) turns the worker's flat per-layer
+   onResult() (js/render-result.js) turns the worker's flat per-layer
    segment arrays into the actual <path> data that gets exported. For
    Contour (sv/sh) that is chainByRun -> mergeContourRunSplits ->
    splitSelfTouching -> simplifyCollinear; Silhouette (so/iv/ih) and

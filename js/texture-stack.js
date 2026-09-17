@@ -6,7 +6,7 @@
    remove an entry. Only the fill layers are offered today — edge layers
    carry an empty stack that nothing applies yet (refactor plan §4e).
    Every edit marks the drawing stale, as the texture controls always
-   did; onResult (svg-export.js) applies the stacks when the result comes
+   did; onResult (render-result.js) applies the stacks when the result comes
    back. Rebuilt wholesale (renderTextureStack) after a scene import
    replaces the layer list.
    ================================================================ */
@@ -124,7 +124,7 @@ export function initTextureStack(){
     const L = selectedLayer();
     if (!type || !L) return;
     // Inserted at its TEXTURE_FILTERS position: the stack applies in list
-    // order (applyTextureStack, svg-export.js), and this keeps the three line
+    // order (applyTextureStack, hatch-texture.js), and this keeps the three line
     // jitters, which run as one combined step, adjacent.
     const order = Object.keys(TEXTURE_FILTERS);
     const at = L.texture.findIndex(f => order.indexOf(f.type) > order.indexOf(type));

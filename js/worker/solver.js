@@ -1514,7 +1514,7 @@ function generate(cam, S, shadingBuffer){
         run.isClosedLoop = isClosedLoop;
         // Adjacent run (always a different state, by construction — a new
         // run only ever starts on a state change) in ORIGINAL chain-walk
-        // order. Consumed by js/svg-export.js's mergeContourRunSplits: when
+        // order. Consumed by js/chain.js's mergeContourRunSplits: when
         // this run turns out to be (almost) entirely artifact and 6.8 drops
         // all of it, its two flanking runs — otherwise permanently different
         // run.ids — get bridged back together using exactly this adjacency.
@@ -1714,7 +1714,7 @@ function generate(cam, S, shadingBuffer){
       const outPts = [];
       for (const f of frags2) if (f.type==='keep') outPts.push(...f.pts);
       // hasContent, tipP0 and tipP1 are recorded independent of layerOn.sv/sh
-      // (and for 'x' runs too): js/svg-export.js's mergeContourRunSplits needs
+      // (and for 'x' runs too): js/chain.js's mergeContourRunSplits needs
       // "did 6.5 actually eliminate this run's own material", which is a
       // different question from "is this run drawn". A run whose own checkbox
       // is off, or that 6.6 suppressed, still has real content, and bridging
@@ -1750,7 +1750,7 @@ function generate(cam, S, shadingBuffer){
     // Run-adjacency table (id/state/prevId/nextId/hasContent/tips for EVERY
     // run, whether or not it's actually being drawn) — built after the loop
     // above so hasContent reflects what the drops actually did. See
-    // js/svg-export.js's mergeContourRunSplits, the consumer of this.
+    // js/chain.js's mergeContourRunSplits, the consumer of this.
     counts.contourAdjacency = contourRuns.map(run => ({
       id: run.id, st: run.st, prevId: run.prevId, nextId: run.nextId, hasContent: !!run.hasContent,
       tipP0: run.tipP0 || null, tipP1: run.tipP1 || null

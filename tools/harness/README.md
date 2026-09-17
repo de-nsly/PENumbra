@@ -10,7 +10,7 @@ Nothing about the pipeline is reimplemented here. `gatherSettings`,
 `buildCamMessage`, `computePaperLayout`, `lightVec`, the orbit→camera
 construction, `setProjMode`, `updateModelRotation` and the whole
 Contour/Silhouette/Crease chaining tail are **imported from the real
-modules** (`js/panel-controls.js`, `js/viewport3d.js`, `js/svg-export.js`).
+modules** (`js/panel-controls.js`, `js/viewport3d.js`, `js/paper-layout.js`).
 `app-env.mjs` installs the little the modules need at import time in Node —
 a `THREE` global and a `document` whose `getElementById()` returns fake
 controls with `.value`/`.checked` — and the modules' init functions (all the
@@ -136,7 +136,7 @@ Two checks, both aimed at "a stretch of Contour is simply absent":
    reported as `preserved` or `COLLAPSED`; anything collapsed with an
    excursion above `SIMPLIFY_FOLDBACK_TOL` is real ink being deleted.
    (This is the check that found the 55.5px Contour gap in
-   `pipe_X_aligned.pen`; see `SIMPLIFY_FOLDBACK_TOL` in `js/svg-export.js`.)
+   `pipe_X_aligned.pen`; see `SIMPLIFY_FOLDBACK_TOL` in `js/chain.js`.)
 2. **Collinear holes.** Clusters emitted ink onto infinite lines and reports
    gaps in the middle of an otherwise continuous run. Run with `--hidden`:
    without it, every genuinely occluded stretch shows up as a hole.

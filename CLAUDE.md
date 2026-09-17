@@ -53,7 +53,13 @@ js/layers.js         - layer instances (layers, LAYER_TYPES), TEXTURE_FILTERS sc
 js/texture-stack.js  - the Texture tab's per-layer stack editor
 js/viewport3d.js     - three.js scene/camera/orbit controls, gizmos, saved views, shading-buffer capture, onLoaded()
 js/paper-preview.js  - pan/zoom for the on-screen paper pane, rulers, circles-centre gizmo
-js/svg-export.js     - layer rows + dash editor, paper layout math, chaining, texture effects + applyTextureStack, onResult(), export
+js/layer-rows.js     - the Lines tab's layer rows + fill settings panels, the dash editor, layerStyle/applyLayerStyle
+js/paper-layout.js   - PAPERS/getMargins/computePaperLayout/pxPerMm, renderPaper(), trim mask, page + guide colours
+js/chain.js          - chaining and merge passes: worker segments -> polylines (pure geometry, imports nothing)
+js/hatch-texture.js  - the texture filter implementations behind TEXTURE_FILTERS, and applyTextureStack
+js/render-result.js  - onResult(): the worker's result becomes the on-screen SVG; refreshStatusR() stats readout
+js/path-model.js     - d-string <-> typed segments, dash splitting, the margin trim, computeDStats (curve-preserving)
+js/export.js         - exportSvg(): the Export button, both modes (clone of the screen, or one path per pen)
 js/panel-controls.js - control panel wiring, gatherSettings(), generate/staleness/auto-generate state
 js/pen-library.js    - the Pen library tab, pen add/delete, matching incoming pens
 js/layout-canvas.js  - the Layout tab
@@ -117,7 +123,7 @@ duplicated, deleted and reordered among themselves, any number of each type. Eve
 layer's own — `angleDeg` (hatch), `minSpacing`/`maxSpacing` in mm, `threshold`, and `centerX`/`centerY` for
 circles — declared by its type's `settings` schema, which also drives the row's sliders. Names are derived
 from the type plus the layer's number among its type (`layerName`), never stored. The instance is the
-state; the Lines-tab rows (`layerEls`, `svg-export.js`) are a view of it. `texture` is an ordered stack of
+state; the Lines-tab rows (`layerEls`, `layer-rows.js`) are a view of it. `texture` is an ordered stack of
 filter entries typed by `TEXTURE_FILTERS`; an empty stack is no texture, and only fill layers apply theirs
 today. Order is the drawing-priority hierarchy:
 higher entries win ink-avoidance against lower ones, and the array is walked in reverse when painting so
@@ -131,7 +137,7 @@ the scene (a `.pen` import replaces it); pre-pen-library scenes and clipboard pa
 colour + width (`resolvePen`). "Pen" is overloaded: the `.pen` scene file, the Lines tab's historical
 `penTab`/`penModeBtn`/`data-mode="pen"` ids, and the library — library code uses `penLib*`/`PEN_LIBRARY`.
 
-**SVG export modes** (Export button, `svg-export.js`): with the Pen library tab's "Export one path per pen" on
+**SVG export modes** (Export button, `export.js`): with the Pen library tab's "Export one path per pen" on
 (default), `buildPenPathsExport` builds a fresh file with one `<path id="pen05_Blue_0.2">` per pen, dashes
 always split, margin-trimmed, then baked into page mm — Blender's SVG importer makes one curve object per
 path, named after its id. Off, the export is a cleaned-up clone of the on-screen SVG (one group per layer).
@@ -162,7 +168,7 @@ loader now. A version-2 file written before fill settings moved onto the layers 
   it's copied via `.slice()` before being included in a transfer list — search for existing "copy, don't
   transfer" comments before changing a `postMessage` transfer list.
 - Line-position bugs in exported SVGs have two homes: the main-thread chaining/merge passes in
-  `svg-export.js` (`chainSegments`, `mergeSilhouetteClose`, `mergeContourRunSplits`,
+  `chain.js` (`chainSegments`, `mergeSilhouetteClose`, `mergeContourRunSplits`,
   `mergeAdjacentTouching`, `mergeCreaseScreenSpace`, `splitSelfTouching`, `simplifyCollinear`) and the
   worker's `worldOnFace`/`intersectSegs`/`subtractCovered`. `tools/harness/sweep.mjs --diff` tells the two
   apart (`--raw` emits worker segments unchained).

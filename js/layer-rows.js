@@ -1,14 +1,16 @@
 /* ================================================================
-   svg-export.js — turning solved geometry into SVG
-   Layer pen/dash styling (colour + width come from the layer's pen,
-   see PEN_LIBRARY in main.js), paper layout math shared by the
-   preview and the real export, and renderPaper() (re-lays out the
-   on-screen SVG render-result.js builds).
-   The trim outside the margins is genuine geometry only in the exported
-   file (path-model.js, called from export.js); on screen it is merely
-   SIMULATED by a page-coloured mask over the band outside the margins
-   (buildTrimMaskGroup/syncPreviewTrimMask here, with syncLayoutTrimMask
-   in layout-canvas.js as its Layout-tab twin).
+   layer-rows.js — the Lines tab's rows, and layer styling
+   One row per layer instance (layers.js), built at boot and again
+   whenever the list itself changes. A row is a VIEW of its instance:
+   its controls write straight into the instance, and applyLayerStyle
+   renders the instance back into both the row and that layer's group in
+   the on-screen SVG — colour and width resolved through the layer's pen
+   (PEN_LIBRARY in main.js), dash through DASH_RATIOS.
+   Also the dash editor on the Pen library tab (the D1/D2… patterns
+   every layer's dash dropdown offers), since a dash edit has to refresh
+   every layer using that pattern.
+   Fill rows add the per-layer settings panel, duplicate/delete and
+   drag-reorder; the Texture tab's stack editor is texture-stack.js.
    ================================================================ */
 import { $, DASH_KEYS, DASH_RATIOS, MAX_DASH_SLOTS, PEN_LIBRARY, dashPattern, penById, scaledDash } from './main.js';
 import { FILL_TYPES, LAYER_TYPES, copyLayer, layerById, layerName, layerType, layers, newFillLayer, nextFillId, replaceLayers } from './layers.js';
@@ -445,7 +447,7 @@ export function buildLayerRows(){
 /* ================= init =================
    Everything above only declares. This wires the DOM and starts the
    module's live behaviour — called once by app.js, in script order. */
-export function initSvgExport(){
+export function initLayerRows(){
   buildLayerRows();
   // "+ Add layer": one option per fill type, and back to the placeholder
   // after each pick (it is an action, not a stored choice).

@@ -130,7 +130,7 @@ function buildPenPathsExport(isLayout, dims){
 }
 
 /* The Export button. Named rather than the anonymous listener it used to
-   be inside initSvgExport, so the two export modes have one entry point
+   be inside the Lines-tab init, so the two export modes have one entry point
    the rest of the app (and a future menu item) can call. */
 export function exportSvg(){
   const isLayout = activeTab === 'layout';
