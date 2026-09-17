@@ -17,6 +17,7 @@ import { initTextureStack } from './texture-stack.js';
 import { initPenLibrary } from './pen-library.js';
 import { initLayoutCanvas } from './layout-canvas.js';
 import { initLayoutList } from './layout-list.js';
+import { initLayoutInteraction } from './layout-interaction.js';
 import { initLayoutClipboard } from './layout-clipboard.js';
 import { initSceneIO } from './scene-io.js';
 
@@ -32,5 +33,6 @@ initTextureStack();
 initPenLibrary();
 initLayoutCanvas();
 initLayoutList();
+initLayoutInteraction();
 initLayoutClipboard();
 initSceneIO();
