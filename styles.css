@@ -26,6 +26,7 @@
 
   /* ---- shape / effect tokens ---------------------------------------------- */
   --check-size:15px;                        /* every checkbox, one size */
+  --sbw:10px;                               /* scrollbar thickness, and the strip #panelScroll keeps free for it */
   --edge-glass:rgba(255,255,255,.09);       /* hairline on frosted-over-viewport chrome */
   --divider:rgba(255,255,255,.05);          /* dashed row separators (layer / saved-view lists) */
   --shadow-float:0 8px 24px rgba(0,0,0,.38);/* floating panels & context menu */
@@ -39,16 +40,19 @@ button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* ---------- scrollbars ---------- */
-/* Firefox: native shape/size kept as-is (scrollbar-width left at its
-   default 'auto'), just recolored — thumb accent, track transparent. */
-*{scrollbar-color:var(--accent) transparent}
-/* WebKit/Chromium: same idea. Track/corner/buttons all transparent so
-   only the thumb reads as accent-colored; native width/height/radius are
-   left untouched (no ::-webkit-scrollbar size override) since the
-   default shape is already fine — only color changes. The up/down/
-   left/right arrow glyphs themselves can't be recolored via CSS (no
-   such pseudo-element exists), so the arrow buttons are drawn as plain
-   accent-colored triangles on a transparent button box instead. */
+/* One narrow accent scrollbar everywhere, --sbw thick. That same token is
+   what #panelScroll reserves via scrollbar-gutter, so the bar and the strip
+   held open for it can't drift apart — change --sbw, not these rules.
+   Firefox: recolored the same way, but 'thin' is the only size lever it
+   gives (no px control), so its bar lands near --sbw rather than exactly on
+   it; the gutter there follows whatever width 'thin' resolves to. */
+*{scrollbar-color:var(--accent) transparent;scrollbar-width:thin}
+::-webkit-scrollbar{width:var(--sbw);height:var(--sbw)}
+/* WebKit/Chromium: track/corner/buttons all transparent so only the thumb
+   reads as accent-colored. The up/down/left/right arrow glyphs themselves
+   can't be recolored via CSS (no such pseudo-element exists), so the arrow
+   buttons are drawn as plain accent-colored triangles on a transparent
+   button box instead — they scale with --sbw along with everything else. */
 ::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
 ::-webkit-scrollbar-thumb{background-color:var(--accent);border-radius:8px}
 ::-webkit-scrollbar-thumb:hover{background-color:var(--accent);filter:brightness(1.15)}
@@ -152,7 +156,7 @@ header{padding:0 16px}
 .projLbl.active,.projLbl.active:hover{color:var(--accent-ink)}
 
 /* ---------- main split ---------- */
-main{display:grid;grid-template-columns:1fr 1fr 322px;min-height:0;position:relative}
+main{display:grid;grid-template-columns:1fr 1fr 372px;min-height:0;position:relative}
 @media (max-width:1100px){
   main{grid-template-columns:1fr 1fr;grid-template-rows:1fr auto}
   #panel{grid-column:1 / -1;max-height:38vh}
@@ -163,9 +167,14 @@ main{display:grid;grid-template-columns:1fr 1fr 322px;min-height:0;position:rela
    taller than the viewport. `right` is kept in sync with the panel's
    current width by the drag script (offset by half its own width, so the
    handle is centered ON the boundary line rather than sitting flush
-   against one side of it) — 318px here just matches that same math for
-   the initial 322px default, before any drag has happened. */
-#panelResizeHandle{position:absolute;top:0;bottom:0;right:318px;width:8px;
+   against one side of it) — 368px here just matches that same math for
+   the initial 372px default, before any drag has happened.
+   THREE places carry that default width and must change together: the
+   `main` track above, this `right` (width - 4), and MIN_PANEL_W in
+   panel-controls.js. Miss this one and the handle sits stranded inside
+   the panel until the first window resize, so nothing happens when you
+   grab the actual column edge. */
+#panelResizeHandle{position:absolute;top:0;bottom:0;right:368px;width:8px;
   cursor:ew-resize;z-index:20;touch-action:none}
 #panelResizeHandle::after{content:'';position:absolute;left:3px;top:0;bottom:0;width:2px;
   background:transparent;transition:background .1s}
@@ -525,11 +534,19 @@ body.dragging #paperTabs{display:none}
    the tabs instead of running alongside them. min-height:0 on both is what
    lets the flex child shrink below its content and actually overflow.
    #panelHead's bottom padding keeps scrolled content from running right up
-   against the last row of tabs. */
+   against the last row of tabs.
+   scrollbar-gutter holds a --sbw strip open down #panelScroll's right edge
+   whether or not a bar is currently in it, so switching to a taller tab no
+   longer reflows every control a few px narrower. Only the scrolling box
+   reserves that strip: #panelHead deliberately doesn't, so the mode tabs
+   stay centered across the full panel width — the bar never runs beside
+   them anyway. The sections below are what sits next to it, and they close
+   the resulting gap themselves (see .sec / #panel h2). */
 #panel{background:var(--panel3);position:relative;z-index:4;
   display:flex;flex-direction:column;min-height:0;overflow:hidden}
 #panelHead{flex:none;padding-bottom:8px}
-#panelScroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding-bottom:24px}
+#panelScroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding-bottom:24px;
+  scrollbar-gutter:stable}
 /* Pen/Texture/Page/Cog settings-mode toggle + the Texture-tab sub-tab rows:
    a pill-shaped bar of equal buttons. The accent fill is a single pill that
    slides to the active button — shared with .projRow, see the block below. */
@@ -556,10 +573,14 @@ body.dragging #paperTabs{display:none}
   transition:transform .18s cubic-bezier(.33,1,.68,1),
              width .18s cubic-bezier(.33,1,.68,1)}
 #panel h2{font-family:var(--mono);font-weight:600;font-size:var(--fs-caps-lg);letter-spacing:var(--ls-hero);
-  color:var(--muted);text-transform:uppercase;padding:14px 14px 8px;border-top:1px solid var(--line);
+  color:var(--muted);text-transform:uppercase;padding:14px 7px 8px 14px;border-top:1px solid var(--line);
   display:flex;justify-content:space-between;align-items:center}
 #panel h2:first-child{border-top:0}
-.sec{padding:0 14px}
+/* 14px in from the panel's left edge, half that on the right: #panelScroll's
+   scrollbar gutter already holds --sbw of clear space out there, so a second
+   full 14px on top of it read as a lopsided margin. Same split on #panel h2
+   above, so section headers and their controls stay flush with each other. */
+.sec{padding:0 7px 0 14px}
 .stat{font-family:var(--mono);font-size:var(--fs-data);color:var(--muted);line-height:1.7}
 .stat b{color:var(--text);font-weight:400}
 .warnTxt{font-family:var(--mono);font-size:var(--fs-data);color:var(--warn);line-height:1.5;margin-top:4px}

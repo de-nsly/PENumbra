@@ -540,9 +540,14 @@ export function initPanelControls(){
   });
   for (const m of PANEL_MODES) $(m.btn).addEventListener('click', () => setPanelMode(m.mode));
   /* ================= settings panel resize handle =================
-     Drag-to-resize for the right settings panel. 322px (this stylesheet's
+     Drag-to-resize for the right settings panel. 372px (the stylesheet's
      own default column width) is both the starting width and the hard
      minimum — "cannot be narrower than it is now" was the explicit ask.
+     Changing it means changing all three copies of that number: this
+     MIN_PANEL_W, `main{grid-template-columns}` and #panelResizeHandle's
+     `right` (width - 4) in styles.css — applyWidth() doesn't run until
+     the first drag or window resize, so until then the handle's position
+     comes from CSS alone.
      The 3D viewport and 2D preview panes are the grid's first two `1fr`
      tracks, so they always split whatever space remains 50/50 regardless
      of how wide the panel gets; only the panel's own px track changes.
@@ -556,7 +561,7 @@ export function initPanelControls(){
      THEN shrinks the window. Guarded by clearing the inline override
      below the breakpoint and restoring it above, on every window resize. */
   (function(){
-    const MIN_PANEL_W = 322;
+    const MIN_PANEL_W = 372;
     const MAX_PANEL_W = 640;
     const STACK_BREAKPOINT = 1100;
     const handle = $('panelResizeHandle');
