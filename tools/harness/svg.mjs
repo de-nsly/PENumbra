@@ -21,7 +21,7 @@ import {
   SIMPLIFY_COLLINEAR_TOL, SIMPLIFY_FOLDBACK_TOL, trimTipFoldback,
   trimContourFoldbacks, dropRedundantContourSlivers,
   appendContourPathD, appendCreasePathD,
-} from '../../js/svg-export.js';
+} from '../../js/chain.js';
 export {
   chainByRun, mergeContourRunSplits, splitSelfTouching, simplifyCollinear,
   chainSegments, mergeAdjacentTouching, mergeCreaseScreenSpace, buildChainedPathD,
