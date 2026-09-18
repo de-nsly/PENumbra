@@ -225,18 +225,14 @@ function syncLayoutGridGuides(dims){
    (x/y/rotation/scale) is a separate, further transform layered on top,
    defaulted to identity so a freshly-added block first appears exactly
    where the live preview showed it.
-   NOTE ON NAMING: the user-facing term for one of these is "layer" (a
-   saved/arrangeable snapshot on the layout canvas) — but internally this
-   file keeps calling it "block" throughout (blocks[], blockCounter,
-   renderBlocksList, #blocksFloat, etc). That's deliberate, not an
-   oversight: this codebase already has a completely different, pre-
-   existing "layer" concept — the pen layers (layers.js, layerEls,
-   applyLayerStyle, the .layer CSS class for Crease/Hatch/etc rows).
-   Reusing "layer" for the internal identifiers here too would collide
-   with that existing system throughout these very functions (e.g. this
-   function already reads every pen layer WHILE building one of
-   these). Only user-visible strings say "layer"; every internal name
-   stays "block" to keep the two concepts unambiguous in the code. */
+   NOTE ON NAMING: one of these is a "block", in the code and in the UI
+   alike (Phase 6 — the UI used to call it a "layer"). The word is kept
+   clear of the app's other, older meaning of layer: a DRAW layer
+   (layers.js — Silhouette, Contour, Crease, Hatch, Circles). Both live
+   in this very function, which reads every draw layer WHILE building
+   one block. Inside a block, "layer" still means a draw layer and says
+   so: layerPaths and layerVisible below hold one entry per draw layer,
+   and they are persisted `.pen` keys besides. */
 export function freezeCurrentGeneration(){
   if (!lastResult){ $('statusL').textContent = 'nothing generated yet'; return; }
   const layout = computePaperLayout();

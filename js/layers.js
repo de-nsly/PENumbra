@@ -59,7 +59,23 @@
    circles centre, an offset from the page centre). `soft` marks a setting
    Soft shadows disables, dimmed in the row like the shadow controls.
    thrFallback — only the loaders use it: the threshold an old scene's
-   global slider stood for when it held no number. */
+   global slider stood for when it held no number.
+
+   THE LAYER KEYS ARE PERSISTED and several of them no longer read like
+   what they draw. They are written into every `.pen` file (the layer
+   list, and every Layout block's layerPaths/layerVisible/overrideStyle)
+   and into clipboard payloads, so they must keep their spelling — this
+   table is the decoder:
+     so        Silhouette
+     iv / ih   Silhouette individual, visible / hidden
+     sv / sh   CONTOUR, visible / hidden — "s" for silhouette, from when
+               contour edges were part of that family
+     cv / ch   Crease, visible / hidden
+     h1 h2 h3  the first three Hatch layers (once Hatch, Crosshatch and
+               Deep shadow, before fill layers became user-managed)
+     cr        the first Circles layer
+     f1 f2 …   every fill layer added since (nextFillId; never reused
+               within a session) */
 export const LAYER_TYPES = {
   so: { kind:'edge', name:'Silhouette',            chain:'silhouette', host:'edgeRowsSil' },
   iv: { kind:'edge', name:'Silhouette individual', chain:'silhouette', host:'edgeRowsSil' },

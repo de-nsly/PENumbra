@@ -799,12 +799,12 @@ function generate(cam, S, shadingBuffer){
 
   const { ne, ea, eb, et0, et1, eang } = M;
   const layerOn = S.layerOn || { so:false, iv:false, ih:false, sv:true, sh:false, cv:true, ch:false };
-  const wantC = !!(layerOn.cv || layerOn.ch);
+  const wantCrease = !!(layerOn.cv || layerOn.ch);
   // Any silhouette-family layer wanting ink means a silhouette-classified
   // edge must be excluded from Crease topology ("silhouette wins overlaps",
   // same rule as before, just now covering all three silhouette layers
   // instead of only the old single Silhouette layer's visible+hidden pair).
-  const wantS = !!(layerOn.so || layerOn.iv || layerOn.ih || layerOn.sv || layerOn.sh);
+  const wantSilhouetteFamily = !!(layerOn.so || layerOn.iv || layerOn.ih || layerOn.sv || layerOn.sh);
   // Contour itself wanting ink — gates every Contour-only step in 6.3–6.8.
   const wantContour = !!(layerOn.sv || layerOn.sh);
 
@@ -865,8 +865,8 @@ function generate(cam, S, shadingBuffer){
     const t1x=et1[e];
     if (t1x>=0){
       if (wantContour && front[et0[e]]!==front[t1x]) continue;   // Contour wins overlaps
-      if (wantC && eang[e]>=S.creaseDeg) isCreaseTopo[e]=1;
-    } else if (wantC) isCreaseTopo[e]=1;
+      if (wantCrease && eang[e]>=S.creaseDeg) isCreaseTopo[e]=1;
+    } else if (wantCrease) isCreaseTopo[e]=1;
   }
   const ccChains = buildEdgeChains(isCreaseTopo, ne, ea, eb, pos);
   const ccX0=new Float32Array(ne), ccY0=new Float32Array(ne), ccZ0=new Float32Array(ne);
@@ -1042,7 +1042,7 @@ function generate(cam, S, shadingBuffer){
 
     const siList = [];      // compact list of the valid segment indices 6.3 projected
     const siFlat = [];      // parallel flat [x0,y0,x1,y1,...] for buildSegGrid
-    if (wantS) for (let seg=0;seg<nCS;seg++){
+    if (wantSilhouetteFamily) for (let seg=0;seg<nCS;seg++){
       if (!csValid[seg]) continue;
       siList.push(seg);
       siFlat.push(csX0[seg], csY0[seg], csX1[seg], csY1[seg]);
@@ -1563,7 +1563,7 @@ function generate(cam, S, shadingBuffer){
        about the same stretch. Anything restored that turns out to lie under
        surviving higher-priority ink is removed by the normal
        dedupCollinear/subtractCovered cascade further down. */
-    const restoreToCrease = !!(wantContour && wantC && (layerOn.cv || layerOn.ch));
+    const restoreToCrease = !!(wantContour && wantCrease && (layerOn.cv || layerOn.ch));
     const creaseRestorable = new Uint8Array(topo.nCS);
     if (restoreToCrease) for (let i=0;i<topo.nCS;i++){
       const e = topo.csEdge[i];

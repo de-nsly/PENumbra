@@ -127,9 +127,12 @@ classify edges into silhouette/contour/crease, each split into visible/hidden ->
 circle fill patterns for shaded faces -> post back flat segment arrays per layer.
 
 **Layer model** (`layers` in `layers.js`): an ordered array of layer instances `{id, type, on, pen, dash,
-texture, …fill settings}`. Ids `so` silhouette, `iv`/`ih` silhouette individual, `sv`/`sh` contour
-(historically "silhouette visible/hidden"), `cv`/`ch` crease, `h1`/`h2`/`h3` the first three hatch layers
-(once Hatch/Crosshatch/Deep shadow), `cr` the first circles layer; layers the user adds get `f1`, `f2`, …
+texture, …fill settings}`. The ids are **persisted** (the layer list, every Layout block's
+`layerPaths`/`layerVisible`/`overrideStyle`, clipboard payloads), so several of them no longer read like
+what they draw — the same decoder table is on `LAYER_TYPES` in `layers.js`: `so` silhouette, `iv`/`ih`
+silhouette individual, `sv`/`sh` **contour** (the "s" is from when contour edges were part of the
+silhouette family), `cv`/`ch` crease, `h1`/`h2`/`h3` the first three hatch layers (once
+Hatch/Crosshatch/Deep shadow), `cr` the first circles layer; layers the user adds get `f1`, `f2`, …
 (`nextFillId`, never reused in a session). Edge layers are fixed singletons; fill layers can be added,
 duplicated, deleted and reordered among themselves, any number of each type. Every fill setting is the
 layer's own — `angleDeg` (hatch), `minSpacing`/`maxSpacing` in mm, `threshold`, and `centerX`/`centerY` for
