@@ -138,11 +138,11 @@ let staleSeq = 0, genSeq = 0, autoTimer = null;
 // 'preview' | 'layout'. While 'layout', the live 3D->SVG pipeline is fully
 // paused — nothing in the 3D viewport (orbit, rotation sliders, light) is
 // visible anyway, so there's no reason to keep regenerating on every change.
-// See layout-canvas.js for the tab-switch handler that flips this and
+// See layout-model.js for the tab-switch handler that flips this and
 // pauses/resumes accordingly (switching back to 'preview' calls markStale()
 // once, to catch up on anything changed while paused).
 export let activeTab = 'preview';
-export function setActiveTab(tab){ activeTab = tab; }   // layout-canvas.js's tab switch
+export function setActiveTab(tab){ activeTab = tab; }   // layout-model.js's tab switch
 export function markStale(){
   if (activeTab !== 'preview') return;
   staleSeq++;
@@ -502,7 +502,7 @@ export function initPanelControls(){
   syncLineLayerUI();
   updateTextureGizmo();
   // previewOverlaySvg's visibility is normally kept in sync by the tab-switch
-  // click handler in layout-canvas.js — but that handler has an early return
+  // click handler in layout-model.js — but that handler has an early return
   // when the clicked tab is already the active one, so it never runs for
   // whichever tab starts active by default (here, 'preview'). Set it
   // explicitly here too, so the gizmo overlay's initial visibility doesn't

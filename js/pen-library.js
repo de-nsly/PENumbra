@@ -6,7 +6,7 @@
    dropdown after an add/rename/delete, reassigning references off a
    deleted pen, and matching pen data that arrives from outside
    (resolvePen/resolveOverridePen/setPenLibrary: .pen scene import in
-   scene-io.js, clipboard paste in layout-canvas.js). Also the "Export one
+   scene-io.js, clipboard paste in layout-clipboard.js). Also the "Export one
    path per pen" checkbox's tie to "Split dashes" (the export itself is
    buildPenPathsExport in export.js).
    ================================================================ */
@@ -14,7 +14,7 @@ import { $, PEN_LIBRARY, defaultPens, penById } from './main.js';
 import { layerById, layers } from './layers.js';
 import { applyLayerStyle, fillPenSelect, fmtWidth, layerEls } from './layer-rows.js';
 import { makeNameEditable } from './panel-controls.js';
-import { blocks } from './layout-canvas.js';
+import { blocks } from './layout-model.js';
 
 
 // Next pen id — only ever climbs (see newPenId), replaced wholesale by a

@@ -1,7 +1,11 @@
 /* ================================================================
-   layout-canvas.js — the Layout tab
+   layout-model.js — the Layout tab's blocks, and the canvas they sit on
+   The core of the Layout tab: the block list itself, each block's DOM,
+   and the sheet they are arranged on. The panels around it are
+   layout-list.js, the gestures layout-interaction.js, copy/paste
+   layout-clipboard.js.
    A fixed-order stack of frozen "blocks" (user-facing name: "layers" —
-   see the naming note further down), each one a full snapshot of a past
+   see the naming note in CLAUDE.md), each one a full snapshot of a past
    generation's geometry, arranged on the same paper sheet the live
    preview uses. A block's GEOMETRY is frozen at the moment it's added
    (the already-merged per-layer path data, exactly as it existed then),
@@ -728,7 +732,7 @@ export function worldEnvelope(block){
 /* ================= init =================
    Everything above only declares. This wires the DOM and starts the
    module's live behaviour — called once by app.js, in script order. */
-export function initLayoutCanvas(){
+export function initLayoutModel(){
   initLayoutPlot();
   ['gridGuideEnabled','gridGuideX','gridGuideY'].forEach(id =>
     $(id).addEventListener('input', () => {

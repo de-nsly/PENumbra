@@ -62,7 +62,10 @@ js/path-model.js     - d-string <-> typed segments, dash splitting, the margin t
 js/export.js         - exportSvg(): the Export button, both modes (clone of the screen, or one path per pen)
 js/panel-controls.js - control panel wiring, gatherSettings(), generate/staleness/auto-generate state
 js/pen-library.js    - the Pen library tab, pen add/delete, matching incoming pens
-js/layout-canvas.js  - the Layout tab
+js/layout-model.js   - the Layout tab: the blocks, their DOM, the canvas scaffold
+js/layout-list.js    - the Layout tab: block list rows, context menu, the floating buttons + overlay state
+js/layout-interaction.js - the Layout tab: selection, hit testing, move/rotate/scale gestures, snapping, guides
+js/layout-clipboard.js   - the Layout tab: copy / paste of blocks
 js/scene-io.js       - worker.onmessage dispatcher, file I/O, .pen scene save/load, boots the demo scene
 js/debug/*.js        - console-only diagnostics, dynamically imported by scene-io.js only when the URL has ?debug
 ```
@@ -143,7 +146,7 @@ always split, margin-trimmed, then baked into page mm — Blender's SVG importer
 path, named after its id. Off, the export is a cleaned-up clone of the on-screen SVG (one group per layer).
 Dash patterns everywhere go through `dashPattern` (`main.js`): a pair whose dash is 0 is dropped whole.
 
-**Layout tab vs. draw layers — a naming collision to watch for:** the Layout tab (`layout-canvas.js`)
+**Layout tab vs. draw layers — a naming collision to watch for:** the Layout tab (`layout-*.js`)
 stacks frozen snapshots of past generations, called "blocks" internally but labeled "layers" in the UI.
 This is a *different* concept from the `layers` instance array above — don't conflate the two when reading
 or writing code that touches either.

@@ -15,7 +15,7 @@ import { $, svgEl } from './main.js';
 import { layers } from './layers.js';
 import { refreshStatusR } from './render-result.js';
 import { lastGen, markStale, updateGroundPatternSliderRange } from './panel-controls.js';
-import { gridGuidePositions, renderPreviewLayoutOverlay, syncLayoutPaperFrame, syncLayoutTrimMask } from './layout-canvas.js';
+import { gridGuidePositions, renderPreviewLayoutOverlay, syncLayoutPaperFrame, syncLayoutTrimMask } from './layout-model.js';
 import { applyPv, resetPv } from './paper-preview.js';
 import { applyLayerStyle } from './layer-rows.js';
 /* ================= paper layout =================
@@ -102,7 +102,7 @@ export function renderPaper(){
   guide.setAttribute('width', Math.max(0, layout.paperW - layout.margin.left - layout.margin.right));
   guide.setAttribute('height', Math.max(0, layout.paperH - layout.margin.top - layout.margin.bottom));
   // Guide Grid — same visual reference lines as the Layout tab (see
-  // gridGuidePositions in layout-canvas.js, the shared source of truth for
+  // gridGuidePositions in layout-model.js, the shared source of truth for
   // where a guide actually sits), but display-only here: Preview has no
   // interactive placement to snap, so this never feeds into any geometry
   // or export math, just drawn for eyeballing composition against the model.

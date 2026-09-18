@@ -16,7 +16,7 @@ import { $, isFormControlTarget, isTextEntryTarget, svgEl } from './main.js';
 import { refreshStatusR } from './render-result.js';
 import { activeTab } from './panel-controls.js';
 import { updateRuler } from './paper-preview.js';
-import { MIN_BLOCK_SCALE, addBlocks, blockCorners, blocks, canvasMmToScreen, cloneBlock, computeLayoutPaperDims, deleteBlocks, gridGuidePositions, localToWorld, mmPerScreenPx, screenToCanvasMm, syncDuplicateBlockBtn, updateBlockStyle, updateBlockTransform, worldEnvelope, worldToLocal } from './layout-canvas.js';
+import { MIN_BLOCK_SCALE, addBlocks, blockCorners, blocks, canvasMmToScreen, cloneBlock, computeLayoutPaperDims, deleteBlocks, gridGuidePositions, localToWorld, mmPerScreenPx, screenToCanvasMm, syncDuplicateBlockBtn, updateBlockStyle, updateBlockTransform, worldEnvelope, worldToLocal } from './layout-model.js';
 // Session-only multi-select — a Set, not a persistent named group. Single
 // selection is just the size===1 case throughout, not a separate code
 // path, EXCEPT where noted (rotate/scale hit-testing and math keep an
@@ -192,7 +192,7 @@ export function selectOnly(block){
   setSelection([block]);
 }
 // The anchor a following Shift+click extends from, for the one caller outside
-// this module: adding blocks (layout-canvas.js) makes the last one the anchor
+// this module: adding blocks (layout-model.js) makes the last one the anchor
 // as well as the selection, so a Shift+click after a paste behaves as if that
 // block had just been clicked.
 export function setSelectionAnchor(block){ selectionAnchor = block; }

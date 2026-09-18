@@ -10,7 +10,7 @@ import { $, DASH_KEYS, PEN_LIBRARY, isTextEntryTarget } from './main.js';
 import { layers } from './layers.js';
 import { activeTab } from './panel-controls.js';
 import { resolveOverridePen, syncPenLibraryUI } from './pen-library.js';
-import { MIN_BLOCK_SCALE, addBlocks, blockCountLabel, blocks, nextBlockId } from './layout-canvas.js';
+import { MIN_BLOCK_SCALE, addBlocks, blockCountLabel, blocks, nextBlockId } from './layout-model.js';
 import { interaction, interactiveSelection } from './layout-interaction.js';
 /* ================= clipboard (copy / paste layers) =================
    Ctrl/Cmd+C copies the interactive part of the selection to the SYSTEM

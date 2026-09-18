@@ -15,7 +15,7 @@ import { refreshStatusR } from './render-result.js';
 import { dashOptionsHtml, fillPenSelect } from './layer-rows.js';
 import { activeTab, makeNameEditable } from './panel-controls.js';
 import { saveCurrentView } from './viewport3d.js';
-import { blocks, deleteBlocks, duplicateBlocks, freezeCurrentGeneration, removeBlockDom, renderPreviewLayoutOverlay, screenToCanvasMm, setBlocks, syncDuplicateBlockBtn, updateBlockStyle, updateBlockTransform } from './layout-canvas.js';
+import { blocks, deleteBlocks, duplicateBlocks, freezeCurrentGeneration, removeBlockDom, renderPreviewLayoutOverlay, screenToCanvasMm, setBlocks, syncDuplicateBlockBtn, updateBlockStyle, updateBlockTransform } from './layout-model.js';
 import { LAYOUT_UI_CHROME_SELECTOR, blockForRow, clearSelection, extendSelectionTo, hitTestBlockBody, multiSelectKey, refreshInteractiveSelection, refreshSelectionHighlight, rowActionScope, selectOnly, selectedBlocks, toggleSelection } from './layout-interaction.js';
 /* ================= per-block layer visibility context menu =================
    Right-clicking a block overrides the browser's default context menu with
@@ -284,7 +284,7 @@ function setLayoutOverlayOrder(front){
   renderPreviewLayoutOverlay();
 }
 
-/* Wires the panels. app.js calls this after initLayoutCanvas and before
+/* Wires the panels. app.js calls this after initLayoutModel and before
    initLayoutInteraction, which is the order these listeners were registered
    in when the Layout tab had a single init. */
 export function initLayoutList(){

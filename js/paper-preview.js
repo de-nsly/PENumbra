@@ -7,19 +7,19 @@
    markers — everything drawn into the screen-space overlay SVGs
    (#previewOverlaySvg / #layoutOverlaySvg). Works on whichever sheet is
    currently active — #sheet (Preview) or #layoutSheet (Layout) — via
-   activeSheetId, which layout-canvas.js's tab-switch handler updates;
+   activeSheetId, which layout-model.js's tab-switch handler updates;
    only one sheet is ever visible at a time, so one shared pv state is
    enough, reset on tab switch.
    Paper-layout math itself (computePaperLayout, baseSheetSize) lives in
    paper-layout.js since computePaperLayout is shared with the actual SVG
    export; computeLayoutPaperDims (the Layout-tab equivalent, no solver
-   viewport to fit) lives in layout-canvas.js.
+   viewport to fit) lives in layout-model.js.
    ================================================================ */
 import { $, onMiddleDblClick, svgEl } from './main.js';
 import { layerType, layers } from './layers.js';
 import { baseSheetSize, computePaperLayout } from './paper-layout.js';
 import { expandedLayerId, layerStyle, syncFillRowValues } from './layer-rows.js';
-import { computeLayoutPaperDims } from './layout-canvas.js';
+import { computeLayoutPaperDims } from './layout-model.js';
 import { selectedBlocks, updateSelectionOverlay } from './layout-interaction.js';
 import { activeTab, markStale } from './panel-controls.js';
 
@@ -35,7 +35,7 @@ function gizmoCirclesLayer(){
 const pane2 = $('paperPane');
 export const pv = { z: 1, tx: 0, ty: 0 };            // tx/ty: sheet-center offset from pane-center, in CSS px
 export let activeSheetId = 'sheet';
-export function setActiveSheet(id){ activeSheetId = id; }   // layout-canvas.js's tab switch
+export function setActiveSheet(id){ activeSheetId = id; }   // layout-model.js's tab switch
 function currentLayoutDims(){
   return activeSheetId === 'sheet' ? computePaperLayout() : computeLayoutPaperDims();
 }
@@ -43,7 +43,7 @@ export function resetPv(){ pv.z = 1; pv.tx = 0; pv.ty = 0; }
 /* previewOverlaySvg/layoutOverlaySvg are position:fixed;inset:0, covering
    the ENTIRE browser viewport — needed so the viewport-relative coordinates
    getBoundingClientRect() already hands back everywhere else in this file
-   (previewMmToScreen, updateRuler, layout-canvas.js's selection handles)
+   (previewMmToScreen, updateRuler, layout-interaction.js's selection handles)
    can be used directly as SVG coordinates with no extra offset math. But
    that also means anything drawn in them — the ruler, the texture gizmo,
    selection handles — renders over WHATEVER is underneath in screen space,
@@ -130,7 +130,7 @@ function reset2dView(){ resetPvFitWithRulers(); applyPv(); }
    only needs layout.paperW/paperH, not the solver-origin/offX/offY
    conversion gatherSettings uses to translate this into what the worker
    actually receives. previewMmToScreen/screenToPreviewMm mirror
-   canvasMmToScreen/screenToCanvasMm's exact pattern from layout-canvas.js
+   canvasMmToScreen/screenToCanvasMm's exact pattern from layout-model.js
    — the SVG's own getBoundingClientRect() already reflects the pane's
    current pan/zoom (applied via CSS position/size, not an SVG-internal
    transform), so no separate pv.z/tx/ty math is needed here at all. */

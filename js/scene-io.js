@@ -17,7 +17,7 @@ import { computePaperLayout } from './paper-layout.js';
 import { addDashSlot, buildLayerRows, refreshDashPreview } from './layer-rows.js';
 import { activeTab, buildCamMessage, doGenerate, generateFailed, lastGen, refreshValLabel, syncLineLayerUI } from './panel-controls.js';
 import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncPenLibraryUI } from './pen-library.js';
-import { blockCounter, blocks, replaceBlocks, renderLayoutCanvas } from './layout-canvas.js';
+import { blockCounter, blocks, replaceBlocks, renderLayoutCanvas } from './layout-model.js';
 import { renderBlocksList } from './layout-list.js';
 import { resetPvFitWithRulers, updateTextureGizmo } from './paper-preview.js';
 import { renderTextureStack } from './texture-stack.js';
@@ -292,7 +292,7 @@ export function applyImportedScene(data){
   // Same fallback for layout blocks (a later addition than Saved Views). A
   // scene import always REPLACES the block list wholesale, unlike loading a
   // bare STL/OBJ, which leaves existing blocks alone — see replaceBlocks
-  // (layout-canvas.js) for the DOM/selection teardown and id reassignment.
+  // (layout-model.js) for the DOM/selection teardown and id reassignment.
   replaceBlocks(Array.isArray(data.blocks) ? data.blocks : [],
     Number.isFinite(data.blockCounter) ? data.blockCounter : 0);
   // Override entries from before pens existed are {color, width, dash};
@@ -431,7 +431,7 @@ export function initSceneIO(){
       ? { name: lastFileData.name, zUp: zUpImport, dataB64: base64FromArrayBuffer(lastFileData.buffer) }
       : { demo: true };
     // Each block carries a live .dom reference (its persistent SVG nodes —
-    // see layout-canvas.js) once it's actually been rendered; JSON.stringify
+    // see layout-model.js) once it's actually been rendered; JSON.stringify
     // on a DOM node throws (circular structure), so it must be stripped here,
     // not carried through into the saved file at all — it's rebuilt fresh on
     // import anyway (renderLayoutCanvas hydrates DOM for any block missing it).

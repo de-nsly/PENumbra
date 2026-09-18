@@ -19,7 +19,7 @@ import { refreshStatusR } from './render-result.js';
 import { formatValue } from './settings.js';
 import { activeTab, makeSliderValueEditable, markStale, syncLineLayerUI } from './panel-controls.js';
 import { renderTextureStack } from './texture-stack.js';
-import { refreshAllBlockStyles, renderPreviewLayoutOverlay } from './layout-canvas.js';
+import { refreshAllBlockStyles, renderPreviewLayoutOverlay } from './layout-model.js';
 import { layoutOverlayOn } from './layout-list.js';
 import { updateTextureGizmo } from './paper-preview.js';
 
@@ -173,7 +173,7 @@ export function applyLayerStyle(id){
     g.style.display = s.on ? '' : 'none';
   }
   // Blocks freeze geometry but read color/width/dash/on live (see
-  // layout-canvas.js) — only worth the redraw while Layout is the tab
+  // layout-model.js) — only worth the redraw while Layout is the tab
   // actually being looked at; switching TO Layout already does a full
   // render on its own.
   if (activeTab === 'layout') refreshAllBlockStyles();
@@ -320,7 +320,7 @@ function deleteFillLayer(L){
   fillLayersChanged();
 }
 /* Drag-reorder among fill rows — the same gesture and feedback as the
-   Layout blocks list (see its own handler in layout-canvas.js): plain
+   Layout blocks list (see its own handler in layout-list.js): plain
    pointer events rather than native drag-and-drop, the dragged row dimmed
    in place, and an accent insertion line showing where it would land among
    the rows that aren't moving. The reorder happens on release.
