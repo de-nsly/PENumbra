@@ -319,10 +319,10 @@ export function updateSelectionOverlay(){
 // renderBlocksList's row markup because they depend on the CURRENT
 // selection — each button acts on the whole selection when its own row is
 // part of one (see rowActionScope), and a click that hides or deletes five
-// layers at once should say so before it happens, not after. Owned in one
+// blocks at once should say so before it happens, not after. Owned in one
 // place so the two states can't word the same action differently.
 function applyRowBtnLabels(row, block, selCount){
-  const target = (selCount > 1 && selectedBlocks.has(block)) ? 'all ' + selCount + ' selected layers' : block.name;
+  const target = (selCount > 1 && selectedBlocks.has(block)) ? 'all ' + selCount + ' selected blocks' : block.name;
   const label = (sel, text) => {
     const btn = row.querySelector(sel);
     if (!btn) return;

@@ -292,7 +292,7 @@ export function freezeCurrentGeneration(){
   const bboxLocal = { x0: bb.x, y0: bb.y, x1: bb.x + bb.width, y1: bb.y + bb.height };
   const block = {
     id: ++blockIdCounter,
-    name: 'Layer ' + String(blockCounter).padStart(2, '0'),
+    name: 'Block ' + String(blockCounter).padStart(2, '0'),
     visible: true,
     // Prevents accidental move/rotate/scale via the canvas — selection and
     // the right-click layer-visibility menu are unaffected either way (see
@@ -367,7 +367,7 @@ export function cloneBlock(block){
 // "Layer 04" for one, "3 layers" for several — the phrasing every status
 // line about a batch of blocks uses, in one place so they all match.
 export function blockCountLabel(list){
-  return list.length === 1 ? list[0].name : list.length + ' layers';
+  return list.length === 1 ? list[0].name : list.length + ' blocks';
 }
 // The shared tail of every action that brings NEW blocks onto the page —
 // duplicate and paste. Appends them in the given order, so they land as one

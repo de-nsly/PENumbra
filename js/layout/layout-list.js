@@ -408,7 +408,7 @@ export function initLayoutList(){
   });
   $('clearBlocksBtn').addEventListener('click', () => {
     if (!blocks.length) return;
-    if (!confirm('Delete all ' + blocks.length + ' layer(s)? This cannot be undone.')) return;
+    if (!confirm('Delete all ' + blocks.length + ' block(s)? This cannot be undone.')) return;
     for (const b of blocks) removeBlockDom(b);
     setBlocks([]);
     clearSelection();

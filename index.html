@@ -135,7 +135,7 @@
           <span>Also save 3D view</span>
           <button class="pillToggle" id="addToLayoutSaveViewBtn" role="switch" aria-checked="false" aria-label="also save current 3D view when adding to layout"></button>
         </span>
-        <span class="switchWrap" id="layoutOverlayWrap" title="Show the layers saved to Layout as a static, non-interactive overlay on this live preview">
+        <span class="switchWrap" id="layoutOverlayWrap" title="Show the blocks saved to Layout as a static, non-interactive overlay on this live preview">
           <span>Layout overlay</span>
           <button class="pillToggle" id="layoutOverlayBtn" role="switch" aria-checked="false" aria-label="show layout overlay on live preview"></button>
         </span>
@@ -156,12 +156,12 @@
       <div id="addToLayoutMsg" role="status" aria-live="polite"></div>
       <div id="blocksFloat" style="display:none">
         <div class="svHeaderRow">
-          <div class="vpLabel">Layers</div>
+          <div class="vpLabel">Blocks</div>
           <div class="svHeaderBtns">
             <button type="button" class="addViewBtn" id="duplicateBlockBtn" style="display:none" disabled
-              title="Duplicate the selected layer(s) — same place, rotation, and overrides, fully independent copies"
-              aria-label="Duplicate selected layers">Duplicate</button>
-            <button type="button" class="addViewBtn" id="clearBlocksBtn" title="Delete all layers" aria-label="Delete all layers">Delete All</button>
+              title="Duplicate the selected block(s) — same place, rotation, and overrides, fully independent copies"
+              aria-label="Duplicate selected blocks">Duplicate</button>
+            <button type="button" class="addViewBtn" id="clearBlocksBtn" title="Delete all blocks" aria-label="Delete all blocks">Delete All</button>
           </div>
         </div>
         <div id="blocksList"></div>
@@ -237,7 +237,7 @@
           </select>
         </div>
         <label class="chk" title="When switching between Portrait and Landscape, rotate every Layout block right along with the page — as if you'd physically picked up and turned the sheet — instead of leaving each block where it was relative to the new page's top-left corner. In-session only; not remembered per block or saved in the scene.">
-          <input type="checkbox" id="rotateBlocksWithPage"> Rotate layers with page</label>
+          <input type="checkbox" id="rotateBlocksWithPage"> Rotate blocks with page</label>
         <div class="ctl">
           <label for="pageColor">Page color</label>
           <input type="color" id="pageColor" value="#fbf9f3">
@@ -509,7 +509,7 @@
 <div id="widthDimLabel" class="dimLabel"></div>
 <div id="heightDimLabel" class="dimLabel"></div>
 <div id="layerContextMenu" style="display:none">
-  <div class="vpLabel">Layers</div>
+  <div class="vpLabel">Block layers</div>
   <div id="layerContextMenuList"></div>
   <label class="chk" id="layerContextOverrideRow"><input type="checkbox" id="layerContextOverrideChk"> Override settings</label>
 </div>
@@ -550,22 +550,22 @@
       </div>
       <div class="aboutShortcutGroup">
         <h3>Layout tab</h3>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span><span>Nudge the selected layer(s) by 0.5&nbsp;mm</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+<kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span><span>Nudge the selected layer(s) by 5&nbsp;mm</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys">Right-click a layer</span><span>Open the layer menu</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Esc</kbd></span><span>Close the right-click layer menu</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys">Click a layer</span><span>Select it</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Ctrl</kbd>/<kbd>&#8984;</kbd>+ click</span><span>Add / remove a layer from the selection</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+ click in the list</span><span>Select every layer between the last-clicked one and this one</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+ click on the page</span><span>Add / remove a layer from the selection</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Ctrl</kbd>/<kbd>&#8984;</kbd>+<kbd>A</kbd></span><span>Select all layers</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Alt</kbd>+ drag</span><span>Duplicate the layer(s) instead of moving them</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span><span>Nudge the selected block(s) by 0.5&nbsp;mm</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+<kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd></span><span>Nudge the selected block(s) by 5&nbsp;mm</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Right-click a block</span><span>Open the block menu</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Esc</kbd></span><span>Close the right-click block menu</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Click a block</span><span>Select it</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Ctrl</kbd>/<kbd>&#8984;</kbd>+ click</span><span>Add / remove a block from the selection</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+ click in the list</span><span>Select every block between the last-clicked one and this one</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+ click on the page</span><span>Add / remove a block from the selection</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Ctrl</kbd>/<kbd>&#8984;</kbd>+<kbd>A</kbd></span><span>Select all blocks</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Alt</kbd>+ drag</span><span>Duplicate the block(s) instead of moving them</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+ drag</span><span>Constrain the move to one axis</span></div>
         <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Shift</kbd>+ rotate</span><span>Rotation snaps to 5° increments</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Del</kbd>/<kbd>Backspace</kbd></span><span>Delete the selected layers — skips locked and hidden ones</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Ctrl</kbd>/<kbd>&#8984;</kbd>+<kbd>C</kbd></span><span>Copy the selected layers — skips locked and hidden ones</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Ctrl</kbd>/<kbd>&#8984;</kbd>+<kbd>V</kbd></span><span>Paste copied layers back, exactly where they were</span></div>
-        <div class="aboutShortcutRow"><span class="aboutKeys">Drag a layer's handle in the list</span><span>Reorder layers</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Del</kbd>/<kbd>Backspace</kbd></span><span>Delete the selected blocks — skips locked and hidden ones</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Ctrl</kbd>/<kbd>&#8984;</kbd>+<kbd>C</kbd></span><span>Copy the selected blocks — skips locked and hidden ones</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys"><kbd>Ctrl</kbd>/<kbd>&#8984;</kbd>+<kbd>V</kbd></span><span>Paste copied blocks back, exactly where they were</span></div>
+        <div class="aboutShortcutRow"><span class="aboutKeys">Drag a block's handle in the list</span><span>Reorder blocks</span></div>
       </div>
       <div class="aboutShortcutGroup">
         <h3>Editing a value or name (after double-click)</h3>

@@ -135,7 +135,7 @@ function buildPenPathsExport(isLayout, dims){
 export function exportSvg(){
   const isLayout = activeTab === 'layout';
   if (isLayout){
-    if (!blocks.length){ $('statusL').textContent = 'no layers to export'; return; }
+    if (!blocks.length){ $('statusL').textContent = 'no blocks to export'; return; }
   } else if (!lastGen){ $('statusL').textContent = 'generate first'; return; }
 
   const layout = isLayout ? computeLayoutPaperDims() : computePaperLayout();
@@ -208,7 +208,7 @@ export function exportSvg(){
   }
   const meta = document.createComment(' Penumbra plot · ' + modelName + ' · ' +
     new Date().toISOString() + ' · ' + (isLayout
-      ? ('layout: ' + blocks.length + ' layer(s)')
+      ? ('layout: ' + blocks.length + ' block(s)')
       : ('settings: ' + JSON.stringify(gatherSettings()))) + ' ');
   out.insertBefore(meta, out.firstChild);
 
