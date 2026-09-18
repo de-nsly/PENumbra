@@ -49,13 +49,13 @@ export function renderPenLibrary(){
   list.innerHTML = '';
   for (const pen of PEN_LIBRARY){
     const row = document.createElement('div');
-    row.className = 'layer penLibRow';
+    row.className = 'gridRow penLibRow';
     row.innerHTML =
       '<svg class="swatch" viewBox="0 0 50 14" aria-hidden="true"><path d="M3 7 L47 7" fill="none"/></svg>' +
       '<span class="nm" title="Double-click to rename"></span>' +
       '<input type="color">' +
       '<input type="number" min="0.1" max="6" step="0.05">' +
-      '<button type="button" class="svBtn svDelete">&#10005;</button>';
+      '<button type="button" class="rowBtn rowDelete">&#10005;</button>';
     const [swSvg, nm, col, wid, del] = row.children;
     const sw = swSvg.firstChild;
     // User-typed name — textContent/setAttribute only, never innerHTML.

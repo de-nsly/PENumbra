@@ -109,11 +109,11 @@ header{padding:0 16px}
    The icon buttons differ only in size / radius / a couple of bg overrides. */
 .btn{background:var(--panel2);border:1px solid var(--line);border-radius:50cqh;
   padding:7px 14px;cursor:pointer;font-weight:600;font-size:var(--fs-btn);letter-spacing:var(--ls-btn)}
-.aboutBtn,.aboutClose,.cornerBtn,.addViewBtn,.svBtn{flex:none;display:flex;
+.aboutBtn,.aboutClose,.cornerBtn,.headerBtn,.rowBtn{flex:none;display:flex;
   align-items:center;justify-content:center;padding:0;line-height:1;cursor:pointer;
   border:1px solid var(--line);background:var(--panel2);color:var(--muted)}
 .btn:hover,.aboutBtn:hover,.aboutClose:hover,.cornerBtn:hover,
-.addViewBtn:hover,.svBtn:hover,.vpBtn:hover{border-color:var(--accent);color:var(--accent)}
+.headerBtn:hover,.rowBtn:hover,.vpBtn:hover{border-color:var(--accent);color:var(--accent)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .btn.primary:hover{filter:brightness(1.1);color:var(--accent-ink)}
 /* full-width button stacked in a settings section (Add pen, Add dash style, the debug exports) */
@@ -121,8 +121,8 @@ header{padding:0 16px}
 /* per-button size / shape (the rest comes from the two rules above) */
 .aboutBtn{width:26px;height:26px;border-radius:50%;font-size:var(--fs-btn);font-weight:600}
 .aboutClose{width:24px;height:24px;border-radius:50%;background:transparent;font-size:var(--fs-data)}
-.addViewBtn{width:24px;height:24px;border-radius:50cqh;font-size:var(--fs-brand)}
-.svBtn{width:24px;height:24px;border-radius:50%;font-size:var(--fs-data)}
+.headerBtn{width:24px;height:24px;border-radius:50cqh;font-size:var(--fs-brand)}
+.rowBtn{width:24px;height:24px;border-radius:50%;font-size:var(--fs-data)}
 #clearBlocksBtn,#duplicateBlockBtn{width:auto;padding:0 10px;
   font-size:var(--fs-control);font-weight:600;letter-spacing:var(--ls-btn)}
 /* one faded/inert state — native :disabled controls + JS-toggled .ctlDisabled rows */
@@ -201,7 +201,7 @@ section,aside{position:relative;min-width:0;min-height:0}
 /* The Layers panel runs down to the pane's bottom edge, right where this
    button would otherwise sit — so while that panel is on screen the button
    steps out to just past its right edge, bottom-aligned with it.
-   body.blocksPanelOpen is set by syncBlocksFloatVisibility (layout-canvas.js)
+   body.blocksPanelOpen is set by syncBlocksFloatVisibility (layout-list.js)
    and so tracks the panel exactly: on the Preview tab, or in Layout before
    there are any layers, the button stays in its normal corner.
    Written as a transform off that normal corner rather than as its own
@@ -240,7 +240,7 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
    which would swallow canvas drags down the left edge, hence pointer-events:
    none here and auto on the panels themselves — a click still lands on a
    panel and still matches closest('#paperPanelStack') (LAYOUT_UI_CHROME_
-   SELECTOR in layout-canvas.js), it just no longer lands on the empty space
+   SELECTOR in layout-interaction.js), it just no longer lands on the empty space
    between and below them.
    Nothing in the stack may flex except the Layers panel: the floats above it
    hold buttons and sliders that must keep their natural size, so the Layers
@@ -255,7 +255,7 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
 #paperPanelStack{width:var(--blocks-float-w);bottom:12px;pointer-events:none}
 #paperPanelStack > *{pointer-events:auto;flex:none}
 #paperPanelStack > #blocksFloat{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
-#blocksFloat .svHeaderRow{flex:none}
+#blocksFloat .listHeaderRow{flex:none}
 /* frosted glass — shared by every floating panel and the layer context menu;
    backdrop-filter degrades to a plain translucent panel where unsupported. */
 #camFloat,#rotateFloat,#viewsFloat,#genExportFloat,#addToLayoutFloat,#blocksFloat,#blockContextMenu{
@@ -305,46 +305,46 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
    panel header), the list below is a simple scrollable stack of rows so an
    unbounded number of saved views can't push the rest of the 3D viewport's
    UI around or grow the panel past the viewport height. */
-.svHeaderRow{display:flex;align-items:center;justify-content:space-between}
-.svHeaderRow .vpLabel{margin:0}
-.svHeaderBtns{display:flex;align-items:center;gap:6px}
+.listHeaderRow{display:flex;align-items:center;justify-content:space-between}
+.listHeaderRow .vpLabel{margin:0}
+.listHeaderBtns{display:flex;align-items:center;gap:6px}
 #viewsList,#blocksList{max-height:500px;overflow-y:auto;margin-top:10px}
 /* Unlike Saved Views' fixed cap, the Layout list grows with its content until
    it reaches the bottom of the pane, then scrolls — the height it's allowed
    comes from the stack above (see #paperPanelStack), so no cap here. */
 #blocksList{position:relative;max-height:none;flex:1 1 auto;min-height:0}
-/* Empty state (Saved Views only — the Layout Layers panel hides itself
+/* Empty state (Saved Views only — the Layout blocks panel hides itself
    entirely when empty instead, see syncBlocksFloatVisibility in
-   layout-canvas.js): center the header row (name + button) within whatever
+   layout-list.js): center the header row (name + button) within whatever
    height the panel has, instead of it sitting flush against the top
    padding with visible dead space below. The (empty) list itself is
    hidden outright so its own margin-top doesn't throw off the centering. */
-#viewsFloat.svEmpty{display:flex;flex-direction:column;justify-content:center}
-#viewsFloat.svEmpty #viewsList{display:none}
-.savedView{display:grid;grid-template-columns:1fr 22px 22px;align-items:center;gap:5px;
+#viewsFloat.listEmpty{display:flex;flex-direction:column;justify-content:center}
+#viewsFloat.listEmpty #viewsList{display:none}
+.listRow{display:grid;grid-template-columns:1fr 22px 22px;align-items:center;gap:5px;
   padding:4px 6px;border-bottom:1px dashed var(--divider)}
 /* Layout's blocksList rows have one more button (Lock, between Eye and
-   Delete) than the base .savedView template accounts for — Saved Views
-   (#viewsList, Update+Delete) and the layer-visibility context menu both
+   Delete) than the base .listRow template accounts for — Saved Views
+   (#viewsList, Update+Delete) and the block context menu both
    still only need theirs, so this widens the grid ONLY for #blocksList
    rather than changing the shared base rule out from under them. */
-#blocksList .savedView{grid-template-columns:18px 1fr 22px 22px 22px}
-#blocksList .svDragHandle{width:18px;height:22px;display:flex;align-items:center;justify-content:center;
+#blocksList .listRow{grid-template-columns:18px 1fr 22px 22px 22px}
+#blocksList .rowDragHandle{width:18px;height:22px;display:flex;align-items:center;justify-content:center;
   cursor:grab;color:var(--muted);touch-action:none}
-#blocksList .svDragHandle:hover{color:var(--text)}
+#blocksList .rowDragHandle:hover{color:var(--text)}
 /* Drag-reorder feedback, shared by the Layout blocks list and the fill layer
    rows: the dragged row dims in place while an accent line shows where it
    would land. The line is absolutely positioned inside its list, so it never
    adds to the list's own height (see the Layout drag handler). */
-.svDragging{opacity:.4}
-.svInsertLine{position:absolute;left:6px;right:6px;height:2px;background:var(--accent);border-radius:1px;pointer-events:none}
-.savedView .svName{font-size:var(--fs-control);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:text;width:fit-content;max-width:100%}
-.savedView .svName[contenteditable="true"],.penLibRow .nm[contenteditable="true"]{outline:none;-webkit-user-select:text;user-select:text;overflow:visible}
-.svBtn.svDelete:hover{border-color:var(--warn);color:var(--warn)}
-.svBtn.svLockActive{color:var(--accent)}
-.svBtn svg{display:block}
-.savedView.svRowHidden .svName{opacity:.45}
-.savedView.svRowSelected{background:rgba(88,184,214,.1);border-radius:4px}
+.rowDragging{opacity:.4}
+.rowInsertLine{position:absolute;left:6px;right:6px;height:2px;background:var(--accent);border-radius:1px;pointer-events:none}
+.listRow .rowName{font-size:var(--fs-control);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:text;width:fit-content;max-width:100%}
+.listRow .rowName[contenteditable="true"],.penLibRow .nm[contenteditable="true"]{outline:none;-webkit-user-select:text;user-select:text;overflow:visible}
+.rowBtn.rowDelete:hover{border-color:var(--warn);color:var(--warn)}
+.rowBtn.rowLockActive{color:var(--accent)}
+.rowBtn svg{display:block}
+.listRow.rowHidden .rowName{opacity:.45}
+.listRow.rowSelected{background:rgba(88,184,214,.1);border-radius:4px}
 
 /* Layout canvas — margin guide (paper reference, bottom layer, same
    dashed-line treatment as the Preview tab's own margin guide), selection
@@ -419,7 +419,7 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
    toggles), shifting the eye button that follows it even though nothing
    about that button itself changed. Fixed-width everywhere means toggling
    Override only ever ADDS columns, never resizes the existing ones. */
-#blockContextMenuList .savedView{grid-template-columns:133px 22px}
+#blockContextMenuList .listRow{grid-template-columns:133px 22px}
 /* The spacer column (empty <span class="ctxSpacer">, inserted in the DOM
    by openBlockContextMenu right after the eye button) shifts pen/dash
    rightward as a group, using space that would otherwise sit unused
@@ -427,8 +427,8 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
    redistributed, and it doubles as a visual gap between the visibility
    toggles and the rest of the per-layer settings. The pen column (85px) is
    the old color (24px) + gap + width (56px) columns it replaced. */
-#blockContextMenu.overrideActive #blockContextMenuList .savedView{grid-template-columns:133px 22px 10px 85px 50px}
-#blockContextMenuList .svName{cursor:default}
+#blockContextMenu.overrideActive #blockContextMenuList .listRow{grid-template-columns:133px 22px 10px 85px 50px}
+#blockContextMenuList .rowName{cursor:default}
 /* Native color-input rendering nests an inner swatch element with its own
    default padding/border regardless of the outer input's own padding:0 —
    left alone, that reads as a smaller box floating inside a larger one
@@ -676,23 +676,23 @@ input[type=number]{width:58px}
 /* Line layer rows: on | preview | name | pen | dash. The pen column (88px)
    is exactly the old color (26px) + gap + width (56px) columns it replaced,
    so names and the dash column didn't move. */
-.layer{display:grid;grid-template-columns:16px 50px 1fr 88px 58px;align-items:center;
+.gridRow{display:grid;grid-template-columns:16px 50px 1fr 88px 58px;align-items:center;
   gap:6px;padding:5px 0;border-bottom:1px dashed var(--divider)}
-.layer .nm{font-size:var(--fs-control);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.layer .nm.hid{color:var(--muted);font-size:var(--fs-data);padding-left:8px}
-.layer input[type=checkbox]{width:var(--check-size);height:var(--check-size)}
-.layer input[type=color]{width:24px;height:20px;border:1px solid var(--line);border-radius:4px;
+.gridRow .nm{font-size:var(--fs-control);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gridRow .nm.hid{color:var(--muted);font-size:var(--fs-data);padding-left:8px}
+.gridRow input[type=checkbox]{width:var(--check-size);height:var(--check-size)}
+.gridRow input[type=color]{width:24px;height:20px;border:1px solid var(--line);border-radius:4px;
   background:none;padding:0;cursor:pointer}
-.layer input[type=number]{width:56px;padding:3px 4px;font-size:var(--fs-data)}
-.layer select{width:100%;padding:3px 3px;font-size:var(--fs-data)}
-/* Pen library rows (and their header) share every .layer / .rowsHead style
+.gridRow input[type=number]{width:56px;padding:3px 4px;font-size:var(--fs-data)}
+.gridRow select{width:100%;padding:3px 3px;font-size:var(--fs-data)}
+/* Pen library rows (and their header) share every .gridRow / .rowsHead style
    above, only with their own columns: preview | name | color | width | delete. */
-.layer.penLibRow,.rowsHead.penLibRow{grid-template-columns:50px 1fr 26px 56px 24px}
+.gridRow.penLibRow,.rowsHead.penLibRow{grid-template-columns:50px 1fr 26px 56px 24px}
 .penLibRow .nm{cursor:text}
-/* A fill layer's row: the same .layer grid with a disclosure triangle in
+/* A fill layer's row: the same .gridRow grid with a disclosure triangle in
    front and duplicate/delete at the end, and its own settings panel
    (.layerSettings, a stack of ordinary .ctl rows) shown while expanded. */
-.layer.fillRow{grid-template-columns:20px 16px 50px 1fr 72px 44px 24px 24px;cursor:grab}
+.gridRow.fillRow{grid-template-columns:20px 16px 50px 1fr 72px 44px 24px 24px;cursor:grab}
 .rowExpand{background:none;border:0;padding:0;color:var(--muted);cursor:pointer;
   font-size:calc(var(--fs-data)*2);line-height:1;transition:transform .12s}
 .rowExpand:hover{color:var(--accent)}

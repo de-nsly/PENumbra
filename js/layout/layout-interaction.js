@@ -329,9 +329,9 @@ function applyRowBtnLabels(row, block, selCount){
     btn.title = text;
     btn.setAttribute('aria-label', text);
   };
-  label('.svEye', 'Toggle visibility — ' + target);
-  label('.svLock', (block.locked ? 'Unlock ' : 'Lock ') + target + ' — prevents move/rotate/scale on the canvas');
-  label('.svDelete', 'Delete ' + target);
+  label('.rowEye', 'Toggle visibility — ' + target);
+  label('.rowLock', (block.locked ? 'Unlock ' : 'Lock ') + target + ' — prevents move/rotate/scale on the canvas');
+  label('.rowDelete', 'Delete ' + target);
 }
 // The block a list row stands for, or undefined for anything in the list
 // that isn't a row (the drag-reorder insertion line carries no blockId).
@@ -344,7 +344,7 @@ export function refreshSelectionHighlight(){
   const selCount = selectedBlocks.size;
   for (const row of $('blocksList').children){
     const block = blockForRow(row);
-    row.classList.toggle('svRowSelected', !!block && selectedBlocks.has(block));
+    row.classList.toggle('rowSelected', !!block && selectedBlocks.has(block));
     // Skips the drag-reorder insertion line, which lives in this same list
     // but carries no blockId of its own.
     if (block) applyRowBtnLabels(row, block, selCount);

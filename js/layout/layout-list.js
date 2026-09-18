@@ -46,11 +46,11 @@ function openBlockContextMenu(block, clientX, clientY){
   for (const L of layers){
     if (!(L.id in block.layerPaths)) continue;
     const row = document.createElement('div');
-    row.className = 'savedView';
+    row.className = 'listRow';
     const name = layerName(L);
     let html =
-      '<span class="svName">' + name + '</span>' +
-      '<button type="button" class="svBtn svEye" title="Toggle visibility" aria-label="Toggle ' + name + ' visibility">' +
+      '<span class="rowName">' + name + '</span>' +
+      '<button type="button" class="rowBtn rowEye" title="Toggle visibility" aria-label="Toggle ' + name + ' visibility">' +
         (block.layerVisible[L.id] ? '&#9673;' : '&#9675;') + '</button>';
     if (block.override){
       if (!block.overrideStyle[L.id]){
@@ -73,7 +73,7 @@ function openBlockContextMenu(block, clientX, clientY){
     // That was exactly why the eye toggle stopped responding whenever
     // Override was on.
     row.innerHTML = html;
-    row.querySelector('.svEye').addEventListener('click', () => {
+    row.querySelector('.rowEye').addEventListener('click', () => {
       block.layerVisible[L.id] = !block.layerVisible[L.id];
       updateBlockStyle(block);
       refreshStatusR();
@@ -127,7 +127,7 @@ function startBlockDrag(e, block, row){
   e.preventDefault();
   e.stopPropagation();
   const moving = new Set(rowActionScope(block));
-  const rows = [...$('blocksList').children].filter(el => el.classList.contains('savedView'));
+  const rows = [...$('blocksList').children].filter(el => el.classList.contains('listRow'));
   // Split once, here: rows never change during a drag (nothing re-renders
   // the list until the drop), so both halves stay valid for the whole
   // gesture — the moving rows to dim, and the rest as the only legal
@@ -135,8 +135,8 @@ function startBlockDrag(e, block, row){
   const movingRows = rows.filter(r => moving.has(blockForRow(r)));
   const others = rows.filter(r => !moving.has(blockForRow(r)));
   const insertLine = document.createElement('div');
-  insertLine.className = 'svInsertLine';
-  for (const r of movingRows) r.classList.add('svDragging');
+  insertLine.className = 'rowInsertLine';
+  for (const r of movingRows) r.classList.add('rowDragging');
   // target stays null until the pointer actually moves, and null legitimately
   // means "drop past the last row" — so `moved` is what separates that from a
   // plain click on the grip, which must not reorder anything at all. Without
@@ -148,7 +148,7 @@ function startBlockDrag(e, block, row){
 // Whether the Layers panel itself should be on screen at all — both that
 // the Layout tab is even active AND that there's at least one block to
 // show. Distinct from the empty-list case Saved Views still handles with
-// its own centered "nothing yet" state (.svEmpty in styles.css) — here the
+// its own centered "nothing yet" state (.listEmpty in styles.css) — here the
 // panel (list, Duplicate/Delete All buttons, everything) is hidden outright
 // once the last block is removed, rather than left on screen empty.
 export function syncBlocksFloatVisibility(){
@@ -172,31 +172,31 @@ export function renderBlocksList(){
   // other place that iterates it, is untouched.
   for (const block of blocks.slice().reverse()){
     const row = document.createElement('div');
-    row.className = 'savedView' + (block.visible ? '' : ' svRowHidden') +
-      (selectedBlocks.has(block) ? ' svRowSelected' : '');
+    row.className = 'listRow' + (block.visible ? '' : ' rowHidden') +
+      (selectedBlocks.has(block) ? ' rowSelected' : '');
     row.dataset.blockId = block.id;
     row.innerHTML =
-      '<span class="svDragHandle" title="Drag to reorder" aria-label="Drag to reorder ' + block.name + '">' +
+      '<span class="rowDragHandle" title="Drag to reorder" aria-label="Drag to reorder ' + block.name + '">' +
         '<svg viewBox="0 0 10 16" width="8" height="14" fill="currentColor">' +
           '<circle cx="2" cy="2" r="1.3"/><circle cx="8" cy="2" r="1.3"/>' +
           '<circle cx="2" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/>' +
           '<circle cx="2" cy="14" r="1.3"/><circle cx="8" cy="14" r="1.3"/>' +
         '</svg>' +
       '</span>' +
-      '<span class="svName">' + block.name + '</span>' +
+      '<span class="rowName">' + block.name + '</span>' +
       // title/aria-label for these three are set by applyRowBtnLabels (via
       // the refreshSelectionHighlight call at the end of this function), not
       // here — they depend on the current selection, which can change
       // without the list being rebuilt.
-      '<button type="button" class="svBtn svEye">' +
+      '<button type="button" class="rowBtn rowEye">' +
         (block.visible ? '&#9673;' : '&#9675;') + '</button>' +
-      '<button type="button" class="svBtn svLock' + (block.locked ? ' svLockActive' : '') + '">' +
+      '<button type="button" class="rowBtn rowLock' + (block.locked ? ' rowLockActive' : '') + '">' +
         (block.locked
           ? '<svg viewBox="0 0 134 134" width="13" height="13" fill="currentColor"><g transform="matrix(1.091075,0,0,1.179063,-6.236398,-17.854001)"><path d="M96.925,58.247C103.393,59.463 108.267,64.76 108.267,71.102L108.267,99.68C108.267,106.92 101.915,112.797 94.092,112.797L39.543,112.797C31.72,112.797 25.368,106.92 25.368,99.68L25.368,71.102C25.368,64.76 30.242,59.463 36.71,58.247L36.71,47.771C36.71,38.278 45.038,30.572 55.296,30.572L78.339,30.572C88.597,30.572 96.925,38.278 96.925,47.771L96.925,58.247ZM50.839,57.984L82.796,57.984L82.796,47.771C82.796,45.494 80.799,43.646 78.339,43.646L55.296,43.646C52.836,43.646 50.839,45.494 50.839,47.771L50.839,57.984Z"/></g></svg>'
           : '<svg viewBox="0 0 134 134" width="13" height="13" fill="currentColor"><g transform="matrix(1.091075,0,0,1.179063,-6.236398,-11.738486)"><path d="M96.925,58.247C103.393,59.463 108.267,64.76 108.267,71.102L108.267,99.68C108.267,106.92 101.915,112.797 94.092,112.797L39.543,112.797C31.72,112.797 25.368,106.92 25.368,99.68L25.368,71.102C25.368,63.862 31.72,57.984 39.543,57.984L82.796,57.984L82.796,37.397C82.796,35.121 80.799,33.273 78.339,33.273L55.296,33.273C52.836,33.273 50.839,35.121 50.839,37.397L50.839,49.019L36.71,49.019L36.71,37.397C36.71,27.905 45.038,20.198 55.296,20.198L78.339,20.198C88.597,20.198 96.925,27.905 96.925,37.397L96.925,58.247Z"/></g></svg>'
         ) + '</button>' +
-      '<button type="button" class="svBtn svDelete">&#10005;</button>';
-    row.querySelector('.svDragHandle').addEventListener('pointerdown', e => startBlockDrag(e, block, row));
+      '<button type="button" class="rowBtn rowDelete">&#10005;</button>';
+    row.querySelector('.rowDragHandle').addEventListener('pointerdown', e => startBlockDrag(e, block, row));
     // Shift+click is also the browser's native "extend text selection"
     // gesture — without this, shift-selecting rows in quick succession
     // also highlights the row's own text (name/buttons) as a side effect.
@@ -205,10 +205,10 @@ export function renderBlocksList(){
     // click handler below already excludes, so button presses and the
     // drag handle keep their own normal behavior.
     row.addEventListener('mousedown', e => {
-      if ((e.shiftKey || multiSelectKey(e)) && !e.target.closest('button') && !e.target.closest('.svDragHandle')) e.preventDefault();
+      if ((e.shiftKey || multiSelectKey(e)) && !e.target.closest('button') && !e.target.closest('.rowDragHandle')) e.preventDefault();
     });
     row.addEventListener('click', e => {
-      if (e.target.closest('button') || e.target.closest('.svDragHandle')) return;   // Eye/Lock/Delete/drag clicks bubble here too — don't also select
+      if (e.target.closest('button') || e.target.closest('.rowDragHandle')) return;   // Eye/Lock/Delete/drag clicks bubble here too — don't also select
       // Every row is selectable here, hidden and locked ones included —
       // that's how a batch of them can be un-hidden/unlocked/deleted in one
       // action. They just stay inert on the canvas (see interactiveSelection).
@@ -222,7 +222,7 @@ export function renderBlocksList(){
       else if (multiSelectKey(e)) toggleSelection(block);
       else selectOnly(block);
     });
-    makeNameEditable(row.querySelector('.svName'), () => block.name, newName => {
+    makeNameEditable(row.querySelector('.rowName'), () => block.name, newName => {
       block.name = newName;
       renderBlocksList();
     });
@@ -230,7 +230,7 @@ export function renderBlocksList(){
     // of it, and on this row alone otherwise (see rowActionScope) — the
     // button's own title/aria-label says which, refreshed on every selection
     // change by applyRowBtnLabels.
-    row.querySelector('.svEye').addEventListener('click', () => {
+    row.querySelector('.rowEye').addEventListener('click', () => {
       // The clicked row's OWN new state becomes the whole scope's state, no
       // matter what each block was before — one click leaves a mixed
       // selection uniform, rather than flipping each block independently and
@@ -246,13 +246,13 @@ export function renderBlocksList(){
       refreshStatusR();
       renderBlocksList();
     });
-    row.querySelector('.svLock').addEventListener('click', () => {
+    row.querySelector('.rowLock').addEventListener('click', () => {
       const locked = !block.locked;
       for (const b of rowActionScope(block)) b.locked = locked;
       refreshInteractiveSelection();   // same as the eye button — see there
       renderBlocksList();
     });
-    row.querySelector('.svDelete').addEventListener('click', () => deleteBlocks(rowActionScope(block)));
+    row.querySelector('.rowDelete').addEventListener('click', () => deleteBlocks(rowActionScope(block)));
     list.appendChild(row);
   }
   // Owns the row buttons' selection-dependent title/aria-label (see
@@ -332,13 +332,13 @@ export function initLayoutList(){
     }
     blockDragState.target = target;   // null means "after every other row"
     if (!insertLine.parentNode) list.appendChild(insertLine);
-    // Positioned via absolute top offset (see .svInsertLine — out of normal
+    // Positioned via absolute top offset (see .rowInsertLine — out of normal
     // flow entirely) rather than DOM insertion order, specifically so it
     // never adds to the list's own content height: inserting it as a real
     // flow element was occasionally enough to tip the list over its
     // max-height and pop the scrollbar open mid-drag.
     const listRect = list.getBoundingClientRect();
-    const INSERT_LINE_HEIGHT = 2;   // keep in sync with .svInsertLine's own height in styles.css
+    const INSERT_LINE_HEIGHT = 2;   // keep in sync with .rowInsertLine's own height in styles.css
     let lineTop;
     if (target) lineTop = target.getBoundingClientRect().top - listRect.top + list.scrollTop;
     else if (others.length){
@@ -358,7 +358,7 @@ export function initLayoutList(){
     if (!blockDragState) return;
     const { moving, movingRows, others, insertLine, target, moved } = blockDragState;
     insertLine.remove();
-    for (const r of movingRows) r.classList.remove('svDragging');
+    for (const r of movingRows) r.classList.remove('rowDragging');
     blockDragState = null;
     if (!moved) return;   // grip clicked but never dragged — see startBlockDrag
 

@@ -24,7 +24,7 @@ import { camera, orbit, orthoCam, setProjMode, updateLight, updateLightGizmo, up
 
    activeViewRef tracks which saved view (if any) the live camera/light/
    rotation state currently matches — highlighted in the list (same
-   .svRowSelected style the Layout blocks list uses), set on activate/
+   .rowSelected style the Layout blocks list uses), set on activate/
    update, and cleared the moment ANY of those settings changes through
    any interaction path: orbit drag/pan, wheel zoom, projection toggle,
    isometric presets, recenter, rotation sliders/resets, FOV, or light. See
@@ -39,25 +39,25 @@ let activeViewRef = null;
 export function renderSavedViews(){
   const list = $('viewsList');
   list.innerHTML = '';
-  $('viewsFloat').classList.toggle('svEmpty', savedViews.length === 0);
+  $('viewsFloat').classList.toggle('listEmpty', savedViews.length === 0);
   for (const view of savedViews){
     const row = document.createElement('div');
-    row.className = 'savedView' + (view === activeViewRef ? ' svRowSelected' : '');
+    row.className = 'listRow' + (view === activeViewRef ? ' rowSelected' : '');
     row.dataset.viewName = view.name;
     row.innerHTML =
-      '<span class="svName">' + view.name + '</span>' +
-      '<button type="button" class="svBtn svUpdate" title="Update view with current settings" aria-label="Update ' + view.name + ' with current settings">&#10227;</button>' +
-      '<button type="button" class="svBtn svDelete" title="Delete view" aria-label="Delete ' + view.name + '">&#10005;</button>';
+      '<span class="rowName">' + view.name + '</span>' +
+      '<button type="button" class="rowBtn rowUpdate" title="Update view with current settings" aria-label="Update ' + view.name + ' with current settings">&#10227;</button>' +
+      '<button type="button" class="rowBtn rowDelete" title="Delete view" aria-label="Delete ' + view.name + '">&#10005;</button>';
     row.addEventListener('click', e => {
       if (e.target.closest('button')) return;   // Update/Delete clicks bubble here too — don't also activate
       activateView(view);
     });
-    makeNameEditable(row.querySelector('.svName'), () => view.name, newName => {
+    makeNameEditable(row.querySelector('.rowName'), () => view.name, newName => {
       view.name = newName;
       renderSavedViews();
     });
-    row.querySelector('.svUpdate').addEventListener('click', () => updateSavedView(view));
-    row.querySelector('.svDelete').addEventListener('click', () => {
+    row.querySelector('.rowUpdate').addEventListener('click', () => updateSavedView(view));
+    row.querySelector('.rowDelete').addEventListener('click', () => {
       const i = savedViews.indexOf(view);
       if (i >= 0) savedViews.splice(i, 1);
       if (activeViewRef === view) activeViewRef = null;
@@ -70,13 +70,13 @@ export function renderSavedViews(){
 // rebuilding the list — used by activateView/updateSavedView, neither of
 // which changes the list's item count, only which view is active. A full
 // renderSavedViews() there was destroying every row's DOM (including the
-// .svName span mid-gesture) on every single click, which broke the
+// .rowName span mid-gesture) on every single click, which broke the
 // browser's double-click detection for renaming — clicking a view's name
 // now activates it directly (see below), so this had to stop happening on
 // every plain click, not just on add/delete.
 function refreshSavedViewHighlight(){
   for (const row of $('viewsList').children){
-    row.classList.toggle('svRowSelected', !!activeViewRef && row.dataset.viewName === activeViewRef.name);
+    row.classList.toggle('rowSelected', !!activeViewRef && row.dataset.viewName === activeViewRef.name);
   }
 }
 function captureCurrentViewState(){

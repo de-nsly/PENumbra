@@ -33,7 +33,7 @@ function buildEntry(L, entry, index){
   group.className = 'textureGroup';
   const head = document.createElement('div');
   head.className = 'dashGroupLabel';
-  head.innerHTML = '<span></span><button type="button" class="svBtn svDelete" title="Remove filter">&#10005;</button>';
+  head.innerHTML = '<span></span><button type="button" class="rowBtn rowDelete" title="Remove filter">&#10005;</button>';
   head.firstChild.textContent = def.name;
   head.lastChild.setAttribute('aria-label', 'Remove ' + def.name);
   head.lastChild.addEventListener('click', () => {

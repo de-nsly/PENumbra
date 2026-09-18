@@ -343,7 +343,7 @@ function startFillRowDrag(e, row, L){
 const FILL_DRAG_SLOP = 4;
 function svgInsertLine(){
   const line = document.createElement('div');
-  line.className = 'svInsertLine';
+  line.className = 'rowInsertLine';
   return line;
 }
 function onFillRowDragMove(e){
@@ -352,7 +352,7 @@ function onFillRowDragMove(e){
   if (!fillDragState.moved){
     if (Math.abs(e.clientY - fillDragState.startY) < FILL_DRAG_SLOP) return;
     fillDragState.moved = true;
-    row.classList.add('svDragging');
+    row.classList.add('rowDragging');
   }
   let target = null;
   for (const r of others){
@@ -371,7 +371,7 @@ function endFillRowDrag(){
   if (!fillDragState) return;
   const { L, row, others, insertLine, target, moved } = fillDragState;
   insertLine.remove();
-  row.classList.remove('svDragging');
+  row.classList.remove('rowDragging');
   fillDragState = null;
   if (!moved) return;                     // pressed but never dragged
   // `others` is the fill run without the dragged layer, in the same order,
@@ -394,7 +394,7 @@ export function buildLayerRows(){
     const isFill = T.kind === 'fill';
     const name = layerName(L);
     const row = document.createElement('div');
-    row.className = 'layer' + (isFill ? ' fillRow' : '');
+    row.className = 'gridRow' + (isFill ? ' fillRow' : '');
     row.innerHTML =
       (isFill ? '<button type="button" class="rowExpand" aria-label="' + name + ' settings">&#9656;</button>' : '') +
       '<input type="checkbox" aria-label="' + name + ' on">' +
@@ -403,8 +403,8 @@ export function buildLayerRows(){
       '<select class="penSelect" aria-label="' + name + ' pen"></select>' +
       '<select aria-label="' + name + ' dash">' + dashOptionsHtml() + '</select>' +
       (isFill
-        ? '<button type="button" class="svBtn rowDup" title="Duplicate layer" aria-label="Duplicate ' + name + '">&#10697;</button>' +
-          '<button type="button" class="svBtn svDelete" title="Delete layer" aria-label="Delete ' + name + '">&#10005;</button>'
+        ? '<button type="button" class="rowBtn rowDup" title="Duplicate layer" aria-label="Duplicate ' + name + '">&#10697;</button>' +
+          '<button type="button" class="rowBtn rowDelete" title="Delete layer" aria-label="Delete ' + name + '">&#10005;</button>'
         : '');
     const host = $(T.host);
     host.appendChild(row);
@@ -437,7 +437,7 @@ export function buildLayerRows(){
         updateTextureGizmo();   // the gizmo follows whichever circles layer is open
       });
       row.querySelector('.rowDup').addEventListener('click', () => duplicateFillLayer(L));
-      row.querySelector('.svDelete').addEventListener('click', () => deleteFillLayer(L));
+      row.querySelector('.rowDelete').addEventListener('click', () => deleteFillLayer(L));
       row.addEventListener('pointerdown', e => startFillRowDrag(e, row, L));
     }
     applyLayerStyle(L.id);
