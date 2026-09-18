@@ -81,7 +81,7 @@ export function renderResult(m){
     const T = layerType(L);
     if (L.type === 'circles'){
       const pieces = m.circlePatternSegs && m.circlePatternSegs[L.id];
-      if (!layerStyle(L.id).on || !pieces || !pieces.length) continue;
+      if (!L.on || !pieces || !pieces.length) continue;
       const tex = applyTextureStack({ rep: 'arcs', pieces }, L.texture,
         { geometry: T.geometry, mmToPx: pxPerMm() });
       const d = [];
@@ -130,7 +130,7 @@ export function renderResult(m){
     // actually visible right now — matching computeLayoutStats, which only
     // sums a block's layers that are currently layerVisible — so an off
     // layer's contribution is deliberately excluded from pathStats below.
-    const layerOn = layerStyle(L.id).on;
+    const layerOn = L.on;
     const g = svgEl('g');
     g.id = 'g_' + L.id;
     g.setAttribute('fill', 'none');

@@ -11,9 +11,9 @@ import { HATCH_CAP_PRESETS, SETTINGS, SHADOW_BUDGET_PRESETS, formatValue, settin
 import { camera, lightVec, modelMesh, modelPivot, syncGroundCatcher, syncShadowCasting, updateLight, updateLightGizmo, updateModelRotation, vp } from './viewport/viewport3d.js';
 import { clearActiveView } from './viewport/saved-views.js';
 import { captureShadingBuffer } from './viewport/shading-capture.js';
-import { layerType, layers } from './layers.js';
+import { isLayerOn, layerType, layers } from './layers.js';
 import { computePaperLayout } from './paper-layout.js';
-import { layerStyle, syncFillRowRanges, syncFillRowSoftState } from './layer-rows.js';
+import { syncFillRowRanges, syncFillRowSoftState } from './layer-rows.js';
 import { updateTextureGizmo } from './paper-preview.js';
 import { pendingSoIvExport } from './scene-io.js';
 
@@ -345,8 +345,8 @@ export function syncShadowUI(){
 // scene restoring them by assignment (scene-io.js — assignment fires no
 // change event), and here at load for the initial state.
 export function syncLineLayerUI(){
-  const contourOn = layerStyle('sv').on || layerStyle('sh').on;
-  const creaseOn  = layerStyle('cv').on || layerStyle('ch').on;
+  const contourOn = isLayerOn('sv') || isLayerOn('sh');
+  const creaseOn  = isLayerOn('cv') || isLayerOn('ch');
   $('contourCleanupCtl').classList.toggle('ctlDisabled', !contourOn);
   $('contourMaxHopsCtl').classList.toggle('ctlDisabled', !contourOn);
   $('creaseDegCtl').classList.toggle('ctlDisabled', !creaseOn);

@@ -35,11 +35,8 @@
    its number among the layers of that type (layerName) — "Hatch 1",
    "Circles 2" — so deleting one renumbers the rest.
 
-   Layer ids, for reading old code and .pen files: so = Silhouette,
-   iv/ih = Silhouette individual visible/hidden, sv/sh = Contour
-   visible/hidden (historically "silhouette"), cv/ch = Crease visible/
-   hidden, h1/h2/h3 = the first three Hatch layers (once Hatch/Crosshatch/
-   Deep shadow), cr = the first Circles layer.
+   The layer ids are persisted and several read nothing like what they
+   draw — the decoder table is on LAYER_TYPES below.
 
    Pure data: imports nothing, touches no DOM — tools/harness uses it
    headlessly, and sceneLayers() is the loader for every .pen version.
@@ -146,6 +143,11 @@ export function clampSetting(spec, v){
 export const layers = defaultLayers();
 export function replaceLayers(list){ layers.splice(0, layers.length, ...list); }
 export function layerById(id){ return layers.find(L => L.id === id); }
+// Is this layer drawing? The instance IS the state (its row is a view of it),
+// so this is the only question worth asking about an id — layerStyle() is for
+// when the pen colour/width are wanted too. Safe on an id no layer has, which
+// a partial scene file can produce.
+export function isLayerOn(id){ const L = layerById(id); return !!(L && L.on); }
 export function layerType(L){ return LAYER_TYPES[L.type]; }
 export function fillLayers(){ return layers.filter(L => layerType(L).kind === 'fill'); }
 // Display name: an edge layer's is fixed, a fill layer's is its type plus its

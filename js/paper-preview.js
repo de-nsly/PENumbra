@@ -18,7 +18,7 @@
 import { $, onMiddleDblClick, svgEl } from './main.js';
 import { layerType, layers } from './layers.js';
 import { baseSheetSize, computePaperLayout } from './paper-layout.js';
-import { expandedLayerId, layerStyle, syncFillRowValues } from './layer-rows.js';
+import { expandedLayerId, syncFillRowValues } from './layer-rows.js';
 import { computeLayoutPaperDims } from './layout/layout-model.js';
 import { selectedBlocks, updateSelectionOverlay } from './layout/layout-interaction.js';
 import { activeTab, markStale } from './panel-controls.js';
@@ -202,7 +202,7 @@ function drawPathEndpointMarkers(){
     // display:none — see applyLayerStyle), so the checkbox is the thing to
     // test, not the group's existence. getScreenCTM would return null on a
     // hidden element anyway.
-    if (!layerStyle(key).on) continue;
+    if (!L.on) continue;
     const path = document.querySelector('#g_' + key + ' path');
     if (!path) continue;
     const m = path.getScreenCTM();      // folds in #paperContent's transform AND the sheet's current pan/zoom
