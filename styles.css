@@ -648,9 +648,9 @@ input[type=number]{width:58px}
    .textureGroup: a .dashGroupLabel header, then its parameter controls. */
 .textureGroup{margin:10px 0}
 
-/* layer rows — pen swatch style. #hatchLayers holds the fill rows and their
+/* layer rows — pen swatch style. #fillRows holds the fill rows and their
    settings panels, and anchors the drag-reorder insertion line. */
-#hatchLayers{position:relative}
+#fillRows{position:relative}
 /* Applied to #plot itself (the shared parent of #paperContent AND
    #previewLayoutOverlay — see the "Layout overlay" toggle), not to
    #paperContent alone, so the live drawing's own strokes and the Preview

@@ -61,14 +61,14 @@
    thrFallback — only the loaders use it: the threshold an old scene's
    global slider stood for when it held no number. */
 export const LAYER_TYPES = {
-  so: { kind:'edge', name:'Silhouette',            chain:'silhouette', host:'edgeLayersSil' },
-  iv: { kind:'edge', name:'Silhouette individual', chain:'silhouette', host:'edgeLayersSil' },
-  ih: { kind:'edge', name:'· hidden',              chain:'silhouette', host:'edgeLayersSil' },
-  sv: { kind:'edge', name:'Contour',               chain:'contour',    host:'edgeLayersContour' },
-  sh: { kind:'edge', name:'· hidden',              chain:'contour',    host:'edgeLayersContour' },
-  cv: { kind:'edge', name:'Crease',                chain:'crease',     host:'edgeLayersCrease' },
-  ch: { kind:'edge', name:'· hidden',              chain:'crease',     host:'edgeLayersCrease' },
-  hatch: { kind:'fill', name:'Hatch', geometry:'lines', host:'hatchLayers', pen:'p5', settings:[
+  so: { kind:'edge', name:'Silhouette',            chain:'silhouette', host:'edgeRowsSil' },
+  iv: { kind:'edge', name:'Silhouette individual', chain:'silhouette', host:'edgeRowsSil' },
+  ih: { kind:'edge', name:'· hidden',              chain:'silhouette', host:'edgeRowsSil' },
+  sv: { kind:'edge', name:'Contour',               chain:'contour',    host:'edgeRowsContour' },
+  sh: { kind:'edge', name:'· hidden',              chain:'contour',    host:'edgeRowsContour' },
+  cv: { kind:'edge', name:'Crease',                chain:'crease',     host:'edgeRowsCrease' },
+  ch: { kind:'edge', name:'· hidden',              chain:'crease',     host:'edgeRowsCrease' },
+  hatch: { kind:'fill', name:'Hatch', geometry:'lines', host:'fillRows', pen:'p5', settings:[
     // A full turn, not the half a line family repeats over: the carrier
     // lines of 217° and of 37° are the same direction but anchored from
     // opposite ends of the drawing, so they do not coincide. Scenes from
@@ -80,7 +80,7 @@ export const LAYER_TYPES = {
     { key:'maxSpacing', label:'Max spacing', min:1,   max:20,  step:0.5,  def:7,    unit:'mm', decimals:1 },
     { key:'threshold',  label:'Below',       min:0.01, max:1,  step:0.01, def:0.92, unit:'',   decimals:2, soft:true },
   ]},
-  circles: { kind:'fill', name:'Circles', geometry:'arcs', host:'hatchLayers', pen:'p5', thrFallback:0.92, settings:[
+  circles: { kind:'fill', name:'Circles', geometry:'arcs', host:'fillRows', pen:'p5', thrFallback:0.92, settings:[
     { key:'minSpacing', label:'Min spacing', min:0.1, max:5,  step:0.1,  def:1,    unit:'mm', decimals:1 },
     { key:'maxSpacing', label:'Max spacing', min:1,   max:20, step:0.5,  def:7,    unit:'mm', decimals:1 },
     { key:'threshold',  label:'Below',       min:0.01, max:1, step:0.01, def:0.92, unit:'',   decimals:2, soft:true },

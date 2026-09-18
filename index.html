@@ -388,8 +388,8 @@
            hosts rather than one, so each group's own settings can sit directly
            under the rows they affect. The instances' order still decides row
            order; each layer type's host (LAYER_TYPES) decides the container. -->
-      <div id="edgeLayersSil"></div>
-      <div id="edgeLayersContour"></div>
+      <div id="edgeRowsSil"></div>
+      <div id="edgeRowsContour"></div>
       <div class="ctl" id="contourCleanupCtl">
         <label for="contourCleanup" title="How much depth difference still counts as the same surface when Contour decides whether a stretch of line is a real fold or a triangulation artifact. Measured as a fraction of the model's size, so it doesn't change as you zoom or orbit. Lower = keeps more lines, including some doubled-up artifact along dense curves; higher = removes more artifact, but eventually starts eating real folds where a shape passes close in front of itself. Default 0.0220.">Cleanup</label>
         <input type="range" id="contourCleanup" min="0" max="0.06" step="0.0005" value="0.022">
@@ -400,7 +400,7 @@
         <input type="range" id="contourMaxHops" min="1" max="20" step="1" value="3">
         <span class="val" id="contourMaxHopsVal">3</span>
       </div>
-      <div id="edgeLayersCrease"></div>
+      <div id="edgeRowsCrease"></div>
       <div class="ctl" id="creaseDegCtl">
         <label for="creaseDeg">Crease angle</label>
         <input type="range" id="creaseDeg" min="0" max="120" step="0.1" value="1">
@@ -414,14 +414,14 @@
 
     <h2>Fill layers</h2>
     <div class="sec">
-      <!-- Fill layer rows are built into #hatchLayers (layer-rows.js): as many
+      <!-- Fill layer rows are built into #fillRows (layer-rows.js): as many
            of each type as wanted, each row carrying its own settings (its
            expander) and its own texture stack (the Texture tab). -->
       <div class="ctl">
         <label for="addLayerSelect">Add layer</label>
         <select id="addLayerSelect" aria-label="Add a fill layer"></select>
       </div>
-      <div id="hatchLayers"></div>
+      <div id="fillRows"></div>
     </div>
 
     <h2>Shadows</h2>
@@ -462,7 +462,7 @@
       <h2>Pen Library</h2>
       <div class="sec">
         <p class="hint">
-          Every line layer and Layout override draws with one of these pens.
+          Every layer and Layout override draws with one of these pens.
           Editing a pen restyles everything using it. Double-click a name to
           rename it.
         </p>
