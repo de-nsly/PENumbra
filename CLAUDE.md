@@ -17,12 +17,16 @@ Fonts. Both require network access on first load.
 
 ## Ongoing cleanup
 
-A whole-codebase cleanup is in progress on branch `cleanup` (Phases 0–5 done: goldens, dead code,
+A whole-codebase cleanup is in progress on branch `cleanup` (Phases 0–6 done: goldens, dead code,
 shared helpers, ES modules, the settings registry and layer-instance model, and the file splits that
-produced most of the module list below). `docs/refactor-plan.md` is the handoff for the remaining
-phases — read it before any refactor work; it lists the ground rules (byte-identical output, keys that
-must not be renamed, module discipline), what each finished phase actually did, and what is left:
-Phase 6 (naming) and Phase 7 (performance). The worker's `generate()` was deliberately left whole.
+produced most of the module list below, and the naming pass). `docs/refactor-plan.md` is the handoff —
+read it before any refactor work; it lists the ground rules (byte-identical output, keys that must not
+be renamed, module discipline), what each finished phase actually did, and what is left: Phase 7
+(performance). The worker's `generate()` was deliberately left whole.
+
+**One word per concept, since Phase 6:** a Layout snapshot is a **block**, in the code and in the UI.
+A **layer** is a draw layer (Silhouette, Contour, Crease, Hatch, Circles) — including *inside* a block,
+which holds one path per draw layer (`layerPaths`, `layerVisible`, `overrideStyle`).
 
 ## Verifying changes
 
@@ -158,10 +162,11 @@ always split, margin-trimmed, then baked into page mm — Blender's SVG importer
 path, named after its id. Off, the export is a cleaned-up clone of the on-screen SVG (one group per layer).
 Dash patterns everywhere go through `dashPattern` (`main.js`): a pair whose dash is 0 is dropped whole.
 
-**Layout tab vs. draw layers — a naming collision to watch for:** the Layout tab (`layout-*.js`)
-stacks frozen snapshots of past generations, called "blocks" internally but labeled "layers" in the UI.
-This is a *different* concept from the `layers` instance array above — don't conflate the two when reading
-or writing code that touches either.
+**Layout blocks vs. draw layers:** the Layout tab (`js/layout/*.js`) stacks frozen snapshots of past
+generations. They are **blocks** everywhere now, code and UI alike — a *different* concept from the
+`layers` instance array above. The one place both meet is inside a block, which holds one frozen path
+per draw layer: `layerPaths`, `layerVisible` and `overrideStyle` are keyed by layer id and are persisted
+`.pen` keys, and the block's right-click menu ("Block layers") lists exactly those.
 
 **Scene files (`.pen`):** `scene-io.js` handles save/load of the entire app state (model geometry, camera,
 every setting, the pen library, the layer instances with their texture stacks) as a single JSON-ish `.pen`

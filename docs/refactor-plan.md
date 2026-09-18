@@ -436,10 +436,35 @@ Update `CLAUDE.md`'s module list and each file header as you go.
 
 ---
 
-## 5. Phase 6 — naming
+## 5. Phase 6 — naming — DONE 2026-09-18
 
-After Phase 5 (so the harness link check catches every miss). §5.1 is the user's own decision and the
-main piece of work; §5.2 is the rest of the audit; the table in §5.3 is the original list.
+Done in 9 commits, everything below except where noted. `verify-golden` identical at every one; nothing
+in this phase touches geometry, so the risk was entirely in UI strings and DOM ids, which the user's
+browser pass covers.
+
+What differs from the spec:
+- The container ids became `edgeRowsSil` / `edgeRowsContour` / `edgeRowsCrease` / `fillRows` rather than
+  `#fillLayers`, which would have echoed `fillLayers()` two lines away in layers.js. They are named for
+  what they hold: rows.
+- The block context menu's heading reads **"Block layers"** (the user's choice) and its rows still name
+  draw layers, as §5.1 required.
+- Block names already in `.pen` files are left alone (the user's choice): only new blocks are "Block NN".
+- `.svUpdate` turned up during the class rename and became `.rowUpdate`; `.svEmpty` → `.listEmpty`,
+  `.svHeaderRow`/`.svHeaderBtns` → `.listHeaderRow`/`.listHeaderBtns` — the same family, not in the
+  original table.
+- `updateGroundPatternSliderRange` → `rescaleCirclesCentres` and `_gpLastPaperW/H` → `lastPaperW/H`.
+  The persisted setting ids `texGroundPatternCenterX/Y` and the old wire field `S.groundPatternCenterX/Y`
+  in `legacyFillPasses` keep their names — both are read from saved data.
+- `cy2` → `cvy`, `t1x` → `tri1` (solver), `mi2` → `ivIdx` (dedup). Renames only, no expression reordered.
+- The `S`/`M`/`V`/`P`/`W`/`H`/`GS` row was conditional on `generate()` being decomposed. It was not
+  (Phase 5, declined), so they stay.
+- `isLayerOn(id)` now exists in layers.js for the two id-only callers; the three that already hold the
+  instance just read `L.on`. `texLayerEnabled` was already gone.
+
+Remaining naming work: none planned. Phase 7 (performance) is next.
+
+The spec that was worked from follows. §5.1 was the user's own decision and the main piece of work;
+§5.2 is the rest of the audit; the table in §5.3 is the original list.
 
 ### 5.1 One word per concept: a Layout "layer" becomes a **block**, in the UI too
 
