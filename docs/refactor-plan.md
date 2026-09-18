@@ -438,8 +438,69 @@ Update `CLAUDE.md`'s module list and each file header as you go.
 
 ## 5. Phase 6 — naming
 
-After Phase 5 (so the harness link check catches every miss). Suggested renames, all
-non-persisted:
+After Phase 5 (so the harness link check catches every miss). §5.1 is the user's own decision and the
+main piece of work; §5.2 is the rest of the audit; the table in §5.3 is the original list.
+
+### 5.1 One word per concept: a Layout "layer" becomes a **block**, in the UI too
+
+Decided 2026-09-18. The app has two unrelated things called "layer": the draw layers (Silhouette,
+Contour, Crease, Hatch, Circles — `layers` in layers.js) and the Layout tab's frozen snapshots, which
+the code has always called *blocks* while the UI called them "layers". The UI adopts the code's word.
+
+**The distinction that makes this surgical:** inside a block, "layer" still means a DRAW layer — a block
+holds one path per draw layer (`layerPaths`), each with its own visibility (`layerVisible`) and optional
+pen override (`overrideStyle`). Those are persisted `.pen` keys AND correctly named; they do not change.
+The right-click menu on a block lists exactly those, so its rows and its "Layers" heading stay "Layers"
+as well. Only the places where "layer" means *the block itself* change.
+
+**UI text to change** (all of it, at the time of the audit):
+- `index.html`: the Preview overlay toggle title ("Show the layers saved to Layout…"); the blocks float's
+  `vpLabel` heading "Layers"; the Duplicate button's `title` + `aria-label`; Delete All's `title` +
+  `aria-label`; the "Rotate layers with page" checkbox label (its id `rotateBlocksWithPage` is already
+  right); every row under the About dialog's `<h3>Layout tab</h3>` group (13 shortcut rows — that whole
+  group is block shortcuts, and no other About group mentions layers).
+- `export.js` `'no layers to export'`; `layout-list.js`'s `confirm('Delete all N layer(s)?…')`;
+  `layout-model.js` `blockCountLabel` (`'N layers'`) and the default block name `'Layer NN'`;
+  `layout-interaction.js`'s row-button scope label (`'all N selected layers'`).
+- Check the row `aria-label`s built in `renderBlocksList` at the same time.
+
+**Two judgement calls to settle before starting:**
+1. *Old scenes keep their stored names.* A block's `name` is saved in the `.pen`, so scenes made before
+   this will still show "Layer 03" next to new "Block 04"s. Recommended: leave them — a name is
+   user-editable content and a migration would also rewrite names someone typed deliberately. The
+   alternative (rewrite `^Layer (\d+)$` to `Block $1` on load) is a one-line change in `sceneBlocks`,
+   but it is a content change, not a rename.
+2. *The block context menu's heading.* It lists draw layers, so "Layers" is literally right, but it now
+   sits inside a block-worded UI. Either keep it, or make it "Block layers" for readability.
+
+**Internal names to follow the same word** (none of these are persisted — checked against
+`SETTINGS`/`sceneSettingIds`): the element ids `layerContextMenu`, `layerContextMenuList`,
+`layerContextOverrideChk`, `layerContextOverrideRow` (all of them are the *block's* menu) →
+`blockContextMenu*`, with the matching `#layerContextMenu` selectors in `styles.css`; and
+`openLayerContextMenu` / `closeLayerContextMenu` / `contextMenuBlock` / `contextMenuPos` in
+layout-list.js → `openBlockContextMenu` / `closeBlockContextMenu` / …
+
+### 5.2 Other name/meaning mismatches found in the same audit (2026-09-18)
+
+- `#hatchLayers` (index.html) hosts BOTH hatch and circles rows since Phase 4d — rename to `#fillLayers`,
+  including `host:'hatchLayers'` in `LAYER_TYPES` (layers.js), which is code, not a saved key.
+- "Every line layer and Layout override draws with one of these pens" (index.html, Pen library tab) —
+  fill layers use pens too; "line layer" should just be "layer".
+- `splitDashBtn` and `penPathsExport` are checkboxes whose ids read like buttons, and `trimToMargins`,
+  `layoutOverlayOpacity` are fine — but **all four are persisted setting ids** (`SETTINGS`), so the ids
+  stay; only variables and labels may be renamed. `blendMultiplyOn` is NOT persisted and may be renamed.
+- The layer-key table (`sv`/`sh` = Contour, `iv`/`ih` = Silhouette individual, `h1…h3` = the first three
+  hatch layers, `cr` = the first circles layer) is persisted and stays — document it as a comment on
+  `layers.js` and in `CLAUDE.md`, which was already a Phase 6 item.
+
+**Stale row in the table below:** `texLayerEnabled` no longer exists (Phase 4b removed it). Since the
+layer instance is now the state, the "one `isLayerOn(id)`" idea is mostly already true — the remaining
+five callers use `layerStyle(id).on`, which could simply be `layerById(id).on` where they don't also need
+the colour/width. Decide whether that is worth a commit at all.
+
+### 5.3 The original rename list
+
+Suggested renames, all non-persisted:
 
 | now | proposed |
 |---|---|
