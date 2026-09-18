@@ -35,7 +35,7 @@ import { PAPERS, buildTrimMaskGroup, computePaperLayout, getMargins, renderPaper
 import { activeTab, setActiveTab, lastGen, markStale } from '../panel-controls.js';
 import { setActiveSheet, applyPv, resetPvFitWithRulers } from '../paper-preview.js';
 import { clearSelection, resetHoverCursor, selectedBlocks, selectionFrame, setSelection, setSelectionAnchor, updateSelectionOverlay } from './layout-interaction.js';
-import { closeLayerContextMenu, contextMenuBlock, layoutOverlayFront, layoutOverlayOn, layoutOverlayOpacity, renderBlocksList, syncBlocksFloatVisibility } from './layout-list.js';
+import { closeBlockContextMenu, contextMenuBlock, layoutOverlayFront, layoutOverlayOn, layoutOverlayOpacity, renderBlocksList, syncBlocksFloatVisibility } from './layout-list.js';
 
 
 export let blocks = [];
@@ -316,7 +316,7 @@ export function freezeCurrentGeneration(){
     // set and edited via the right-click layer menu's "Override" checkbox,
     // never at creation time. overrideStyle starts empty and is populated
     // lazily, one layer at a time, the first time that specific layer is
-    // shown with Override on for this block (see openLayerContextMenu) —
+    // shown with Override on for this block (see openBlockContextMenu) —
     // and then persists in memory (and in the saved scene) even if Override
     // gets toggled off again, so re-enabling it later restores what was
     // last set rather than re-snapshotting fresh live values.
@@ -408,7 +408,7 @@ export function deleteBlocks(list){
   for (const b of doomed){
     const i = blocks.indexOf(b);
     if (i >= 0) blocks.splice(i, 1);
-    if (contextMenuBlock === b) closeLayerContextMenu();
+    if (contextMenuBlock === b) closeBlockContextMenu();
     removeBlockDom(b);
   }
   // Whatever's still around stays selected — deleting a row that ISN'T part
@@ -489,7 +489,7 @@ export function updateBlockStyle(block){
     const g = block.dom.layerGroups[L.id];
     if (!g) continue;
     // Override reads this block's OWN per-layer style (set via the
-    // right-click layer menu — see openLayerContextMenu) instead of the
+    // right-click layer menu — see openBlockContextMenu) instead of the
     // live panel controls; an ordinary (synced) block keeps today's
     // behavior exactly. width still divides by the block's own current
     // combinedScale either way — that's not a "setting", it's what keeps
@@ -542,7 +542,7 @@ export function removeBlockDom(block){
 // unique. The caller then resolves override pens and re-renders the list.
 export function replaceBlocks(list, counter){
   clearSelection();
-  closeLayerContextMenu();
+  closeBlockContextMenu();
   for (const b of blocks) removeBlockDom(b);
   blocks = list;
   for (const b of blocks) b.id = ++blockIdCounter;
@@ -756,7 +756,7 @@ export function initLayoutModel(){
       setActiveTab(tab);
       document.querySelectorAll('.paperTab').forEach(b => b.classList.toggle('active', b === btn));
       document.body.classList.toggle('layoutMode', tab === 'layout');
-      closeLayerContextMenu();
+      closeBlockContextMenu();
       $('sheet').style.display = tab === 'preview' ? '' : 'none';
       $('layoutSheet').style.display = tab === 'layout' ? '' : 'none';
       $('layoutOverlaySvg').style.display = tab === 'layout' ? '' : 'none';

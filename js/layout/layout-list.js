@@ -36,12 +36,12 @@ import { LAYOUT_UI_CHROME_SELECTOR, blockForRow, clearSelection, extendSelection
    switched off again, so re-checking it later restores what was last set. */
 export let contextMenuBlock = null;
 let contextMenuPos = { x: 0, y: 0 };
-function openLayerContextMenu(block, clientX, clientY){
+function openBlockContextMenu(block, clientX, clientY){
   contextMenuBlock = block;
   contextMenuPos = { x: clientX, y: clientY };
-  $('layerContextOverrideChk').checked = !!block.override;
-  $('layerContextMenu').classList.toggle('overrideActive', !!block.override);
-  const list = $('layerContextMenuList');
+  $('blockContextOverrideChk').checked = !!block.override;
+  $('blockContextMenu').classList.toggle('overrideActive', !!block.override);
+  const list = $('blockContextMenuList');
   list.innerHTML = '';
   for (const L of layers){
     if (!(L.id in block.layerPaths)) continue;
@@ -77,7 +77,7 @@ function openLayerContextMenu(block, clientX, clientY){
       block.layerVisible[L.id] = !block.layerVisible[L.id];
       updateBlockStyle(block);
       refreshStatusR();
-      openLayerContextMenu(block, clientX, clientY);   // cheap full rebuild — refreshes the toggled icon
+      openBlockContextMenu(block, clientX, clientY);   // cheap full rebuild — refreshes the toggled icon
     });
     if (block.override){
       const st = block.overrideStyle[L.id];
@@ -89,7 +89,7 @@ function openLayerContextMenu(block, clientX, clientY){
     }
     list.appendChild(row);
   }
-  const menu = $('layerContextMenu');
+  const menu = $('blockContextMenu');
   menu.style.display = 'block';
   // Clamp on-screen so the menu never renders partly off the viewport edge
   const menuRect = menu.getBoundingClientRect();
@@ -98,9 +98,9 @@ function openLayerContextMenu(block, clientX, clientY){
   menu.style.left = Math.max(8, x) + 'px';
   menu.style.top = Math.max(8, y) + 'px';
 }
-export function closeLayerContextMenu(){
+export function closeBlockContextMenu(){
   contextMenuBlock = null;
-  $('layerContextMenu').style.display = 'none';
+  $('blockContextMenu').style.display = 'none';
 }
 /* ================= block list UI ================= */
 /* ================= block list drag-reorder =================
@@ -291,35 +291,35 @@ export function initLayoutList(){
   $('duplicateBlockBtn').addEventListener('click', () => {
     if (selectedBlocks.size) duplicateBlocks([...selectedBlocks]);
   });
-  $('layerContextOverrideChk').addEventListener('change', e => {
+  $('blockContextOverrideChk').addEventListener('change', e => {
     if (!contextMenuBlock) return;
     contextMenuBlock.override = e.target.checked;
     updateBlockStyle(contextMenuBlock);
     refreshStatusR();   // switches which dash (live panel vs. this block's own override) governs the ink length
-    openLayerContextMenu(contextMenuBlock, contextMenuPos.x, contextMenuPos.y);   // rebuild to show/hide the expanded controls
+    openBlockContextMenu(contextMenuBlock, contextMenuPos.x, contextMenuPos.y);   // rebuild to show/hide the expanded controls
   });
   $('paperPane').addEventListener('contextmenu', e => {
     if (activeTab !== 'layout') return;
     if (e.target.closest(LAYOUT_UI_CHROME_SELECTOR)) return;
     const [wx, wy] = screenToCanvasMm(e.clientX, e.clientY);
     const hit = hitTestBlockBody(wx, wy);
-    if (!hit){ closeLayerContextMenu(); return; }   // let the browser's default menu show over empty canvas
+    if (!hit){ closeBlockContextMenu(); return; }   // let the browser's default menu show over empty canvas
     e.preventDefault();
     // Deliberately does NOT change the current selection — right-click edits
     // whichever block is under the cursor, independent of a broader multi-
     // selection, so you can peek at one layer's overrides without losing it.
-    openLayerContextMenu(hit, e.clientX, e.clientY);
+    openBlockContextMenu(hit, e.clientX, e.clientY);
   }, { capture: true });
   document.addEventListener('pointerdown', e => {
-    if (contextMenuBlock && !$('layerContextMenu').contains(e.target)) closeLayerContextMenu();
+    if (contextMenuBlock && !$('blockContextMenu').contains(e.target)) closeBlockContextMenu();
   });
   /* Escape closes the menu. Its own listener since the split: it used to be
      the first line of the shortcut handler in layout-interaction.js, and this
      init runs before that one, so it still runs first for a given keypress. */
   document.addEventListener('keydown', e => {
-    if (contextMenuBlock && e.key === 'Escape') closeLayerContextMenu();
+    if (contextMenuBlock && e.key === 'Escape') closeBlockContextMenu();
   });
-  ['pointerdown','wheel'].forEach(t => $('layerContextMenu').addEventListener(t, e => e.stopPropagation()));
+  ['pointerdown','wheel'].forEach(t => $('blockContextMenu').addEventListener(t, e => e.stopPropagation()));
   document.addEventListener('pointermove', e => {
     if (!blockDragState) return;
     const { others, insertLine } = blockDragState;
@@ -412,7 +412,7 @@ export function initLayoutList(){
     for (const b of blocks) removeBlockDom(b);
     setBlocks([]);
     clearSelection();
-    closeLayerContextMenu();
+    closeBlockContextMenu();
     refreshStatusR();
     renderBlocksList();
   });

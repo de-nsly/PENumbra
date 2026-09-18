@@ -37,7 +37,7 @@ function restyleAllLayers(){
 // so a select only falls back when its pen is truly gone.
 export function refreshPenSelects(){
   for (const L of layers) fillPenSelect(layerEls[L.id].pen, L.pen);
-  document.querySelectorAll('#layerContextMenuList select.penSelect').forEach(sel => fillPenSelect(sel));
+  document.querySelectorAll('#blockContextMenuList select.penSelect').forEach(sel => fillPenSelect(sel));
 }
 export function syncPenLibraryUI(){
   renderPenLibrary();

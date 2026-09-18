@@ -258,7 +258,7 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
 #blocksFloat .svHeaderRow{flex:none}
 /* frosted glass — shared by every floating panel and the layer context menu;
    backdrop-filter degrades to a plain translucent panel where unsupported. */
-#camFloat,#rotateFloat,#viewsFloat,#genExportFloat,#addToLayoutFloat,#blocksFloat,#layerContextMenu{
+#camFloat,#rotateFloat,#viewsFloat,#genExportFloat,#addToLayoutFloat,#blocksFloat,#blockContextMenu{
   border:1px solid var(--edge-glass);border-radius:10px;box-shadow:var(--shadow-float);
   padding:12px 12px 10px;
   -webkit-backdrop-filter:blur(14px) saturate(1.3);backdrop-filter:blur(14px) saturate(1.3)}
@@ -409,26 +409,26 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
 .dimLabel{transform:translate(-50%,-50%)}
 
 /* base frost comes from the grouped rule above; these are its own overrides */
-#layerContextMenu{position:fixed;width:192px;z-index:60;border-radius:8px;padding:8px 10px 6px;
+#blockContextMenu{position:fixed;width:192px;z-index:60;border-radius:8px;padding:8px 10px 6px;
   background:color-mix(in srgb, var(--bg) 94%, transparent)}
-#layerContextMenu.overrideActive{width:350px}
-#layerContextMenu .vpLabel{margin:0 0 4px}
+#blockContextMenu.overrideActive{width:350px}
+#blockContextMenu .vpLabel{margin:0 0 4px}
 /* Name column is a fixed px (matching what 1fr already resolves to at the
    base 180px menu width), not 1fr — a flexible column would change size
    whenever the OTHER columns' total width changes (i.e. whenever Override
    toggles), shifting the eye button that follows it even though nothing
    about that button itself changed. Fixed-width everywhere means toggling
    Override only ever ADDS columns, never resizes the existing ones. */
-#layerContextMenuList .savedView{grid-template-columns:133px 22px}
+#blockContextMenuList .savedView{grid-template-columns:133px 22px}
 /* The spacer column (empty <span class="ctxSpacer">, inserted in the DOM
-   by openLayerContextMenu right after the eye button) shifts pen/dash
+   by openBlockContextMenu right after the eye button) shifts pen/dash
    rightward as a group, using space that would otherwise sit unused
    after the dash dropdown — same total menu width as before, just
    redistributed, and it doubles as a visual gap between the visibility
    toggles and the rest of the per-layer settings. The pen column (85px) is
    the old color (24px) + gap + width (56px) columns it replaced. */
-#layerContextMenu.overrideActive #layerContextMenuList .savedView{grid-template-columns:133px 22px 10px 85px 50px}
-#layerContextMenuList .svName{cursor:default}
+#blockContextMenu.overrideActive #blockContextMenuList .savedView{grid-template-columns:133px 22px 10px 85px 50px}
+#blockContextMenuList .svName{cursor:default}
 /* Native color-input rendering nests an inner swatch element with its own
    default padding/border regardless of the outer input's own padding:0 —
    left alone, that reads as a smaller box floating inside a larger one
@@ -445,9 +445,9 @@ input[type=color]{padding:0}
 input[type=color]::-webkit-color-swatch-wrapper{padding:0;border-radius:4px;overflow:hidden}
 input[type=color]::-webkit-color-swatch{border:none;border-radius:4px}
 input[type=color]::-moz-color-swatch{border:none;border-radius:4px}
-#layerContextMenuList select{width:100%;height:20px;padding:0 2px;border:1px solid var(--line);border-radius:4px;
+#blockContextMenuList select{width:100%;height:20px;padding:0 2px;border:1px solid var(--line);border-radius:4px;
   background:var(--panel2);color:var(--text);font-size:var(--fs-data)}
-#layerContextOverrideRow{margin:6px 2px 2px;padding-top:6px}
+#blockContextOverrideRow{margin:6px 2px 2px;padding-top:6px}
 
 /* axis gizmo — top-right of the 3D viewport, Blender-style */
 #axisGizmo{position:absolute;top:12px;right:12px;z-index:2;

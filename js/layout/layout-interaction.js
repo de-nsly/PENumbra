@@ -749,7 +749,7 @@ function updateHoverCursor(wx, wy, altKey){
    otherwise start — a same-element, same-phase listener registered later
    (which is what this would be, since paper-preview.js loads first) can't
    achieve that; only capture-phase priority can. */
-export const LAYOUT_UI_CHROME_SELECTOR = '#paperPanelStack, #paperTabs, #reset2dBtn, #layerContextMenu';
+export const LAYOUT_UI_CHROME_SELECTOR = '#paperPanelStack, #paperTabs, #reset2dBtn, #blockContextMenu';
 /* Alt+drag duplicates instead of moving (Illustrator's gesture): the
    ORIGINALS stay exactly where they were and the copies become what's being
    dragged. Called from the move handler below, at most once per gesture.
