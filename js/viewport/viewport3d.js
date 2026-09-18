@@ -10,11 +10,11 @@
    readback (shading-capture.js). Both only read `renderer`/`scene`/
    `camera` from here, which is why those are exported.
    ================================================================ */
-import { $, onMiddleDblClick, positionSegPill, svgEl, worker } from './main.js';
-import { activeTab, doGenerate, markStale, refreshValLabel } from './panel-controls.js';
-import { computePaperLayout } from './paper-layout.js';
-import { applyPv } from './paper-preview.js';
-import { applyImportedScene, takePendingSceneImport } from './scene-io.js';
+import { $, onMiddleDblClick, positionSegPill, svgEl, worker } from '../main.js';
+import { activeTab, doGenerate, markStale, refreshValLabel } from '../panel-controls.js';
+import { computePaperLayout } from '../paper-layout.js';
+import { applyPv } from '../paper-preview.js';
+import { applyImportedScene, takePendingSceneImport } from '../scene-io.js';
 import { clearActiveView } from './saved-views.js';
 
 /* ================= three.js viewport ================= */

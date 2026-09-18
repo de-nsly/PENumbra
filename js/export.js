@@ -17,9 +17,9 @@ import { $, PEN_LIBRARY, SVG_NS, downloadFile, penById, svgEl } from './main.js'
 import { layers } from './layers.js';
 import { clipPathDToMargins, ctmWithinRoot, emitPathD, matApply, matInvert, parsePathD, splitDashedPathD, trimCloneToMargins } from './path-model.js';
 import { activeTab, gatherSettings, lastGen } from './panel-controls.js';
-import { blockLayerPenId, blocks, computeLayoutPaperDims, createBlockDom, updateBlockStyle } from './layout-model.js';
+import { blockLayerPenId, blocks, computeLayoutPaperDims, createBlockDom, updateBlockStyle } from './layout/layout-model.js';
 import { computePaperLayout } from './paper-layout.js';
-import { modelName } from './viewport3d.js';
+import { modelName } from './viewport/viewport3d.js';
 /* ================= one path per pen (export) =================
    The export used while "Export one path per pen" (Pen library tab) is on:
    instead of cloning the on-screen SVG, a fresh file is built holding ONE

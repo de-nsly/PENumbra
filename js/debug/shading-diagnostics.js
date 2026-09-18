@@ -18,8 +18,8 @@
                                    checks the two agree
    ================================================================ */
 import { worker } from '../main.js';
-import { modelMesh, vp } from '../viewport3d.js';
-import { captureShadingBuffer } from '../shading-capture.js';
+import { modelMesh, vp } from '../viewport/viewport3d.js';
+import { captureShadingBuffer } from '../viewport/shading-capture.js';
 (function(){
   function previewShadingBuffer(){
     const cap = captureShadingBuffer();

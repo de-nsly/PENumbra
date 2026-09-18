@@ -27,13 +27,13 @@
    snap guides) is a separate top-level layer, updated independently, so
    selecting/dragging never touches block content nodes and vice versa.
    ================================================================ */
-import { $, dashOnFraction, penById, scaledDash, svgEl } from './main.js';
-import { layerById, layers } from './layers.js';
-import { computeDStats } from './path-model.js';
-import { refreshStatusR } from './render-result.js';
-import { PAPERS, buildTrimMaskGroup, computePaperLayout, getMargins, renderPaper, syncPreviewTrimMask } from './paper-layout.js';
-import { activeTab, setActiveTab, lastGen, markStale } from './panel-controls.js';
-import { setActiveSheet, applyPv, resetPvFitWithRulers } from './paper-preview.js';
+import { $, dashOnFraction, penById, scaledDash, svgEl } from '../main.js';
+import { layerById, layers } from '../layers.js';
+import { computeDStats } from '../path-model.js';
+import { refreshStatusR } from '../render-result.js';
+import { PAPERS, buildTrimMaskGroup, computePaperLayout, getMargins, renderPaper, syncPreviewTrimMask } from '../paper-layout.js';
+import { activeTab, setActiveTab, lastGen, markStale } from '../panel-controls.js';
+import { setActiveSheet, applyPv, resetPvFitWithRulers } from '../paper-preview.js';
 import { clearSelection, resetHoverCursor, selectedBlocks, selectionFrame, setSelection, setSelectionAnchor, updateSelectionOverlay } from './layout-interaction.js';
 import { closeLayerContextMenu, contextMenuBlock, layoutOverlayFront, layoutOverlayOn, layoutOverlayOpacity, renderBlocksList, syncBlocksFloatVisibility } from './layout-list.js';
 

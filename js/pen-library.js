@@ -14,7 +14,7 @@ import { $, PEN_LIBRARY, defaultPens, penById } from './main.js';
 import { layerById, layers } from './layers.js';
 import { applyLayerStyle, fillPenSelect, fmtWidth, layerEls } from './layer-rows.js';
 import { makeNameEditable } from './panel-controls.js';
-import { blocks } from './layout-model.js';
+import { blocks } from './layout/layout-model.js';
 
 
 // Next pen id — only ever climbs (see newPenId), replaced wholesale by a

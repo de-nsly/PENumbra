@@ -10,7 +10,7 @@ Nothing about the pipeline is reimplemented here. `gatherSettings`,
 `buildCamMessage`, `computePaperLayout`, `lightVec`, the orbit→camera
 construction, `setProjMode`, `updateModelRotation` and the whole
 Contour/Silhouette/Crease chaining tail are **imported from the real
-modules** (`js/panel-controls.js`, `js/viewport3d.js`, `js/paper-layout.js`).
+modules** (`js/panel-controls.js`, `js/viewport/viewport3d.js`, `js/paper-layout.js`).
 `app-env.mjs` installs the little the modules need at import time in Node —
 a `THREE` global and a `document` whose `getElementById()` returns fake
 controls with `.value`/`.checked` — and the modules' init functions (all the

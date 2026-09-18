@@ -19,8 +19,8 @@ import { $, onMiddleDblClick, svgEl } from './main.js';
 import { layerType, layers } from './layers.js';
 import { baseSheetSize, computePaperLayout } from './paper-layout.js';
 import { expandedLayerId, layerStyle, syncFillRowValues } from './layer-rows.js';
-import { computeLayoutPaperDims } from './layout-model.js';
-import { selectedBlocks, updateSelectionOverlay } from './layout-interaction.js';
+import { computeLayoutPaperDims } from './layout/layout-model.js';
+import { selectedBlocks, updateSelectionOverlay } from './layout/layout-interaction.js';
 import { activeTab, markStale } from './panel-controls.js';
 
 // The circles layer the centre gizmo belongs to: the one whose row is open

@@ -11,15 +11,15 @@
 import { $, APP_VERSION, DASH_KEYS, DASH_RATIOS, MAX_DASH_SLOTS, PEN_LIBRARY, downloadFile, penById, worker } from './main.js';
 import { restoreHooks, sceneSettingIds } from './settings.js';
 import { layerById, layers, replaceLayers, sceneLayers } from './layers.js';
-import { camera, modelMesh, modelName, onLoaded, onSmoothAngleResult, orbit, orthoCam, setProjMode } from './viewport3d.js';
-import { renderSavedViews, savedViewCounter, savedViews, setSavedViews } from './saved-views.js';
+import { camera, modelMesh, modelName, onLoaded, onSmoothAngleResult, orbit, orthoCam, setProjMode } from './viewport/viewport3d.js';
+import { renderSavedViews, savedViewCounter, savedViews, setSavedViews } from './viewport/saved-views.js';
 import { onResult, refreshStatusR } from './render-result.js';
 import { computePaperLayout } from './paper-layout.js';
 import { addDashSlot, buildLayerRows, refreshDashPreview } from './layer-rows.js';
 import { activeTab, buildCamMessage, doGenerate, generateFailed, lastGen, refreshValLabel, syncLineLayerUI } from './panel-controls.js';
 import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncPenLibraryUI } from './pen-library.js';
-import { blockCounter, blocks, replaceBlocks, renderLayoutCanvas } from './layout-model.js';
-import { renderBlocksList } from './layout-list.js';
+import { blockCounter, blocks, replaceBlocks, renderLayoutCanvas } from './layout/layout-model.js';
+import { renderBlocksList } from './layout/layout-list.js';
 import { resetPvFitWithRulers, updateTextureGizmo } from './paper-preview.js';
 import { renderTextureStack } from './texture-stack.js';
 

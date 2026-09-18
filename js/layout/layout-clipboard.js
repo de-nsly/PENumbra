@@ -6,10 +6,10 @@
    so a paste into another window (or another scene) reproduces the
    layers without needing the source document.
    ================================================================ */
-import { $, DASH_KEYS, PEN_LIBRARY, isTextEntryTarget } from './main.js';
-import { layers } from './layers.js';
-import { activeTab } from './panel-controls.js';
-import { resolveOverridePen, syncPenLibraryUI } from './pen-library.js';
+import { $, DASH_KEYS, PEN_LIBRARY, isTextEntryTarget } from '../main.js';
+import { layers } from '../layers.js';
+import { activeTab } from '../panel-controls.js';
+import { resolveOverridePen, syncPenLibraryUI } from '../pen-library.js';
 import { MIN_BLOCK_SCALE, addBlocks, blockCountLabel, blocks, nextBlockId } from './layout-model.js';
 import { interaction, interactiveSelection } from './layout-interaction.js';
 /* ================= clipboard (copy / paste layers) =================

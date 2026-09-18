@@ -124,7 +124,7 @@ for (let i = 0; i < argv.length; i++) if (argv[i] === '--set' || argv[i] === '--
 
 const D = Math.PI/180;
 /* The six exact axis-aligned poles, as the app's own view-preset buttons set
-   them (see GIZMO_AXES / setProjMode in js/viewport3d.js): +/-Y goes through
+   them (see GIZMO_AXES / setProjMode in js/viewport/viewport3d.js): +/-Y goes through
    orbit.exactPole, the four side views through plain theta/phi. These are the
    views where coincident projection is the norm rather than the exception. */
 const AXIS_VIEWS = [

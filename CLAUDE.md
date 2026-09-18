@@ -47,15 +47,15 @@ There is no lint or build step. Two checks:
 `index.html` loads `three.min.js` (CDN, a classic script that defines the `THREE` global) and then one
 module script, `js/app.js`. Every other main-thread file is an ES module with explicit `import`/`export`:
 
+Only two clusters are foldered (`js/layout/`, `js/viewport/`) — the rest is flat on purpose: the modules
+cycle freely, so deeper folders would imply a layering that does not exist.
+
 ```
 js/app.js            - entry point: imports every module and calls their init functions in order, then boots
 js/main.js           - $, svgEl/SVG_NS, downloadFile, focus guards, PEN_LIBRARY/penById, DASH_*, the worker (bootWorker)
 js/settings.js       - SETTINGS registry: one entry per control (regen flag, label unit/decimals/presets, scene persistence, onRestore hook)
 js/layers.js         - layer instances (layers, LAYER_TYPES), TEXTURE_FILTERS schema, .pen v1/v2 layer loading (pure data, no DOM)
 js/texture-stack.js  - the Texture tab's per-layer stack editor
-js/viewport3d.js     - three.js scene/camera/orbit controls, gizmos, lighting, onLoaded(), smooth shading
-js/saved-views.js    - the named camera views panel (part of the scene: a .pen import replaces the list)
-js/shading-capture.js - the WebGL shading-buffer readback the worker samples for Smooth shading
 js/paper-preview.js  - pan/zoom for the on-screen paper pane, rulers, circles-centre gizmo
 js/layer-rows.js     - the Lines tab's layer rows + fill settings panels, the dash editor, layerStyle/applyLayerStyle
 js/paper-layout.js   - PAPERS/getMargins/computePaperLayout/pxPerMm, renderPaper(), trim mask, page + guide colours
@@ -66,11 +66,16 @@ js/path-model.js     - d-string <-> typed segments, dash splitting, the margin t
 js/export.js         - exportSvg(): the Export button, both modes (clone of the screen, or one path per pen)
 js/panel-controls.js - control panel wiring, gatherSettings(), generate/staleness/auto-generate state
 js/pen-library.js    - the Pen library tab, pen add/delete, matching incoming pens
-js/layout-model.js   - the Layout tab: the blocks, their DOM, the canvas scaffold
-js/layout-list.js    - the Layout tab: block list rows, context menu, the floating buttons + overlay state
-js/layout-interaction.js - the Layout tab: selection, hit testing, move/rotate/scale gestures, snapping, guides
-js/layout-clipboard.js   - the Layout tab: copy / paste of blocks
 js/scene-io.js       - worker.onmessage dispatcher, file I/O, .pen scene save/load, boots the demo scene
+js/viewport/
+  viewport3d.js      - three.js scene/camera/orbit controls, gizmos, lighting, onLoaded(), smooth shading
+  saved-views.js     - the named camera views panel (part of the scene: a .pen import replaces the list)
+  shading-capture.js - the WebGL shading-buffer readback the worker samples for Smooth shading
+js/layout/
+  layout-model.js       - the Layout tab: the blocks, their DOM, the canvas scaffold
+  layout-list.js        - the Layout tab: block list rows, context menu, the floating buttons + overlay state
+  layout-interaction.js - the Layout tab: selection, hit testing, move/rotate/scale gestures, snapping, guides
+  layout-clipboard.js   - the Layout tab: copy / paste of blocks
 js/debug/*.js        - console-only diagnostics, dynamically imported by scene-io.js only when the URL has ?debug
 ```
 

@@ -7,8 +7,8 @@
    headlessly.
    ================================================================ */
 import { initSegPills, bootWorker } from './main.js';
-import { initViewport3d } from './viewport3d.js';
-import { initSavedViews } from './saved-views.js';
+import { initViewport3d } from './viewport/viewport3d.js';
+import { initSavedViews } from './viewport/saved-views.js';
 import { initPaperPreview } from './paper-preview.js';
 import { initLayerRows } from './layer-rows.js';
 import { initPaperLayout } from './paper-layout.js';
@@ -16,10 +16,10 @@ import { initExport } from './export.js';
 import { initPanelControls } from './panel-controls.js';
 import { initTextureStack } from './texture-stack.js';
 import { initPenLibrary } from './pen-library.js';
-import { initLayoutModel } from './layout-model.js';
-import { initLayoutList } from './layout-list.js';
-import { initLayoutInteraction } from './layout-interaction.js';
-import { initLayoutClipboard } from './layout-clipboard.js';
+import { initLayoutModel } from './layout/layout-model.js';
+import { initLayoutList } from './layout/layout-list.js';
+import { initLayoutInteraction } from './layout/layout-interaction.js';
+import { initLayoutClipboard } from './layout/layout-clipboard.js';
 import { initSceneIO } from './scene-io.js';
 
 initSegPills();

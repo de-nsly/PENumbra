@@ -8,8 +8,8 @@
    Everything it moves lives in viewport3d.js — this only reads the
    camera and calls that module's own appliers.
    ================================================================ */
-import { $ } from './main.js';
-import { makeNameEditable, markStale, refreshValLabel } from './panel-controls.js';
+import { $ } from '../main.js';
+import { makeNameEditable, markStale, refreshValLabel } from '../panel-controls.js';
 import { camera, orbit, orthoCam, setProjMode, updateLight, updateLightGizmo, updateModelRotation } from './viewport3d.js';
 /* ================= saved views =================
    Captures camera (orbit theta/phi/radius/target, FOV, perspective/ortho),

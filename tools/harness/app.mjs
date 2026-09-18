@@ -31,7 +31,7 @@ import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { defaultLayers, replaceLayers, sceneLayers } from '../../js/layers.js';
 import { computePaperLayout, getMargins } from '../../js/paper-layout.js';
-import { lightVec, orbit, updateFrustum, setProjMode, updateModelRotation, perspCam, orthoCam } from '../../js/viewport3d.js';
+import { lightVec, orbit, updateFrustum, setProjMode, updateModelRotation, perspCam, orthoCam } from '../../js/viewport/viewport3d.js';
 import { gatherSettings, buildCamMessage, setLastGen } from '../../js/panel-controls.js';
 
 /* The app's own viewport is whatever size the user's browser window

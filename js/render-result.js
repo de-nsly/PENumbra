@@ -18,7 +18,7 @@ import { layerById, layerType, layers } from './layers.js';
 import { appendContourPathD, appendCreasePathD, buildChainedPathD } from './chain.js';
 import { appendTexturedPolylinesD, applyTextureStack, arcToBezierSegments, hatchFamilyAngleDeg } from './hatch-texture.js';
 import { activeTab, generateFinished } from './panel-controls.js';
-import { computeLayoutStats } from './layout-model.js';
+import { computeLayoutStats } from './layout/layout-model.js';
 import { resetPvFitWithRulers } from './paper-preview.js';
 import { exportSoIvOverlayNow, takePendingSoIvExport } from './scene-io.js';
 import { computePaperLayout, pxPerMm, renderPaper } from './paper-layout.js';

@@ -19,8 +19,8 @@ import { refreshStatusR } from './render-result.js';
 import { formatValue } from './settings.js';
 import { activeTab, makeSliderValueEditable, markStale, syncLineLayerUI } from './panel-controls.js';
 import { renderTextureStack } from './texture-stack.js';
-import { refreshAllBlockStyles, renderPreviewLayoutOverlay } from './layout-model.js';
-import { layoutOverlayOn } from './layout-list.js';
+import { refreshAllBlockStyles, renderPreviewLayoutOverlay } from './layout/layout-model.js';
+import { layoutOverlayOn } from './layout/layout-list.js';
 import { updateTextureGizmo } from './paper-preview.js';
 
 // Pen widths are mm values entered to plotter-nib precision (0.15, 0.25,

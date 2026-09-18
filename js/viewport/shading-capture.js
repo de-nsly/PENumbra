@@ -11,7 +11,7 @@
    buildCamMessage()'s by construction. tools/harness cannot run any of
    this — it is the one path with no headless equivalent.
    ================================================================ */
-import { $ } from './main.js';
+import { $ } from '../main.js';
 import { camera, gridHelper, modelMesh, renderer, scene, vp } from './viewport3d.js';
 /* ================= shading-buffer capture =================
    Renders the model once more into an offscreen float target with a

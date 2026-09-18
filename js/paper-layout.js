@@ -15,7 +15,7 @@ import { $, svgEl } from './main.js';
 import { layers } from './layers.js';
 import { refreshStatusR } from './render-result.js';
 import { lastGen, markStale, updateGroundPatternSliderRange } from './panel-controls.js';
-import { gridGuidePositions, renderPreviewLayoutOverlay, syncLayoutPaperFrame, syncLayoutTrimMask } from './layout-model.js';
+import { gridGuidePositions, renderPreviewLayoutOverlay, syncLayoutPaperFrame, syncLayoutTrimMask } from './layout/layout-model.js';
 import { applyPv, resetPv } from './paper-preview.js';
 import { applyLayerStyle } from './layer-rows.js';
 /* ================= paper layout =================
