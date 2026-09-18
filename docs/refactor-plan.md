@@ -371,7 +371,36 @@ visible changes), 4d/4e (the new UI).
 
 ---
 
-## 4. Phase 5 — split the big files
+## 4. Phase 5 — split the big files — DONE 2026-09-17/18 (worker declined)
+
+Done as specified below, 13 commits, with these decisions and deviations:
+- **The worker's `generate()` was NOT split** — the user declined it at the start of the phase, as the
+  last bullet allows. `js/worker/solver.js` is untouched by Phase 5.
+- **`main.js` was left alone** (no `pens.js`): at ~200 lines it is already coherent, and the plan's
+  keep-list had no home for `positionSegPill`/`initSegPills`/`onMiddleDblClick`.
+- **`TEXTURE_FILTERS` stayed in `layers.js`**; only the implementations became `hatch-texture.js`, so the
+  data model does not import from a rendering module.
+- **No re-export barrel**: `svg-export.js` and `layout-canvas.js` are gone, every importer was rewritten,
+  and the remainder of each was renamed (`layer-rows.js`, `layout-model.js`).
+- `initSvgExport` became `initLayerRows` + `initPaperLayout` + `initExport`, and `initLayoutCanvas`
+  became `initLayoutModel` + `initLayoutList` + `initLayoutInteraction` + `initLayoutClipboard`, called
+  from `app.js` in the order those listeners were registered in before — which matters for the
+  document-level ones (the list's context-menu pointerdown and keydown must precede the canvas
+  shortcuts). Also `initSavedViews`.
+- **Four small non-pure-move edits in the Layout split**, each replacing a cross-module assignment with a
+  named helper: `nextBlockId()` and `setBlocks()` (layout-model.js), `setSelectionAnchor()` and
+  `resetHoverCursor()` (layout-interaction.js). One `keydown` listener became two adjacent ones
+  (Escape-closes-menu in layout-list.js, the nudge/delete/select-all shortcuts in
+  layout-interaction.js). Everything else moved byte-for-byte.
+- `viewport3d.js` now exports `renderer` and `scene` (read, never written, by shading-capture.js).
+- **Verification**: every commit ran the link check and `verify-golden` (identical throughout). Because
+  the goldens never run `onResult`, the svg-export commits were also checked with a render comparison
+  against the pre-split tree — both trees' `onResult` over the same worker result, `Math.random` seeded
+  alike, comparing every layer's path `d`, group order and the status text: 60/60 identical over demo +
+  `arches.pen` × 30 texture configurations (a skewed seed makes it fail, so it does compare geometry).
+  The Layout and viewport files have no headless coverage and were browser-tested by the user.
+
+Original plan follows.
 
 Pure moves. One file per commit; no edits to function bodies. After each move: node link check
 (`node --input-type=module -e "import './tools/harness/app-env.mjs'; await import('./js/scene-io.js')"`),
@@ -468,12 +497,13 @@ path the harness cannot run); `?debug` → `testShadingBufferRoundTrip()`; conso
 
 - `js/debug/shading-diagnostics.js` attaches to `worker` at import time; it is browser-only by design
   (fails to import in Node — expected).
-- The Export button handler and the scene Save handler are still anonymous listeners inside
-  `initSvgExport` / `initSceneIO`; name them when their files are split.
+- The Export button handler is now `exportSvg()` (export.js, Phase 5). The scene Save handler is still an
+  anonymous listener inside `initSceneIO`; scene-io.js was not split, so it was left alone.
 - `walkCircleSplit` (geom-utils) duplicates the `refineSplits` recursion with different seam handling —
   left as is on purpose.
-- `generateRawContourEdges` recomputes `isSilTopo` and `projView`; share with `buildContourTopology`
-  during the Phase 5 worker work if that happens.
-- `buildDashFields` / `addDashSlot` both hand-build dash markup; fold when `layer-rows.js` exists.
+- `generateRawContourEdges` recomputes `isSilTopo` and `projView`; share with `buildContourTopology` if
+  the worker is ever decomposed (Phase 5 declined that, so this stands).
+- `buildDashFields` / `addDashSlot` both hand-build dash markup; now both in `layer-rows.js`, still
+  unfolded — Phase 5 was moves only, so this consolidation wants its own commit.
 - The plan's original audit (findings A–H with file:line evidence, now partly stale line numbers) is at
   `C:\Users\Michal\.claude\plans\i-have-been-developing-graceful-walrus.md` on the user's machine.

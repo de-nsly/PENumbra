@@ -17,10 +17,12 @@ Fonts. Both require network access on first load.
 
 ## Ongoing cleanup
 
-A whole-codebase cleanup is in progress on branch `cleanup` (Phases 0–3 done: goldens, dead code,
-shared helpers, ES modules). `docs/refactor-plan.md` is the handoff for the remaining phases — read it
-before any refactor work; it lists the ground rules (byte-identical output, keys that must not be
-renamed, module discipline) and the planned layer/texture model the next phase must prepare for.
+A whole-codebase cleanup is in progress on branch `cleanup` (Phases 0–5 done: goldens, dead code,
+shared helpers, ES modules, the settings registry and layer-instance model, and the file splits that
+produced most of the module list below). `docs/refactor-plan.md` is the handoff for the remaining
+phases — read it before any refactor work; it lists the ground rules (byte-identical output, keys that
+must not be renamed, module discipline), what each finished phase actually did, and what is left:
+Phase 6 (naming) and Phase 7 (performance). The worker's `generate()` was deliberately left whole.
 
 ## Verifying changes
 
