@@ -2,7 +2,7 @@
    debug/shading-diagnostics.js — console tools for the shading buffer
    Loaded only with ?debug in the URL (dynamic import at the end of
    initSceneIO, scene-io.js). Everything here is a diagnostic over
-   captureShadingBuffer (viewport3d.js) and the worker's sampleShading;
+   captureShadingBuffer (shading-capture.js) and the worker's sampleShading;
    none of it is used by the app itself. Call from the browser console
    once a model is loaded:
 
@@ -18,7 +18,8 @@
                                    checks the two agree
    ================================================================ */
 import { worker } from '../main.js';
-import { captureShadingBuffer, modelMesh, vp } from '../viewport3d.js';
+import { modelMesh, vp } from '../viewport3d.js';
+import { captureShadingBuffer } from '../shading-capture.js';
 (function(){
   function previewShadingBuffer(){
     const cap = captureShadingBuffer();

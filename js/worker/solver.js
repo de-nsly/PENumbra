@@ -147,7 +147,7 @@ function generate(cam, S, shadingBuffer){
   const t0ms = Date.now();
   const { view:V, proj:P, w:W, h:H, near } = cam;
   const ortho = !!cam.ortho;
-  // The captured shading buffer (see viewport3d.js/panel-controls.js) is
+  // The captured shading buffer (see shading-capture.js/panel-controls.js) is
   // size-checked against this generate's own W/H (the same source it was
   // captured at) as a cheap guard against a stale/resized-since-capture
   // buffer being silently misapplied.

@@ -14,7 +14,7 @@ import { layerName, layers } from './layers.js';
 import { refreshStatusR } from './render-result.js';
 import { dashOptionsHtml, fillPenSelect } from './layer-rows.js';
 import { activeTab, makeNameEditable } from './panel-controls.js';
-import { saveCurrentView } from './viewport3d.js';
+import { saveCurrentView } from './saved-views.js';
 import { blocks, deleteBlocks, duplicateBlocks, freezeCurrentGeneration, removeBlockDom, renderPreviewLayoutOverlay, screenToCanvasMm, setBlocks, syncDuplicateBlockBtn, updateBlockStyle, updateBlockTransform } from './layout-model.js';
 import { LAYOUT_UI_CHROME_SELECTOR, blockForRow, clearSelection, extendSelectionTo, hitTestBlockBody, multiSelectKey, refreshInteractiveSelection, refreshSelectionHighlight, rowActionScope, selectOnly, selectedBlocks, toggleSelection } from './layout-interaction.js';
 /* ================= per-block layer visibility context menu =================

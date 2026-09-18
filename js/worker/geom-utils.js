@@ -408,7 +408,7 @@ export function mergeRingPieces(pieces, tolPx){
 
 /* ================= Shading-buffer sampling =================
    Receiving side of the captured shading buffer (see captureShadingBuffer
-   in viewport3d.js). With Smooth shading on, Hatch and Circles (model-
+   in shading-capture.js). With Smooth shading on, Hatch and Circles (model-
    surface rings) density in generate() is driven entirely by
    sampleShading's output. The worker's 'testShadingSample' message is a
    standalone round-trip check of this transfer/flip/sampling path, used

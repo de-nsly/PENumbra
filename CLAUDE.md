@@ -51,7 +51,9 @@ js/main.js           - $, svgEl/SVG_NS, downloadFile, focus guards, PEN_LIBRARY/
 js/settings.js       - SETTINGS registry: one entry per control (regen flag, label unit/decimals/presets, scene persistence, onRestore hook)
 js/layers.js         - layer instances (layers, LAYER_TYPES), TEXTURE_FILTERS schema, .pen v1/v2 layer loading (pure data, no DOM)
 js/texture-stack.js  - the Texture tab's per-layer stack editor
-js/viewport3d.js     - three.js scene/camera/orbit controls, gizmos, saved views, shading-buffer capture, onLoaded()
+js/viewport3d.js     - three.js scene/camera/orbit controls, gizmos, lighting, onLoaded(), smooth shading
+js/saved-views.js    - the named camera views panel (part of the scene: a .pen import replaces the list)
+js/shading-capture.js - the WebGL shading-buffer readback the worker samples for Smooth shading
 js/paper-preview.js  - pan/zoom for the on-screen paper pane, rulers, circles-centre gizmo
 js/layer-rows.js     - the Lines tab's layer rows + fill settings panels, the dash editor, layerStyle/applyLayerStyle
 js/paper-layout.js   - PAPERS/getMargins/computePaperLayout/pxPerMm, renderPaper(), trim mask, page + guide colours

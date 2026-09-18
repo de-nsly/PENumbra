@@ -8,7 +8,9 @@
    ================================================================ */
 import { $, APP_VERSION, isFormControlTarget, positionSegPill, worker } from './main.js';
 import { HATCH_CAP_PRESETS, SETTINGS, SHADOW_BUDGET_PRESETS, formatValue, settingById } from './settings.js';
-import { camera, captureShadingBuffer, clearActiveView, lightVec, modelMesh, modelPivot, syncGroundCatcher, syncShadowCasting, updateLight, updateLightGizmo, updateModelRotation, vp } from './viewport3d.js';
+import { camera, lightVec, modelMesh, modelPivot, syncGroundCatcher, syncShadowCasting, updateLight, updateLightGizmo, updateModelRotation, vp } from './viewport3d.js';
+import { clearActiveView } from './saved-views.js';
+import { captureShadingBuffer } from './shading-capture.js';
 import { layerType, layers } from './layers.js';
 import { computePaperLayout } from './paper-layout.js';
 import { layerStyle, syncFillRowRanges, syncFillRowSoftState } from './layer-rows.js';

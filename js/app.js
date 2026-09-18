@@ -8,6 +8,7 @@
    ================================================================ */
 import { initSegPills, bootWorker } from './main.js';
 import { initViewport3d } from './viewport3d.js';
+import { initSavedViews } from './saved-views.js';
 import { initPaperPreview } from './paper-preview.js';
 import { initLayerRows } from './layer-rows.js';
 import { initPaperLayout } from './paper-layout.js';
@@ -24,6 +25,7 @@ import { initSceneIO } from './scene-io.js';
 initSegPills();
 bootWorker();
 initViewport3d();
+initSavedViews();
 initPaperPreview();
 initLayerRows();
 initPaperLayout();
