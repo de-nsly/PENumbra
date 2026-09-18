@@ -99,7 +99,7 @@ app's built-in demo mesh as an independent second scene.
 |---|---|
 | `app-env.mjs` | the browser stand-in (`THREE`, `document`, fake controls) the app modules need at import time. Import it first. |
 | `app.mjs` | the main thread: `.pen` import → worker `load` → camera/settings → `generate` → result. `openScene()` / `HarnessApp`. |
-| `svg.mjs` | `onResult`'s per-layer path building (`layerPathD`, calling the same builders `onResult` does) and a paper-space SVG writer. |
+| `svg.mjs` | `renderResult`'s per-layer path building (`layerPathD`, calling the same builders `renderResult` does) and a paper-space SVG writer. |
 | `raster.mjs` | tiny anti-aliased line rasterizer + PNG writer, so a run can be looked at. Debug aid only. |
 | `run.mjs` | CLI. |
 | `contour-audit.mjs` | Contour-specific diagnostics (see below). |

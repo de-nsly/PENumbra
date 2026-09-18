@@ -1,6 +1,6 @@
 /* ================================================================
    tools/harness/svg.mjs — the main thread's half of the pipeline
-   onResult() (js/render-result.js) turns the worker's flat per-layer
+   renderResult() (js/render-result.js) turns the worker's flat per-layer
    segment arrays into the actual <path> data that gets exported. For
    Contour (sv/sh) that is chainByRun -> mergeContourRunSplits ->
    splitSelfTouching -> simplifyCollinear; Silhouette (so/iv/ih) and
@@ -33,8 +33,8 @@ export {
 const CHAIN_LAYERS = { so:1, iv:1, ih:1 };
 const SEQ_CHAIN_LAYERS = { cv:1, ch:1 };
 
-/* The per-layer branch of onResult's LAYERS loop, for one layer key —
-   calling the same per-layer builders onResult calls. Returns the layer's
+/* The per-layer branch of renderResult's LAYERS loop, for one layer key —
+   calling the same per-layer builders renderResult calls. Returns the layer's
    `d` string in solver-px units, exactly as the app would put it on the
    <path>. */
 export function layerPathD(m, key, { mmToPx = 1, mode = 'chained' } = {}){
@@ -85,7 +85,7 @@ export function pathDToSegs(d){
 export function buildPaperSvg(m, layers, layout, extra = []){
   const mmToPx = 1/Math.max(1e-6, layout.scale);
   const parts = [];
-  for (const L of layers.slice().reverse()){         // same reverse paint order as onResult
+  for (const L of layers.slice().reverse()){         // same reverse paint order as renderResult
     const d = layerPathD(m, L.key, { mmToPx, mode: L.mode });
     if (!d) continue;
     parts.push('<path data-layer="' + L.key + '" d="' + d + '" fill="none" stroke="' +

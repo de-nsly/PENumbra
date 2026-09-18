@@ -1,7 +1,7 @@
 /* ================================================================
    scene-io.js — everything that reads/writes files
    The worker message dispatcher (routes 'loaded' -> onLoaded in
-   viewport3d.js, 'result' -> onResult in render-result.js), STL/OBJ
+   viewport3d.js, 'result' -> renderResult in render-result.js), STL/OBJ
    file loading (drag-drop + file picker + Z-up toggle), .pen scene
    save/load (base64 model embedding + settings/layers/pens/camera
    round-trip, migrating pre-pen-library scenes), and the demo-scene boot
@@ -13,10 +13,10 @@ import { restoreHooks, sceneSettingIds } from './settings.js';
 import { layerById, layers, replaceLayers, sceneLayers } from './layers.js';
 import { camera, modelMesh, modelName, onLoaded, onSmoothAngleResult, orbit, orthoCam, setProjMode } from './viewport/viewport3d.js';
 import { renderSavedViews, savedViewCounter, savedViews, setSavedViews } from './viewport/saved-views.js';
-import { onResult, refreshStatusR } from './render-result.js';
+import { renderResult, refreshStatusR } from './render-result.js';
 import { computePaperLayout } from './paper-layout.js';
 import { addDashSlot, buildLayerRows, refreshDashPreview } from './layer-rows.js';
-import { activeTab, buildCamMessage, doGenerate, generateFailed, lastGen, refreshValLabel, syncLineLayerUI } from './panel-controls.js';
+import { activeTab, buildCamMessage, doGenerate, generateFailed, lastResult, refreshValLabel, syncLineLayerUI } from './panel-controls.js';
 import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncPenLibraryUI } from './pen-library.js';
 import { blockCounter, blocks, replaceBlocks, renderLayoutCanvas } from './layout/layout-model.js';
 import { renderBlocksList } from './layout/layout-list.js';
@@ -128,14 +128,14 @@ function handleDebugRawContourEdgesResult(m){
    doGenerate), so the button triggers one such generate and exports from
    its result. */
 export function exportSoIvOverlayNow(){
-  const so = lastGen.debugPreDedupSo, iv = lastGen.debugPreDedupIv;
+  const so = lastResult.debugPreDedupSo, iv = lastResult.debugPreDedupIv;
   const dFor = (segs) => {
     const d = [];
     for (let i=0; i<segs.length; i+=4)
       d.push('M', segs[i].toFixed(3), segs[i+1].toFixed(3), 'L', segs[i+2].toFixed(3), segs[i+3].toFixed(3));
     return d.join(' ');
   };
-  const layout = computePaperLayout({ w: lastGen.w, h: lastGen.h });
+  const layout = computePaperLayout({ w: lastResult.w, h: lastResult.h });
   const strokeW = (0.25 / Math.max(1e-6, layout.scale)).toFixed(3);
   const svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n' +
     '<svg xmlns="http://www.w3.org/2000/svg" width="' + layout.paperW.toFixed(2) + 'mm" height="' + layout.paperH.toFixed(2) + 'mm" ' +
@@ -148,7 +148,7 @@ export function exportSoIvOverlayNow(){
   $('statusL').textContent = 'exported so/iv overlay (so: ' + (so.length/4) + ' segs, iv: ' + (iv.length/4) + ' segs)';
 }
 export let pendingSoIvExport = false;
-// onResult (render-result.js) asks whether the result it just received was the
+// renderResult (render-result.js) asks whether the result it just received was the
 // one this export requested; asking clears the flag.
 export function takePendingSoIvExport(){ const v = pendingSoIvExport; pendingSoIvExport = false; return v; }
 
@@ -363,7 +363,7 @@ export function initSceneIO(){
     } else if (m.type === 'loaded'){
       onLoaded(m);
     } else if (m.type === 'result'){
-      onResult(m);
+      renderResult(m);
     } else if (m.type === 'smoothAngleResult'){
       onSmoothAngleResult(m);
     } else if (m.type === 'debugRawEdgesResult'){
@@ -380,7 +380,7 @@ export function initSceneIO(){
   $('debugRawContourEdgesPaperBtn').addEventListener('click', () => triggerDebugRawContourEdgesExport('paper'));
   $('debugSoIvOverlayBtn').addEventListener('click', () => {
     if (!modelMesh){ $('statusL').textContent = 'load a model first'; return; }
-    if (lastGen && lastGen.debugPreDedupSo){ exportSoIvOverlayNow(); return; }
+    if (lastResult && lastResult.debugPreDedupSo){ exportSoIvOverlayNow(); return; }
     pendingSoIvExport = true;
     doGenerate();
   });

@@ -50,7 +50,7 @@ export function parsePathD(d){
 }
 // Inverse of parsePathD. Coordinate precision deliberately matches the
 // 2 decimals every d-string in this file is already written with
-// (onResult's own path building) — in solver-px, 0.01px is a small
+// (renderResult's own path building) — in solver-px, 0.01px is a small
 // fraction of any plotter's resolution, and re-emitting at a different
 // precision than the rest of the pipeline would only make diffs noisy.
 // digits: 2 everywhere the path stays in its own (solver-px / block-local)
@@ -143,7 +143,7 @@ function segLengthTable(p0, seg){
     },
   };
 }
-// Layout-tab equivalent of the inline segment/path accumulation onResult
+// Layout-tab equivalent of the inline segment/path accumulation renderResult
 // does per-layer via accumulatePathStats — Layout only has each block's
 // already-frozen, already-merged d-string to work from (not the raw
 // per-edge segments), so it needs its own self-contained walk over the

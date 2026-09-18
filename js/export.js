@@ -16,7 +16,7 @@
 import { $, PEN_LIBRARY, SVG_NS, downloadFile, penById, svgEl } from './main.js';
 import { layers } from './layers.js';
 import { clipPathDToMargins, ctmWithinRoot, emitPathD, matApply, matInvert, parsePathD, splitDashedPathD, trimCloneToMargins } from './path-model.js';
-import { activeTab, gatherSettings, lastGen } from './panel-controls.js';
+import { activeTab, gatherSettings, lastResult } from './panel-controls.js';
 import { blockLayerPenId, blocks, computeLayoutPaperDims, createBlockDom, updateBlockStyle } from './layout/layout-model.js';
 import { computePaperLayout } from './paper-layout.js';
 import { modelName } from './viewport/viewport3d.js';
@@ -136,7 +136,7 @@ export function exportSvg(){
   const isLayout = activeTab === 'layout';
   if (isLayout){
     if (!blocks.length){ $('statusL').textContent = 'no blocks to export'; return; }
-  } else if (!lastGen){ $('statusL').textContent = 'generate first'; return; }
+  } else if (!lastResult){ $('statusL').textContent = 'generate first'; return; }
 
   const layout = isLayout ? computeLayoutPaperDims() : computePaperLayout();
   let out;

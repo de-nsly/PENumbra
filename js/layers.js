@@ -6,7 +6,7 @@
      - cross-layer ink-avoidance (a lower layer never re-strokes what an
        enabled higher layer already covers — see the cascade in the
        worker's generate())
-     - paint order in the SVG: onResult walks this list in REVERSE so the
+     - paint order in the SVG: renderResult walks this list in REVERSE so the
        highest-priority layer (Silhouette) ends up painted last/on top.
    Toggling any layer re-runs the whole pipeline: the cascade means one
    layer's on/off changes which ink survives in every layer below it, so
@@ -24,7 +24,7 @@
               DOM (layer-rows.js) is a view of it
      texture  the ordered texture stack: [{ type, ...params }] with types
               from TEXTURE_FILTERS. Empty = no texture. Only fill layers
-              apply theirs today (onResult); edge layers carry [].
+              apply theirs today (renderResult); edge layers carry [].
      fill settings  every solve setting of a fill layer, one field per
               entry in its type's `settings` schema: angleDeg (hatch),
               minSpacing/maxSpacing (mm), threshold, and centerX/centerY
@@ -45,7 +45,7 @@
    headlessly, and sceneLayers() is the loader for every .pen version.
    ================================================================ */
 
-/* chain — how onResult joins an edge layer's worker segments into paths:
+/* chain — how renderResult joins an edge layer's worker segments into paths:
    'silhouette' (buildChainedPathD), 'contour' (appendContourPathD, by
    the worker's run identity), 'crease' (appendCreasePathD).
    geometry — what a fill layer's pieces are, which decides which texture

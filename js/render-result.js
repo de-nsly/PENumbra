@@ -1,6 +1,6 @@
 /* ================================================================
    render-result.js — the worker's result becomes the on-screen SVG
-   onResult() is what the app does with a finished solve: it rebuilds
+   renderResult() is what the app does with a finished solve: it rebuilds
    #plot from scratch, one <g id="g_<layerId>"> per layer in REVERSE
    layer order (so the highest-priority layer paints last, on top),
    each holding one <path>. Which builder turns a layer's flat segments
@@ -10,7 +10,7 @@
    pen styling and the pan/zoom fit are then re-applied by renderPaper()
    and applyLayerStyle().
    refreshStatusR() is the bottom-right stats readout for whichever tab
-   is showing geometry — the live counts cached here by onResult, or
+   is showing geometry — the live counts cached here by renderResult, or
    computeLayoutStats() for the Layout tab.
    ================================================================ */
 import { $, dashOnFraction, svgEl } from './main.js';
@@ -23,7 +23,7 @@ import { resetPvFitWithRulers } from './paper-preview.js';
 import { exportSoIvOverlayNow, takePendingSoIvExport } from './scene-io.js';
 import { computePaperLayout, pxPerMm, renderPaper } from './paper-layout.js';
 import { applyLayerStyle, layerStyle } from './layer-rows.js';
-export function onResult(m){
+export function renderResult(m){
   generateFinished(m);
   if (takePendingSoIvExport()) exportSoIvOverlayNow();
 
@@ -180,7 +180,7 @@ export function onResult(m){
 // geometry right now (live preview vs. Layout), not just whatever last
 // finished solving. Live-preview segment/path counts and per-layer RAW
 // (dash-independent, PAPER-SCALE-independent) lengths are cached in
-// lastLiveStats by onResult (only recomputed on an actual solve); the mm
+// lastLiveStats by renderResult (only recomputed on an actual solve); the mm
 // figure re-applies each layer's CURRENT dash setting AND the CURRENT
 // paper layout scale to that raw length every call. Paper size/orientation/
 // margin changes retransform the on-screen drawing immediately (see

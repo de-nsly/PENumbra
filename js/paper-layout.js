@@ -14,7 +14,7 @@
 import { $, svgEl } from './main.js';
 import { layers } from './layers.js';
 import { refreshStatusR } from './render-result.js';
-import { lastGen, markStale, updateGroundPatternSliderRange } from './panel-controls.js';
+import { lastResult, markStale, updateGroundPatternSliderRange } from './panel-controls.js';
 import { gridGuidePositions, renderPreviewLayoutOverlay, syncLayoutPaperFrame, syncLayoutTrimMask } from './layout/layout-model.js';
 import { applyPv, resetPv } from './paper-preview.js';
 import { applyLayerStyle } from './layer-rows.js';
@@ -45,7 +45,7 @@ export function getMargins(){
   return { top: m, bottom: m, left: m, right: m };
 }
 export function computePaperLayout(dims){
-  const d = dims || lastGen;
+  const d = dims || lastResult;
   if (!d) return null;
   const [pl, ps] = PAPERS[$('paperSize').value];
   const o = $('orient').value;
@@ -141,7 +141,7 @@ export function renderPaper(){
   // Layout overlay — same "recreate on every renderPaper() call" pattern as
   // marginGuide/pvGridGuides above, since #plot's entire subtree (including
   // whatever this drew last time) gets wiped on every regenerate (see
-  // onResult's while-loop).
+  // renderResult's while-loop).
   renderPreviewLayoutOverlay();
   syncPreviewTrimMask();   // must stay the LAST child of #plot — see its own comment
   return layout;

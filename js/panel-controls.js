@@ -157,7 +157,7 @@ export function scheduleAuto(){
   if (!autoGenOn || !modelMesh || genSeq === staleSeq) return;
   clearTimeout(autoTimer);
   // debounce adapts to how long the last solve took, so heavy models don't thrash
-  const wait = lastGen ? Math.min(2000, Math.max(280, lastGen.ms * 1.5)) : 280;
+  const wait = lastResult ? Math.min(2000, Math.max(280, lastResult.ms * 1.5)) : 280;
   autoTimer = setTimeout(() => { if (!busy) doGenerate(); }, wait);
 }
 export function clearStale(){
@@ -200,7 +200,7 @@ export function gatherSettings(){
   // Hatch spacing is authored in mm (it's paper space now that the preview is a
   // real page), but the solver only ever works in viewport-pixel space — convert
   // here, once, using the paper scale for the viewport size this generate call
-  // will actually use, not whatever lastGen happens to hold.
+  // will actually use, not whatever lastResult happens to hold.
   const layout = computePaperLayout({ w: vp.clientWidth, h: vp.clientHeight });
   const mmToPx = mm => layout ? mm / layout.scale : mm;
   return {
@@ -289,15 +289,15 @@ export function gatherSettings(){
 
 /* ================= generate ================= */
 let busy = false;
-export let lastGen = null;             // the worker's last 'result' message
-// Called by onResult (render-result.js) with the worker's result: releases the
+export let lastResult = null;             // the worker's last 'result' message
+// Called by renderResult (render-result.js) with the worker's result: releases the
 // Generate button, records the result, and either clears the stale state or
 // re-arms auto-generate if the view moved while solving.
 export function generateFinished(m){
   busy = false; $('genBtn').disabled = false;
   $('paperPane').classList.remove('busy');
   $('progressBar').style.width = '0';
-  lastGen = m;
+  lastResult = m;
   if (genSeq === staleSeq) clearStale();
   else scheduleAuto();               // view moved while solving — stays stale, auto retries
 }
@@ -308,7 +308,7 @@ export function generateFailed(msg){
   $('statusL').textContent = 'error: ' + msg;
 }
 // Records a result without the UI bookkeeping above (tools/harness).
-export function setLastGen(m){ lastGen = m; }
+export function setLastResult(m){ lastResult = m; }
 let autoGenOn = true;                 // header toggle button; checked/pressed by default
 // Ground shadow's plane offset only makes sense with its own toggle on;
 // shadow budget only bounds Cast shadow's sampling, so only that toggle

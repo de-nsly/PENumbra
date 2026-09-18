@@ -69,7 +69,7 @@ and Phase 4 also has to lay the ground for two planned features (§2.1).
   `js/debug/shading-diagnostics.js` when the URL has `?debug`.
 - Setters that exist for cross-module writes: `setActiveTab` (panel-controls), `setActiveSheet`
   (paper-preview), `setSavedViews` (viewport3d), `replaceBlocks` (layout-canvas), `generateFinished`,
-  `generateFailed`, `setLastGen` (panel-controls), `takePendingSceneImport`, `takePendingSoIvExport`
+  `generateFailed`, `setLastResult` (panel-controls), `takePendingSceneImport`, `takePendingSoIvExport`
   (scene-io), `syncSplitDashChoiceFromDom` (pen-library), `bootWorker` (main).
 - Shared helpers added in Phase 2: `svgEl`/`SVG_NS`, `downloadFile`, `isTextEntryTarget`/
   `isFormControlTarget` (main.js); `pxPerMm`, `readWobbleParams`/`readGapParams` (svg-export.js);

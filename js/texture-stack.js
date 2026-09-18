@@ -6,7 +6,7 @@
    remove an entry. Only the fill layers are offered today — edge layers
    carry an empty stack that nothing applies yet (refactor plan §4e).
    Every edit marks the drawing stale, as the texture controls always
-   did; onResult (render-result.js) applies the stacks when the result comes
+   did; renderResult (render-result.js) applies the stacks when the result comes
    back. Rebuilt wholesale (renderTextureStack) after a scene import
    replaces the layer list.
    ================================================================ */

@@ -61,7 +61,7 @@ js/layer-rows.js     - the Lines tab's layer rows + fill settings panels, the da
 js/paper-layout.js   - PAPERS/getMargins/computePaperLayout/pxPerMm, renderPaper(), trim mask, page + guide colours
 js/chain.js          - chaining and merge passes: worker segments -> polylines (pure geometry, imports nothing)
 js/hatch-texture.js  - the texture filter implementations behind TEXTURE_FILTERS, and applyTextureStack
-js/render-result.js  - onResult(): the worker's result becomes the on-screen SVG; refreshStatusR() stats readout
+js/render-result.js  - renderResult(): the worker's result becomes the on-screen SVG; refreshStatusR() stats readout
 js/path-model.js     - d-string <-> typed segments, dash splitting, the margin trim, computeDStats (curve-preserving)
 js/export.js         - exportSvg(): the Export button, both modes (clone of the screen, or one path per pen)
 js/panel-controls.js - control panel wiring, gatherSettings(), generate/staleness/auto-generate state

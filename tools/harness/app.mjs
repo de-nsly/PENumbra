@@ -6,7 +6,7 @@
 
      importScene()  -> worker 'load'  -> onLoaded()
                     -> applyImportedScene() (camera + settings)
-                    -> doGenerate() -> worker 'generate' -> onResult()
+                    -> doGenerate() -> worker 'generate' -> renderResult()
 
    The worker itself (js/worker/*.js) is the REAL one, imported
    unmodified — `self` is stubbed below before the import so its
@@ -32,7 +32,7 @@ import path from 'node:path';
 import { defaultLayers, replaceLayers, sceneLayers } from '../../js/layers.js';
 import { computePaperLayout, getMargins } from '../../js/paper-layout.js';
 import { lightVec, orbit, updateFrustum, setProjMode, updateModelRotation, perspCam, orthoCam } from '../../js/viewport/viewport3d.js';
-import { gatherSettings, buildCamMessage, setLastGen } from '../../js/panel-controls.js';
+import { gatherSettings, buildCamMessage, setLastResult } from '../../js/panel-controls.js';
 
 /* The app's own viewport is whatever size the user's browser window
    happened to give it, and a .pen file doesn't record it — but the solver
@@ -63,7 +63,7 @@ export class HarnessApp {
     this.orbitState = null;     // the .pen camera block, re-applied when this app takes the modules over
     this.messages = [];         // everything the worker has posted back
     this.errors = [];           // 'error' posts (see _onWorkerMessage)
-    this.lastGen = null;        // the app's `lastGen` — the last 'result'
+    this.lastResult = null;        // the app's `lastResult` — the last 'result'
     this.loaded = null;         // the 'loaded' reply (center/radius/stats)
     this.modelRadius = 1;
     this.perspCam = perspCam;
@@ -142,7 +142,7 @@ export class HarnessApp {
 
   _onWorkerMessage(m){
     if (m.type === 'loaded') this._onLoaded(m);
-    else if (m.type === 'result') this.lastGen = m;
+    else if (m.type === 'result') this.lastResult = m;
     // 'error' is not necessarily fatal in the worker — generate() posts one
     // and keeps going for the missing shading buffer (see the header note),
     // so these are collected and surfaced, not thrown. A generate that truly
@@ -163,7 +163,7 @@ export class HarnessApp {
   // to the last result, which is pushed in fresh on every call.
   computePaperLayout(dims){
     this._activate();
-    setLastGen(this.lastGen);
+    setLastResult(this.lastResult);
     return computePaperLayout(dims);
   }
   getMargins(){ this._activate(); return getMargins(); }
@@ -271,12 +271,12 @@ export class HarnessApp {
     if (overrides) Object.assign(settings, overrides);
     this.lastSettings = settings;
     this.lastCam = buildCamMessage();
-    this.lastGen = null;
+    this.lastResult = null;
     this.errors = [];
     this.post({ type: 'generate', cam: this.lastCam, settings, shadingBuffer: null });
-    if (!this.lastGen) throw new Error('generate produced no result' +
+    if (!this.lastResult) throw new Error('generate produced no result' +
       (this.errors.length ? ': ' + this.errors.join('; ') : ''));
-    return this.lastGen;
+    return this.lastResult;
   }
 
   /* ---- the two Contour debug paths the app's Debug panel exposes ---- */

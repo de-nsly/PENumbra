@@ -32,7 +32,7 @@ import { layerById, layers } from '../layers.js';
 import { computeDStats } from '../path-model.js';
 import { refreshStatusR } from '../render-result.js';
 import { PAPERS, buildTrimMaskGroup, computePaperLayout, getMargins, renderPaper, syncPreviewTrimMask } from '../paper-layout.js';
-import { activeTab, setActiveTab, lastGen, markStale } from '../panel-controls.js';
+import { activeTab, setActiveTab, lastResult, markStale } from '../panel-controls.js';
 import { setActiveSheet, applyPv, resetPvFitWithRulers } from '../paper-preview.js';
 import { clearSelection, resetHoverCursor, selectedBlocks, selectionFrame, setSelection, setSelectionAnchor, updateSelectionOverlay } from './layout-interaction.js';
 import { closeBlockContextMenu, contextMenuBlock, layoutOverlayFront, layoutOverlayOn, layoutOverlayOpacity, renderBlocksList, syncBlocksFloatVisibility } from './layout-list.js';
@@ -238,7 +238,7 @@ function syncLayoutGridGuides(dims){
    these). Only user-visible strings say "layer"; every internal name
    stays "block" to keep the two concepts unambiguous in the code. */
 export function freezeCurrentGeneration(){
-  if (!lastGen){ $('statusL').textContent = 'nothing generated yet'; return; }
+  if (!lastResult){ $('statusL').textContent = 'nothing generated yet'; return; }
   const layout = computePaperLayout();
   if (!layout) return;
   const layerPaths = {};
@@ -448,7 +448,7 @@ export function createBlockDom(block){
   // needs the OPPOSITE — later-appended SVG elements draw on top, so
   // iterating in reverse here puts Silhouette last/on top and Hatch/
   // Crosshatch/Deep shadow first/underneath, matching exactly how
-  // render-result.js's onResult() builds the live preview's paint order
+  // render-result.js's renderResult() builds the live preview's paint order
   // (layers.slice().reverse()). A previous version iterated forward here,
   // which inverted every block's layer stacking versus the live preview.
   for (const L of layers.slice().reverse()){
@@ -567,7 +567,7 @@ export function renderLayoutCanvas(){
 // Preview tab's own #plot — for live-compositing reference only (see the
 // "Layout overlay" toggle further down). Always fully torn down and rebuilt
 // rather than incrementally patched: #plot itself gets wiped on every
-// regenerate (see onResult in render-result.js), and blocks can only ever
+// regenerate (see renderResult in render-result.js), and blocks can only ever
 // change while the Layout tab is active anyway (Preview/Layout are mutually
 // exclusive), so there's no continuous sync to maintain — just a refresh on
 // tab-switch/regenerate/control-change (see the call sites of this

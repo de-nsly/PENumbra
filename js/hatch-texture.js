@@ -137,7 +137,7 @@ function applyHatchGaps(polylines, minLenPx, maxGapPx){
 }
 // The Wobble and Gaps stack entries of one layer as local-px parameters —
 // read the same way for the hatch layers and the Circles layer in
-// onResult. Noise seeds are drawn only when "Same noise field per layer"
+// renderResult. Noise seeds are drawn only when "Same noise field per layer"
 // is on.
 function readWobbleParams(entry, mmToPx){
   const isShared = !!entry.shared;
@@ -494,7 +494,7 @@ export function arcToBezierSegments(cx, cy, radius, u0, u1){
    whose type the layer's geometry doesn't support (ctx.geometry — see
    TEXTURE_FILTERS in layers.js), or that has no implementation for the
    current rep, is skipped. Segments still left at the end become
-   polylines; arcs stay arcs (onResult emits them as Béziers).
+   polylines; arcs stay arcs (renderResult emits them as Béziers).
    Closed paths: a filter that keeps the polylines one-to-one passes
    `closed` through; one that can split a path (gaps) returns closed:null,
    i.e. every output path open, since a gap opens a ring. Only hatch and
