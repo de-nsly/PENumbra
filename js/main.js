@@ -67,9 +67,8 @@ export const APP_VERSION = '0.8.6';
    ordinary pens (editable, deletable). They mirror the per-layer colour/
    width defaults the layers had before pens existed, so a fresh session
    and a migrated old scene render exactly as they did.
-   NAMING: "pen" also means the .pen scene file and the Lines tab's own
-   penTab/penModeBtn/data-mode="pen" ids — library code uses the penLib
-   prefix and PEN_LIBRARY to stay distinguishable from both. */
+   NAMING: "pen" also means the .pen scene file — library code uses the
+   penLib prefix and PEN_LIBRARY to stay distinguishable from it. */
 export function defaultPens(){
   return [
     { id:'p1', name:'Black 1.2', color:'#000000', width:1.2  },

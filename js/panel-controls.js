@@ -455,11 +455,9 @@ function closeAbout(){ aboutOverlay.hidden = true; }
 
 /* ================= settings panel tabs =================
    Five tabs for the same right-hand panel, one content div each; the
-   segmented toggle in #panelHead switches them. "pen" is the Lines tab's
-   historical id (it predates the Pen library — see the NAMING note on
-   PEN_LIBRARY in main.js). */
+   segmented toggle in #panelHead switches them. */
 const PANEL_MODES = [
-  { mode: 'pen',     tab: 'penTab',      btn: 'penModeBtn' },      // Lines/Shadows — "pen" predates the Pen library
+  { mode: 'lines',   tab: 'linesTab',    btn: 'linesModeBtn' },    // Lines/Shadows
   { mode: 'penlib',  tab: 'penLibTab',   btn: 'penLibModeBtn' },   // Pen library (pen-library.js)
   { mode: 'texture', tab: 'textureTab',  btn: 'textureModeBtn' },
   { mode: 'page',    tab: 'pageTab',     btn: 'pageModeBtn' },

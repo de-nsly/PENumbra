@@ -146,8 +146,8 @@ layer below it, so every layer checkbox re-runs the pipeline; there is no displa
 width}` pens. Layers and Layout block overrides store only a pen id (plus their own dash) and resolve colour/
 width through `penById` on every render, so editing a pen restyles everything using it. The library is part of
 the scene (a `.pen` import replaces it); pre-pen-library scenes and clipboard pastes are matched into it by
-colour + width (`resolvePen`). "Pen" is overloaded: the `.pen` scene file, the Lines tab's historical
-`penTab`/`penModeBtn`/`data-mode="pen"` ids, and the library — library code uses `penLib*`/`PEN_LIBRARY`.
+colour + width (`resolvePen`). "Pen" still means two things — the `.pen` scene file and the pen library —
+so library code uses `penLib*`/`PEN_LIBRARY` to stay distinguishable from the file format.
 
 **SVG export modes** (Export button, `export.js`): with the Pen library tab's "Export one path per pen" on
 (default), `buildPenPathsExport` builds a fresh file with one `<path id="pen05_Blue_0.2">` per pen, dashes
