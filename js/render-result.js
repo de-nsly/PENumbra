@@ -19,7 +19,7 @@ import { appendContourPathD, appendCreasePathD, buildChainedPathD } from './chai
 import { appendTexturedPolylinesD, applyTextureStack, arcToBezierSegments, hatchFamilyAngleDeg } from './hatch-texture.js';
 import { activeTab, generateFinished } from './panel-controls.js';
 import { computeLayoutStats } from './layout/layout-model.js';
-import { resetPvFitWithRulers } from './paper-preview.js';
+import { resetPaperViewFit } from './paper-preview.js';
 import { exportSoIvOverlayNow, takePendingSoIvExport } from './scene-io.js';
 import { computePaperLayout, pxPerMm, renderPaper } from './paper-layout.js';
 import { applyLayerStyle, layerStyle } from './layer-rows.js';
@@ -167,7 +167,7 @@ export function renderResult(m){
     applyLayerStyle(L.id);
     rawLenByLayer[L.id] = pathStats.lenPx - lenBefore;
   }
-  if (firstEverGen) resetPvFitWithRulers();   // first drawing ever shown: fit the whole page, rulers included
+  if (firstEverGen) resetPaperViewFit();   // first drawing ever shown: fit the whole page, rulers included
   renderPaper();                        // regenerating an existing view keeps the user's pan/zoom
   lastLiveStats = {
     segments: pathStats.segments, paths: pathStats.paths, closedPaths: pathStats.closedPaths,

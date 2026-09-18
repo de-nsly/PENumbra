@@ -1,15 +1,15 @@
 /* ================================================================
    paper-preview.js — the on-screen paper pane
-   Pan/zoom state for the paper sheet (pv/applyPv/resetPv), the pointer
-   handlers that drag/zoom it, the reset button (#reset2dBtn) and the
+   Pan/zoom state for the paper sheet (paperView, applyPaperView,
+   resetPaperView), the pointer handlers that drag/zoom it, the reset button (#reset2dBtn) and the
    reset-fit that keeps the rulers in frame, the page rulers and size
    label, the draggable Circles-centre gizmo, and the debug endpoint
    markers — everything drawn into the screen-space overlay SVGs
    (#previewOverlaySvg / #layoutOverlaySvg). Works on whichever sheet is
    currently active — #sheet (Preview) or #layoutSheet (Layout) — via
    activeSheetId, which layout-model.js's tab-switch handler updates;
-   only one sheet is ever visible at a time, so one shared pv state is
-   enough, reset on tab switch.
+   only one sheet is ever visible at a time, so one shared paperView
+   state is enough, reset on tab switch.
    Paper-layout math itself (computePaperLayout, baseSheetSize) lives in
    paper-layout.js since computePaperLayout is shared with the actual SVG
    export; computeLayoutPaperDims (the Layout-tab equivalent, no solver
@@ -32,14 +32,14 @@ function gizmoCirclesLayer(){
   return layers.find(L => L.type === 'circles' && L.id === expandedLayerId()) || null;
 }
 
-const pane2 = $('paperPane');
-export const pv = { z: 1, tx: 0, ty: 0 };            // tx/ty: sheet-center offset from pane-center, in CSS px
+const paperPane = $('paperPane');
+export const paperView = { z: 1, tx: 0, ty: 0 };            // tx/ty: sheet-center offset from pane-center, in CSS px
 export let activeSheetId = 'sheet';
 export function setActiveSheet(id){ activeSheetId = id; }   // layout-model.js's tab switch
 function currentLayoutDims(){
   return activeSheetId === 'sheet' ? computePaperLayout() : computeLayoutPaperDims();
 }
-export function resetPv(){ pv.z = 1; pv.tx = 0; pv.ty = 0; }
+export function resetPaperView(){ paperView.z = 1; paperView.tx = 0; paperView.ty = 0; }
 /* previewOverlaySvg/layoutOverlaySvg are position:fixed;inset:0, covering
    the ENTIRE browser viewport — needed so the viewport-relative coordinates
    getBoundingClientRect() already hands back everywhere else in this file
@@ -57,19 +57,19 @@ export function resetPv(){ pv.z = 1; pv.tx = 0; pv.ty = 0; }
    relative to the overlay's own (full-viewport) box, computed fresh
    whenever the pane could plausibly have moved/resized. */
 function updatePaneClip(){
-  const r = pane2.getBoundingClientRect();
+  const r = paperPane.getBoundingClientRect();
   const clip = 'inset(' + r.top.toFixed(1) + 'px ' + (window.innerWidth - r.right).toFixed(1) + 'px ' +
     (window.innerHeight - r.bottom).toFixed(1) + 'px ' + r.left.toFixed(1) + 'px)';
   $('previewOverlaySvg').style.clipPath = clip;
   $('layoutOverlaySvg').style.clipPath = clip;
 }
-export function applyPv(layout){
+export function applyPaperView(layout){
   layout = layout || currentLayoutDims();
   if (!layout) return;
   updatePaneClip();   // pane bounds can change on tab switch (Layout widens #paperPane via CSS grid), not just window resize
   const base = baseSheetSize(layout);
-  const dispW = base.w * pv.z, dispH = base.h * pv.z;
-  const cx = pane2.clientWidth/2 + pv.tx, cy = pane2.clientHeight/2 + pv.ty;
+  const dispW = base.w * paperView.z, dispH = base.h * paperView.z;
+  const cx = paperPane.clientWidth/2 + paperView.tx, cy = paperPane.clientHeight/2 + paperView.ty;
   const sheet = $(activeSheetId);
   sheet.style.width  = dispW.toFixed(1) + 'px';
   sheet.style.height = dispH.toFixed(1) + 'px';
@@ -87,7 +87,7 @@ export function applyPv(layout){
   if (activeSheetId === 'sheet') updateTextureGizmo();
   updateRuler(layout);
 }
-let panDrag = false, plx = 0, ply = 0;
+let panDrag = false, panLastX = 0, panLastY = 0;
 // Touch pans with TWO fingers, not one — a single finger is left free for
 // other touch interaction (tap-select, etc.) rather than immediately
 // panning like a mouse-drag would. Tracked separately from the mouse/pen
@@ -107,7 +107,7 @@ function touchMidpoint(){
 function syncTouchPan(){
   if (touchPointers.size >= 2){
     panDrag = true;
-    [plx, ply] = touchMidpoint();
+    [panLastX, panLastY] = touchMidpoint();
   } else {
     panDrag = false;
   }
@@ -120,7 +120,7 @@ function endPanPointer(e){
   }
   panDrag = false;
 }
-function reset2dView(){ resetPvFitWithRulers(); applyPv(); }
+function reset2dView(){ resetPaperViewFit(); applyPaperView(); }
 
 /* ================= texture pattern gizmo =================
    Draggable center-point marker for the ground-shadow texture pattern,
@@ -133,7 +133,7 @@ function reset2dView(){ resetPvFitWithRulers(); applyPv(); }
    canvasMmToScreen/screenToCanvasMm's exact pattern from layout-model.js
    — the SVG's own getBoundingClientRect() already reflects the pane's
    current pan/zoom (applied via CSS position/size, not an SVG-internal
-   transform), so no separate pv.z/tx/ty math is needed here at all. */
+   transform), so no separate paperView.z/tx/ty math is needed here at all. */
 function previewMmToScreen(mmX, mmY){
   const rect = $('plot').getBoundingClientRect();
   const layout = computePaperLayout();
@@ -272,15 +272,15 @@ let gizmoDragging = false;
    the page edge sometimes, avoids that entirely; and it means the ruler
    is automatically screen-only, since export clones #plot/#layoutPlot
    directly and never touches these overlays.
-   Called from applyPv above, so it repaints on every pan/zoom, on tab
+   Called from applyPaperView above, so it repaints on every pan/zoom, on tab
    switch (activeSheetId changing), and on any paper size/orientation/
-   margin change (renderPaper's own call to applyPv at the end) — the same
+   margin change (renderPaper's own call to applyPaperView at the end) — the same
    trigger set the gizmo and selection overlay already rely on.
    Geometry (baseline gap, tick lengths, label font) is defined in real
    page mm, then multiplied through the sheet's OWN current on-screen
    scale (getBoundingClientRect(), same technique as previewMmToScreen
    above — already reflects pan/zoom via CSS position/size, no separate
-   pv.z/tx/ty math needed) — so tick length, label size, and stroke width
+   paperView.z/tx/ty math needed) — so tick length, label size, and stroke width
    all shrink/grow with zoom exactly like real page content would, rather
    than staying a fixed screen size regardless of zoom. Deliberately no
    minimum-size floor on any of those: zooming out a lot is supposed to
@@ -372,7 +372,7 @@ export function updateRuler(layout){
 }
 
 // Reset-view fit — deliberately separate from baseSheetSize's own plain
-// page fit (used everywhere else pv.z=1 is the reference scale): the Reset
+// page fit (used everywhere else paperView.z=1 is the reference scale): the Reset
 // button is specifically supposed to bring the WHOLE view back into frame,
 // and the ruler (drawn only above/left of the page, see updateRuler above)
 // sits outside the page's own box, so fitting the bare page alone can leave
@@ -389,23 +389,23 @@ function rulerFitMarginMm(){
     top: RULER_GAP_MM + RULER_TICK_10MM + RULER_LABEL_GAP_TOP_MM + RULER_LABEL_FONT_MM * 0.6,
   };
 }
-export function resetPvFitWithRulers(){
+export function resetPaperViewFit(){
   const layout = currentLayoutDims();
-  if (!layout){ resetPv(); return; }
+  if (!layout){ resetPaperView(); return; }
   const margin = rulerFitMarginMm();
   const pane = $('paperPane');
   const availW = Math.max(20, pane.clientWidth - 20), availH = Math.max(20, pane.clientHeight - 20);
   const scale = Math.min(availW / (layout.paperW + margin.left), availH / (layout.paperH + margin.top));
   const base = baseSheetSize(layout);
   const baseScale = base.w / layout.paperW;     // the scale baseSheetSize's own z=1 fit represents
-  pv.z = scale / baseScale;
+  paperView.z = scale / baseScale;
   // Shifts the page right/down by half the ruler margin so the page+ruler
   // BOUNDING BOX ends up centered in the pane, not just the bare page —
   // since the ruler only extends outward on the top/left, centering the
   // page alone would crowd the ruler against one side while leaving unused
   // empty space on the opposite side.
-  pv.tx = (margin.left * scale) / 2;
-  pv.ty = (margin.top * scale) / 2;
+  paperView.tx = (margin.left * scale) / 2;
+  paperView.ty = (margin.top * scale) / 2;
 }
 
 /* ================= init =================
@@ -414,28 +414,28 @@ export function resetPvFitWithRulers(){
 export function initPaperPreview(){
   window.addEventListener('resize', updatePaneClip);
   updatePaneClip();
-  pane2.addEventListener('wheel', e => {
+  paperPane.addEventListener('wheel', e => {
     const layout = currentLayoutDims();
     if (!layout) return;
     e.preventDefault();
     const base = baseSheetSize(layout);
-    const r = pane2.getBoundingClientRect();
+    const r = paperPane.getBoundingClientRect();
     const mx = e.clientX - r.left, my = e.clientY - r.top;         // pane-local px
-    const cx0 = pane2.clientWidth/2 + pv.tx, cy0 = pane2.clientHeight/2 + pv.ty;
-    const dispW0 = base.w * pv.z, dispH0 = base.h * pv.z;
+    const cx0 = paperPane.clientWidth/2 + paperView.tx, cy0 = paperPane.clientHeight/2 + paperView.ty;
+    const dispW0 = base.w * paperView.z, dispH0 = base.h * paperView.z;
     const fx = (mx - (cx0 - dispW0/2)) / dispW0;                   // fraction of sheet under cursor
     const fy = (my - (cy0 - dispH0/2)) / dispH0;
-    pv.z = Math.min(40, Math.max(0.1, pv.z * Math.exp(-e.deltaY * 0.0014)));
-    const dispW1 = base.w * pv.z, dispH1 = base.h * pv.z;
+    paperView.z = Math.min(40, Math.max(0.1, paperView.z * Math.exp(-e.deltaY * 0.0014)));
+    const dispW1 = base.w * paperView.z, dispH1 = base.h * paperView.z;
     const cx1 = mx - fx*dispW1 + dispW1/2, cy1 = my - fy*dispH1 + dispH1/2;
-    pv.tx = cx1 - pane2.clientWidth/2;
-    pv.ty = cy1 - pane2.clientHeight/2;
-    applyPv(layout);
+    paperView.tx = cx1 - paperPane.clientWidth/2;
+    paperView.ty = cy1 - paperPane.clientHeight/2;
+    applyPaperView(layout);
   }, { passive: false });
-  pane2.addEventListener('pointerdown', e => {
+  paperPane.addEventListener('pointerdown', e => {
     if (e.pointerType === 'touch'){
       touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      pane2.setPointerCapture(e.pointerId);
+      paperPane.setPointerCapture(e.pointerId);
       syncTouchPan();
       e.preventDefault();
       return;
@@ -444,39 +444,39 @@ export function initPaperPreview(){
     // longer do, freeing them up for selection/context-menu use without an
     // accidental drag.
     if (e.button !== 1) return;
-    panDrag = true; plx = e.clientX; ply = e.clientY;
-    pane2.setPointerCapture(e.pointerId);
+    panDrag = true; panLastX = e.clientX; panLastY = e.clientY;
+    paperPane.setPointerCapture(e.pointerId);
     e.preventDefault();   // suppress the browser's default middle-click autoscroll behavior
   });
-  pane2.addEventListener('pointermove', e => {
+  paperPane.addEventListener('pointermove', e => {
     if (e.pointerType === 'touch'){
       if (!touchPointers.has(e.pointerId)) return;
       touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (!panDrag) return;
       const [cx, cy] = touchMidpoint();
-      pv.tx += cx - plx; pv.ty += cy - ply;
-      plx = cx; ply = cy;
-      applyPv();
+      paperView.tx += cx - panLastX; paperView.ty += cy - panLastY;
+      panLastX = cx; panLastY = cy;
+      applyPaperView();
       return;
     }
     if (!panDrag) return;
-    pv.tx += e.clientX - plx; pv.ty += e.clientY - ply;
-    plx = e.clientX; ply = e.clientY;
-    applyPv();
+    paperView.tx += e.clientX - panLastX; paperView.ty += e.clientY - panLastY;
+    panLastX = e.clientX; panLastY = e.clientY;
+    applyPaperView();
   });
-  pane2.addEventListener('pointerup', endPanPointer);
-  pane2.addEventListener('pointercancel', endPanPointer);
+  paperPane.addEventListener('pointerup', endPanPointer);
+  paperPane.addEventListener('pointercancel', endPanPointer);
   // The reset button sits on top of the pannable/zoomable pane — swallow its
-  // own pointerdown so it never reaches pane2's handler above and triggers a
+  // own pointerdown so it never reaches paperPane's handler above and triggers a
   // pan-drag + pointer-capture on what's really a button click. Pointer
-  // capture redirects subsequent pointer events to pane2, which interferes
+  // capture redirects subsequent pointer events to paperPane, which interferes
   // with the browser's click-event synthesis for the original target (the
   // button) on mouse input — the same problem #genExportFloat already guards
   // against, for the same reason.
   ['pointerdown','wheel'].forEach(t => $('reset2dBtn').addEventListener(t, e => e.stopPropagation()));
   $('reset2dBtn').addEventListener('click', reset2dView);
   // same reset via a double middle-click anywhere on the pane (Preview + Layout)
-  onMiddleDblClick(pane2, reset2dView);
+  onMiddleDblClick(paperPane, reset2dView);
   document.addEventListener('pointermove', e => {
     if (!gizmoDragging) return;
     const layout = computePaperLayout();

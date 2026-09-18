@@ -13,7 +13,7 @@
 import { $, onMiddleDblClick, positionSegPill, svgEl, worker } from '../main.js';
 import { activeTab, doGenerate, markStale, refreshValLabel } from '../panel-controls.js';
 import { computePaperLayout } from '../paper-layout.js';
-import { applyPv } from '../paper-preview.js';
+import { applyPaperView } from '../paper-preview.js';
 import { applyImportedScene, takePendingSceneImport } from '../scene-io.js';
 import { clearActiveView } from './saved-views.js';
 
@@ -618,7 +618,7 @@ export function initViewport3d(){
   new ResizeObserver(() => { resize(); markStale(); }).observe(vp);
   resize();
   new ResizeObserver(() => {
-    const layout = computePaperLayout(); if (layout) applyPv(layout);
+    const layout = computePaperLayout(); if (layout) applyPaperView(layout);
   }).observe($('paperPane'));
   gizmoParts = GIZMO_AXES.map(ax => {
     const positive = ax.l !== '';

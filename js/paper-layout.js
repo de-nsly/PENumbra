@@ -14,9 +14,9 @@
 import { $, svgEl } from './main.js';
 import { layers } from './layers.js';
 import { refreshStatusR } from './render-result.js';
-import { lastResult, markStale, updateGroundPatternSliderRange } from './panel-controls.js';
+import { lastResult, markStale, rescaleCirclesCentres } from './panel-controls.js';
 import { gridGuidePositions, renderPreviewLayoutOverlay, syncLayoutPaperFrame, syncLayoutTrimMask } from './layout/layout-model.js';
-import { applyPv, resetPv } from './paper-preview.js';
+import { applyPaperView, resetPaperView } from './paper-preview.js';
 import { applyLayerStyle } from './layer-rows.js';
 /* ================= paper layout =================
    The preview pane represents the true selected paper sheet (size +
@@ -85,7 +85,7 @@ export function baseSheetSize(layout){
 export function renderPaper(){
   const layout = computePaperLayout();
   if (!layout) return;
-  updateGroundPatternSliderRange();
+  rescaleCirclesCentres();
   // viewBox is always the FULL page — zoom never crops it, it resizes the whole sheet instead
   $('plot').setAttribute('viewBox', '0 0 ' + layout.paperW.toFixed(3) + ' ' + layout.paperH.toFixed(3));
   const content = $('paperContent');
@@ -130,7 +130,7 @@ export function renderPaper(){
       gridGuides.appendChild(line);
     }
   }
-  applyPv(layout);
+  applyPaperView(layout);
   // Stroke width is anchored to a true mm value via layout.scale (see
   // applyLayerStyle) — when the layout itself changes (paper size,
   // orientation, margin), that scale changes too, so widths need
@@ -201,7 +201,7 @@ export function syncPreviewTrimMask(){
 // #layoutSheet's background, per .sheet in styles.css, so Preview and
 // Layout always match with a single setting) — no geometry, scale, or
 // hatch-spacing math depends on it, so unlike the layout controls above
-// this never needs resetPv()/renderPaper()/markStale().
+// this never needs resetPaperView()/renderPaper()/markStale().
 export function applyPageColor(){
   document.documentElement.style.setProperty('--paper', $('pageColor').value);
   updateGuideColor();
@@ -263,7 +263,7 @@ export function syncMarginMode(){
   const on = $('marginIndependent').checked;
   $('marginSingleRow').style.display = on ? 'none' : '';
   $('marginIndependentRows').style.display = on ? '' : 'none';
-  resetPv(); renderPaper();
+  resetPaperView(); renderPaper();
   markStale();
   syncLayoutPaperFrame();
 }
@@ -282,7 +282,7 @@ export function initPaperLayout(){
   });
   ['paperSize','orient','marginMm','marginTopMm','marginBottomMm','marginLeftMm','marginRightMm'].forEach(id =>
     $(id).addEventListener('input', () => {
-      resetPv(); renderPaper();
+      resetPaperView(); renderPaper();
       markStale();   // paper scale now feeds the mm→px hatch-spacing conversion
       syncLayoutPaperFrame();
       refreshStatusR();   // mm figure depends on paper scale — keep it in step with the just-retransformed drawing

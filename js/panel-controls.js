@@ -361,20 +361,20 @@ export function syncLineLayerUI(){
 // clamping. 0,0 is the page centre by definition, so there is nothing to
 // default away from. Called from renderPaper; the row sliders' own ranges
 // are refreshed by syncFillRowRanges (layer-rows.js).
-let _gpLastPaperW = null, _gpLastPaperH = null;
-export function updateGroundPatternSliderRange(){
+let lastPaperW = null, lastPaperH = null;
+export function rescaleCirclesCentres(){
   const layout = computePaperLayout();
   if (!layout) return;
-  if (_gpLastPaperW !== null && (_gpLastPaperW !== layout.paperW || _gpLastPaperH !== layout.paperH)){
-    const kx = _gpLastPaperW > 0 ? layout.paperW/_gpLastPaperW : 1;
-    const ky = _gpLastPaperH > 0 ? layout.paperH/_gpLastPaperH : 1;
+  if (lastPaperW !== null && (lastPaperW !== layout.paperW || lastPaperH !== layout.paperH)){
+    const kx = lastPaperW > 0 ? layout.paperW/lastPaperW : 1;
+    const ky = lastPaperH > 0 ? layout.paperH/lastPaperH : 1;
     for (const L of layers){
       if (L.type !== 'circles') continue;
       L.centerX *= kx;
       L.centerY *= ky;
     }
   }
-  _gpLastPaperW = layout.paperW; _gpLastPaperH = layout.paperH;
+  lastPaperW = layout.paperW; lastPaperH = layout.paperH;
   syncFillRowRanges();
 }
 // Soft shadows: the per-face ambient brightness bands that give gradual,

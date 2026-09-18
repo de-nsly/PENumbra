@@ -505,10 +505,10 @@ export function subtractCovered(loArr, hiArr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP
     let t0=x0*tx+y0*ty, t1=x1*tx+y1*ty;
     if (t0>t1){ const tmp=t0; t0=t1; t1=tmp; }
     const px=nx*c, py=ny*c;   // fixed point on THIS (lo) segment's own line
-    let cur=t0, mi2=0;
-    while (mi2<ivs.length){
-      let s=ivs[mi2][0], e=ivs[mi2][1]; mi2++;
-      while (mi2<ivs.length && ivs[mi2][0]<=e+gapTol){ if (ivs[mi2][1]>e) e=ivs[mi2][1]; mi2++; }
+    let cur=t0, ivIdx=0;
+    while (ivIdx<ivs.length){
+      let s=ivs[ivIdx][0], e=ivs[ivIdx][1]; ivIdx++;
+      while (ivIdx<ivs.length && ivs[ivIdx][0]<=e+gapTol){ if (ivs[ivIdx][1]>e) e=ivs[ivIdx][1]; ivIdx++; }
       if (e<=cur || s>=t1) continue;
       // MIN_SEG guard: a leftover sliver from a coverage boundary landing a
       // hair's-width from cur (floating-point noise between two independent

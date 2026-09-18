@@ -493,11 +493,11 @@ function generate(cam, S, shadingBuffer){
   for (let j=0;j<nOcc;j++){
     const o=j*9;
     const ax=ocp[o],ay=ocp[o+1],az=ocp[o+2], bx=ocp[o+3],by=ocp[o+4],bz=ocp[o+5],
-          cx=ocp[o+6],cy2=ocp[o+7],cz=ocp[o+8];
+          cx=ocp[o+6],cvy=ocp[o+7],cz=ocp[o+8];
     oBx0[j]=Math.min(ax,bx,cx); oBx1[j]=Math.max(ax,bx,cx);
-    oBy0[j]=Math.min(ay,by,cy2); oBy1[j]=Math.max(ay,by,cy2);
+    oBy0[j]=Math.min(ay,by,cvy); oBy1[j]=Math.max(ay,by,cvy);
     oMaxZ[j]=Math.max(az,bz,cz);
-    const d1x=bx-ax,d1y=by-ay, d2x=cx-ax,d2y=cy2-ay;
+    const d1x=bx-ax,d1y=by-ay, d2x=cx-ax,d2y=cvy-ay;
     const det=d1x*d2y-d1y*d2x;
     if (Math.abs(det)<1e-9){ oSkip[j]=1; continue; }
     oS[j]=det>0?1:-1;
@@ -505,14 +505,14 @@ function generate(cam, S, shadingBuffer){
     const A=(d1z*d2y-d2z*d1y)/det, B=(d1x*d2z-d2x*d1z)/det;
     oA[j]=A; oB[j]=B; oC[j]=az-A*ax-B*ay;
     oGrad[j]=Math.abs(A)+Math.abs(B);
-    const lAB=d1x*d1x+d1y*d1y, lBC=(cx-bx)*(cx-bx)+(cy2-by)*(cy2-by), lCA=(ax-cx)*(ax-cx)+(ay-cy2)*(ay-cy2);
+    const lAB=d1x*d1x+d1y*d1y, lBC=(cx-bx)*(cx-bx)+(cvy-by)*(cvy-by), lCA=(ax-cx)*(ax-cx)+(ay-cvy)*(ay-cvy);
     const lMax=Math.max(lAB,lBC,lCA);
     if (lMax > 1e-12 && Math.abs(det)/Math.sqrt(lMax) < 1.0){
       oSliver[j]=1;
       let px2,py2,qx2,qy2,pz2,qz2;
       if (lMax===lAB){ px2=ax;py2=ay;pz2=az; qx2=bx;qy2=by;qz2=bz; }
-      else if (lMax===lBC){ px2=bx;py2=by;pz2=bz; qx2=cx;qy2=cy2;qz2=cz; }
-      else { px2=cx;py2=cy2;pz2=cz; qx2=ax;qy2=ay;qz2=az; }
+      else if (lMax===lBC){ px2=bx;py2=by;pz2=bz; qx2=cx;qy2=cvy;qz2=cz; }
+      else { px2=cx;py2=cvy;pz2=cz; qx2=ax;qy2=ay;qz2=az; }
       oSpx[j]=px2; oSpy[j]=py2; oSex[j]=qx2-px2; oSey[j]=qy2-py2;
       oSpz[j]=pz2; oSqz[j]=qz2; oSeL[j]=lMax;
       oSeps[j]=EPS_SLOPE_FAR*Math.abs(qz2-pz2)/Math.sqrt(lMax);
@@ -556,21 +556,21 @@ function generate(cam, S, shadingBuffer){
      lookup below (pickBackdropFaceWithDepth, coverPoint, pickVisibleFace). */
   const occluderHitDet = (j, px, py) => {
     const o=j*9;
-    const ax=ocp[o],ay=ocp[o+1], bx=ocp[o+3],by=ocp[o+4], cx=ocp[o+6],cy2=ocp[o+7];
-    const d=(bx-ax)*(cy2-ay)-(by-ay)*(cx-ax);
+    const ax=ocp[o],ay=ocp[o+1], bx=ocp[o+3],by=ocp[o+4], cx=ocp[o+6],cvy=ocp[o+7];
+    const d=(bx-ax)*(cvy-ay)-(by-ay)*(cx-ax);
     if (Math.abs(d)<1e-9) return 0;
     const s2=d>0?1:-1;
     if (s2*((bx-ax)*(py-ay)-(by-ay)*(px-ax)) < -1e-7) return 0;
-    if (s2*((cx-bx)*(py-by)-(cy2-by)*(px-bx)) < -1e-7) return 0;
-    if (s2*((ax-cx)*(py-cy2)-(ay-cy2)*(px-cx)) < -1e-7) return 0;
+    if (s2*((cx-bx)*(py-by)-(cvy-by)*(px-bx)) < -1e-7) return 0;
+    if (s2*((ax-cx)*(py-cvy)-(ay-cvy)*(px-cx)) < -1e-7) return 0;
     return d;
   };
   // Depth key (iz) of occluder j's plane at (px,py), given occluderHitDet's d.
   const occluderDepthAt = (j, px, py, d) => {
     const o=j*9;
-    const ax=ocp[o],ay=ocp[o+1],az=ocp[o+2], bx=ocp[o+3],by=ocp[o+4],bz=ocp[o+5], cx=ocp[o+6],cy2=ocp[o+7],cz=ocp[o+8];
-    const w0 = ((bx-px)*(cy2-py)-(by-py)*(cx-px)) / d;
-    const w1 = ((cx-px)*(ay-py)-(cy2-py)*(ax-px)) / d;
+    const ax=ocp[o],ay=ocp[o+1],az=ocp[o+2], bx=ocp[o+3],by=ocp[o+4],bz=ocp[o+5], cx=ocp[o+6],cvy=ocp[o+7],cz=ocp[o+8];
+    const w0 = ((bx-px)*(cvy-py)-(by-py)*(cx-px)) / d;
+    const w1 = ((cx-px)*(ay-py)-(cvy-py)*(ax-px)) / d;
     const w2 = 1 - w0 - w1;
     return w0*az + w1*bz + w2*cz;
   };
@@ -608,13 +608,13 @@ function generate(cam, S, shadingBuffer){
           const f=ofc[j];
           if (f===skipA||f===skipB) continue;
           const o=j*9;
-          const ax=ocp[o],ay=ocp[o+1], bx=ocp[o+3],by=ocp[o+4], cx=ocp[o+6],cy2=ocp[o+7];
+          const ax=ocp[o],ay=ocp[o+1], bx=ocp[o+3],by=ocp[o+4], cx=ocp[o+6],cvy=ocp[o+7];
           const s=oS[j];
           // parametric clip of segment to the triangle's 3 half-planes
           let ta=0, tb=1, alive=true;
           for (let e=0;e<3 && alive;e++){
             let px,py,qx,qy;
-            if (e===0){px=ax;py=ay;qx=bx;qy=by;} else if (e===1){px=bx;py=by;qx=cx;qy=cy2;} else {px=cx;py=cy2;qx=ax;qy=ay;}
+            if (e===0){px=ax;py=ay;qx=bx;qy=by;} else if (e===1){px=bx;py=by;qx=cx;qy=cvy;} else {px=cx;py=cvy;qx=ax;qy=ay;}
             const ex=qx-px, ey=qy-py;
             const fa=s*(ex*(y0-py)-ey*(x0-px));
             const fb=s*(ex*(y1-py)-ey*(x1-px));
@@ -638,7 +638,7 @@ function generate(cam, S, shadingBuffer){
              on its first half-plane. */
           const da=(dxs*(ay-y0)-dys*(ax-x0))*segInvLen;
           const db=(dxs*(by-y0)-dys*(bx-x0))*segInvLen;
-          const dc=(dxs*(cy2-y0)-dys*(cx-x0))*segInvLen;
+          const dc=(dxs*(cvy-y0)-dys*(cx-x0))*segInvLen;
           if (!(Math.min(da,db,dc) < -EPS_STRADDLE_PX &&
                 Math.max(da,db,dc) >  EPS_STRADDLE_PX)) continue;
           // depth plane of triangle in (x, y, 1/z) space — precomputed
@@ -862,9 +862,9 @@ function generate(cam, S, shadingBuffer){
   // Silhouette/Individual actually drawing that stretch — whenever Contour
   // itself is off.
   for (let e=0;e<ne;e++){
-    const t1x=et1[e];
-    if (t1x>=0){
-      if (wantContour && front[et0[e]]!==front[t1x]) continue;   // Contour wins overlaps
+    const tri1=et1[e];
+    if (tri1>=0){
+      if (wantContour && front[et0[e]]!==front[tri1]) continue;   // Contour wins overlaps
       if (wantCrease && eang[e]>=S.creaseDeg) isCreaseTopo[e]=1;
     } else if (wantCrease) isCreaseTopo[e]=1;
   }
@@ -957,9 +957,9 @@ function generate(cam, S, shadingBuffer){
   function buildContourTopology(){
     const isSilTopo = new Uint8Array(ne);
     for (let e=0;e<ne;e++){
-      const t1x=et1[e];
-      if (t1x>=0){
-        if (front[et0[e]]!==front[t1x]) isSilTopo[e]=1;
+      const tri1=et1[e];
+      if (tri1>=0){
+        if (front[et0[e]]!==front[tri1]) isSilTopo[e]=1;
       } else {
         isSilTopo[e]=1;   // open/non-manifold edge — always a contour, no front/back test possible (matches Blender)
       }
@@ -2319,13 +2319,13 @@ function generate(cam, S, shadingBuffer){
       const { nx, ny, dx, dy, c0, t0e, t1e } = fam;
       const a=tri[f*3], b=tri[f*3+1], c=tri[f*3+2];
       // face plane in (x,y,1/z)
-      const ax=sx[a],ay=sy[a],az=iz[a], bx=sx[b],by=sy[b],bz=iz[b], cx=sx[c],cy2=sy[c],cz=iz[c];
-      const d1x=bx-ax,d1y=by-ay,d1z=bz-az, d2x=cx-ax,d2y=cy2-ay,d2z=cz-az;
+      const ax=sx[a],ay=sy[a],az=iz[a], bx=sx[b],by=sy[b],bz=iz[b], cx=sx[c],cvy=sy[c],cz=iz[c];
+      const d1x=bx-ax,d1y=by-ay,d1z=bz-az, d2x=cx-ax,d2y=cvy-ay,d2z=cz-az;
       const det=d1x*d2y-d1y*d2x;
       if (Math.abs(det)<1e-9) return false;
       const A=(d1z*d2y-d2z*d1y)/det, B=(d1x*d2z-d2x*d1z)/det, C=az-A*ax-B*ay;
       const s=det>0?1:-1;
-      const cA=ax*nx+ay*ny, cB=bx*nx+by*ny, cC=cx*nx+cy2*ny;
+      const cA=ax*nx+ay*ny, cB=bx*nx+by*ny, cC=cx*nx+cvy*ny;
       const cMin=Math.min(cA,cB,cC), cMax=Math.max(cA,cB,cC);
       let k=Math.ceil((cMin-c0)/minS);
       const kEnd=Math.floor((cMax-c0)/minS);
@@ -2336,7 +2336,7 @@ function generate(cam, S, shadingBuffer){
         let ta=0, tb=1, alive=true;
         for (let e2=0;e2<3 && alive;e2++){
           let px,py,qx,qy;
-          if (e2===0){px=ax;py=ay;qx=bx;qy=by;} else if (e2===1){px=bx;py=by;qx=cx;qy=cy2;} else {px=cx;py=cy2;qx=ax;qy=ay;}
+          if (e2===0){px=ax;py=ay;qx=bx;qy=by;} else if (e2===1){px=bx;py=by;qx=cx;qy=cvy;} else {px=cx;py=cvy;qx=ax;qy=ay;}
           const ex=qx-px, ey=qy-py;
           const fa=s*(ex*(Y0-py)-ey*(X0-px));
           const fb=s*(ex*(Y1-py)-ey*(X1-px));
@@ -2833,8 +2833,8 @@ function generateRawContourEdges(cam){
   // isSilTopo — same test as generate()'s Contour section (6.3)
   const isSilTopo = new Uint8Array(ne);
   for (let e=0; e<ne; e++){
-    const t1x = et1[e];
-    if (t1x >= 0){ if (front[et0[e]] !== front[t1x]) isSilTopo[e]=1; }
+    const tri1 = et1[e];
+    if (tri1 >= 0){ if (front[et0[e]] !== front[tri1]) isSilTopo[e]=1; }
     else isSilTopo[e]=1;   // open/non-manifold edge
   }
   // chained exactly as generate()'s Contour topology is

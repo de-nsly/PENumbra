@@ -4,8 +4,7 @@
    and the sheet they are arranged on. The panels around it are
    layout-list.js, the gestures layout-interaction.js, copy/paste
    layout-clipboard.js.
-   A fixed-order stack of frozen "blocks" (user-facing name: "layers" —
-   see the naming note in CLAUDE.md), each one a full snapshot of a past
+   A fixed-order stack of frozen blocks, each one a full snapshot of a past
    generation's geometry, arranged on the same paper sheet the live
    preview uses. A block's GEOMETRY is frozen at the moment it's added
    (the already-merged per-layer path data, exactly as it existed then),
@@ -33,7 +32,7 @@ import { computeDStats } from '../path-model.js';
 import { refreshStatusR } from '../render-result.js';
 import { PAPERS, buildTrimMaskGroup, computePaperLayout, getMargins, renderPaper, syncPreviewTrimMask } from '../paper-layout.js';
 import { activeTab, setActiveTab, lastResult, markStale } from '../panel-controls.js';
-import { setActiveSheet, applyPv, resetPvFitWithRulers } from '../paper-preview.js';
+import { setActiveSheet, applyPaperView, resetPaperViewFit } from '../paper-preview.js';
 import { clearSelection, resetHoverCursor, selectedBlocks, selectionFrame, setSelection, setSelectionAnchor, updateSelectionOverlay } from './layout-interaction.js';
 import { closeBlockContextMenu, contextMenuBlock, layoutOverlayFront, layoutOverlayOn, layoutOverlayOpacity, renderBlocksList, syncBlocksFloatVisibility } from './layout-list.js';
 
@@ -763,7 +762,7 @@ export function initLayoutModel(){
       syncBlocksFloatVisibility();
       setActiveSheet(tab === 'preview' ? 'sheet' : 'layoutSheet');
       if (tab === 'preview') resetHoverCursor();
-      resetPvFitWithRulers(); applyPv();
+      resetPaperViewFit(); applyPaperView();
       if (tab === 'layout') renderLayoutCanvas();
       else markStale();
       // Blocks can only ever change while Layout is active — refresh the

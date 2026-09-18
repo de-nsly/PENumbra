@@ -20,7 +20,7 @@ import { activeTab, buildCamMessage, doGenerate, generateFailed, lastResult, ref
 import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncPenLibraryUI } from './pen-library.js';
 import { blockCounter, blocks, replaceBlocks, renderLayoutCanvas } from './layout/layout-model.js';
 import { renderBlocksList } from './layout/layout-list.js';
-import { resetPvFitWithRulers, updateTextureGizmo } from './paper-preview.js';
+import { resetPaperViewFit, updateTextureGizmo } from './paper-preview.js';
 import { renderTextureStack } from './texture-stack.js';
 
 // .pen format version this build writes. 1: layers as { key: {on, pen,
@@ -312,7 +312,7 @@ export function applyImportedScene(data){
   renderBlocksList();
   if (activeTab === 'layout') renderLayoutCanvas();
   refreshStatusR();
-  resetPvFitWithRulers();        // new scene's content — fit the whole page, rulers included, like a first-ever generate
+  resetPaperViewFit();        // new scene's content — fit the whole page, rulers included, like a first-ever generate
 }
 
 let pendingSceneRestore = null;   // the parsed .pen while its model loads in the worker
