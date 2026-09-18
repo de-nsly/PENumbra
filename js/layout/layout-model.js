@@ -616,10 +616,30 @@ export function renderPreviewLayoutOverlay(){
   // and the append above just moved this overlay past it.
   syncPreviewTrimMask();
 }
-// Feeds refreshStatusR() (render-result.js) — sums computeDStats() over every
-// visible layer of every visible block, skipping a hidden block entirely
-// and, within a visible block, skipping any individual layer hidden via
-// the right-click layer menu (block.layerVisible). freezeScale (px->mm at
+/* Per-block, per-layer measurements of frozen geometry, memoised.
+   A block's path data never changes after the block is built (both writers
+   — freezeCurrentGeneration here and clipboardRecordToBlock — fill a fresh
+   layerPaths object before constructing the block), so tokenising a
+   d-string can happen once per block instead of on every stats refresh.
+   Everything that DOES change is applied at read time by the caller: the
+   dash's ink fraction, the block's scale, and which layers count at all.
+   Deliberately a WeakMap rather than a field on the block: the scene save
+   serialises whole block objects (scene-io.js strips only `dom`), so a
+   cache field would be written into every .pen file and become a de-facto
+   persisted key. This way there is nothing to strip and nothing to
+   invalidate — a deleted block takes its entry with it. */
+const blockStatsCache = new WeakMap();   // block -> { [layerId]: computeDStats result }
+function blockLayerStats(block, id){
+  let perLayer = blockStatsCache.get(block);
+  if (!perLayer){ perLayer = {}; blockStatsCache.set(block, perLayer); }
+  // Measured with no ink fraction (1 is exact, so applying the real one at
+  // read time gives bit-identical lengths to measuring with it).
+  return perLayer[id] || (perLayer[id] = computeDStats(block.layerPaths[id], 1));
+}
+// Feeds refreshStatusR() (render-result.js) — sums the per-layer stats above
+// over every visible layer of every visible block, skipping a hidden block
+// entirely and, within a visible block, skipping any individual layer hidden
+// via the right-click block menu (block.layerVisible). freezeScale (px->mm at
 // freeze time) combined with the block's own current on-page scale is the
 // same combinedScale math updateBlockTransform already uses.
 export function computeLayoutStats(){
@@ -632,11 +652,11 @@ export function computeLayoutStats(){
       if (!d) continue;
       // Same override-vs-live dash resolution updateBlockStyle already uses.
       const dashKey = (block.override && block.overrideStyle[L.id]) ? block.overrideStyle[L.id].dash : L.dash;
-      const s = computeDStats(d, dashOnFraction(dashKey));
+      const s = blockLayerStats(block, L.id);
       out.segments += s.segments;
       out.paths += s.paths;
       out.closedPaths += s.closedPaths;
-      out.lenMm += s.lenPx * block.freezeScale * block.scale;
+      out.lenMm += s.lenPx * dashOnFraction(dashKey) * block.freezeScale * block.scale;
     }
   }
   return out;
