@@ -19,7 +19,7 @@ import { refreshStatusR } from './render-result.js';
 import { formatValue } from './settings.js';
 import { activeTab, makeSliderValueEditable, markStale, syncLineLayerUI } from './panel-controls.js';
 import { renderTextureStack } from './texture-stack.js';
-import { refreshAllBlockStyles, renderPreviewLayoutOverlay } from './layout/layout-model.js';
+import { refreshAllBlockStyles, scheduleOverlayRender } from './layout/layout-model.js';
 import { layoutOverlayOn } from './layout/layout-list.js';
 import { updateTextureGizmo } from './paper-preview.js';
 
@@ -183,7 +183,7 @@ export function applyLayerStyle(id){
   // to show up in the overlay — it re-applies updateBlockStyle to each
   // block itself before re-cloning, so this alone is enough even though
   // refreshAllBlockStyles() above didn't run.
-  if (layoutOverlayOn) renderPreviewLayoutOverlay();
+  if (layoutOverlayOn) scheduleOverlayRender();
 }
 
 /* ================= layer rows (Lines tab) =================

@@ -587,7 +587,22 @@ export function renderLayoutCanvas(){
 // paperW/paperH/margin source of truth — no extra coordinate conversion
 // needed, only a shared viewBox (both #plot and #layoutPlot use
 // "0 0 paperW paperH").
+/* Rebuilding the overlay means re-cloning every block's whole SVG tree, and
+   its callers can fire in bursts: a pen colour drag emits an `input` per
+   pointer move, and renderPaper() calls applyLayerStyle once PER LAYER, each
+   of which asks for a rebuild. Nothing can be seen between two rebuilds in
+   the same frame, so a burst collapses into one. Callers that want the
+   overlay in place right now (renderPaper's own final call, the Layout
+   panel's toggles) still call renderPreviewLayoutOverlay directly — it
+   cancels anything pending, so a scheduled rebuild never lands on top of a
+   synchronous one. */
+let overlayFrame = 0;
+export function scheduleOverlayRender(){
+  if (overlayFrame) return;
+  overlayFrame = requestAnimationFrame(() => { overlayFrame = 0; renderPreviewLayoutOverlay(); });
+}
 export function renderPreviewLayoutOverlay(){
+  if (overlayFrame){ cancelAnimationFrame(overlayFrame); overlayFrame = 0; }
   const plot = document.getElementById('plot');
   if (!plot) return;
   const old = document.getElementById('previewLayoutOverlay');
