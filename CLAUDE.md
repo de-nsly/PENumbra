@@ -17,12 +17,14 @@ Fonts. Both require network access on first load.
 
 ## Ongoing cleanup
 
-A whole-codebase cleanup is in progress on branch `cleanup` (Phases 0–6 done: goldens, dead code,
-shared helpers, ES modules, the settings registry and layer-instance model, and the file splits that
-produced most of the module list below, and the naming pass). `docs/refactor-plan.md` is the handoff —
-read it before any refactor work; it lists the ground rules (byte-identical output, keys that must not
-be renamed, module discipline), what each finished phase actually did, and what is left: Phase 7
-(performance). The worker's `generate()` was deliberately left whole.
+The whole-codebase cleanup on branch `cleanup` is complete (Phases 0–7: goldens, dead code, shared
+helpers, ES modules, the settings registry and layer-instance model, the file splits that produced the
+module list below, the naming pass, and the two performance items that measured as worth doing).
+`docs/refactor-plan.md` is the record — read it before any refactor work; it lists the ground rules
+(byte-identical output, keys that must not be renamed, module discipline) and what each phase actually
+did. Two things were deliberately NOT done and should not be re-proposed without new evidence: the
+worker's `generate()` was left whole, and three of Phase 7's five items were measured and declined —
+§6 has the numbers and the benches to re-run.
 
 **One word per concept, since Phase 6:** a Layout snapshot is a **block**, in the code and in the UI.
 A **layer** is a draw layer (Silhouette, Contour, Crease, Hatch, Circles) — including *inside* a block,

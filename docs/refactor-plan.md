@@ -542,7 +542,45 @@ Add the layer-key table (`sv/sh` = Contour, etc.) as a comment on `layers.js` an
 
 ---
 
-## 6. Phase 7 — performance (output-preserving)
+## 6. Phase 7 — performance (output-preserving) — items 1 and 4 DONE 2026-09-18, 2/3/5 measured and declined
+
+**Everything below was measured before anything was changed** (`arches.pen`, all layers on). The
+measurements are the point of this section now: they say which items were worth doing, and they are
+what a future session should re-run before re-proposing the rest.
+
+*The plan's own measurement method does not fit its own items.* `run.mjs --json` prints `m.ms`, the
+worker's solve time, so it covers item 5 and nothing else: 2 and 3 are main-thread chaining, 1 is Layout
+UI, 4 is DOM. Solve time also swings ±12% run to run, so a single before/after run cannot see a change
+smaller than ~35 ms.
+
+Where the time actually goes (`node --cpu-prof`, self time, arches solve ≈ 300–335 ms): `generate`'s own
+loops 8.6%, GC 5.7%, the circle pattern walk (`walkCircleSplit`/`Px`/`testFnForRing`/
+`buildPatternSegsFromTest`) ≈ 12%, `occlude` ≈ 3.6%. No single hotspot. The whole main-thread chaining
+for the same scene is **5.2 ms** (ch 0.9, cv 0.8, so 0.8, h2 0.6, …).
+
+1. **DONE.** Per-block, per-layer stats memoised in a WeakMap keyed by the block (not a field: the scene
+   save serialises whole blocks, so a field would land in every `.pen`). Ink fraction, scale and layer
+   visibility still apply at read time, and the ink fraction moved from inside `computeDStats` (a
+   multiply by 1) to the same position in the caller's product, so the summed mm length is bit-identical.
+   Measured against the old code on the same blocks: 10 blocks 9.3 ms → 0.1 ms per refresh, 40 blocks
+   33.9 ms → 0.2 ms.
+2. **Declined — not worth it.** All the chaining these would touch costs 5.2 ms on arches, and every
+   function named is a ground-rule-2 function where a changed tie-break silently moves lines. Revisit
+   only if a scene turns up where chaining is actually slow (re-measure with a bench like the one this
+   session used: solve once, then time `layerPathD` per layer over N repeats, median).
+3. **Declined — the worst of the five.** Contour chaining is 0.2 ms for 25 segments on arches, and
+   reproducing the exact (distance, index) tie order through a grid is the single most likely way in this
+   plan to change output. If it is ever attempted and the goldens move, abandon it — do not re-capture.
+4. **DONE.** `applyLayerStyle` schedules the Preview overlay rebuild through `requestAnimationFrame`;
+   `renderPreviewLayoutOverlay` cancels anything pending, so direct callers are unchanged. The burst is
+   bigger than the plan assumed: `renderPaper()` calls `applyLayerStyle` once per layer, so a paper
+   change rebuilt the overlay 11 times in one tick. Now: 11 requests in a tick → 1 rebuild, 8 in a frame
+   → 1, one per frame over 5 frames → 5 (nothing dropped).
+5. **Declined for now — below the noise floor.** `occlude` is ~3.6% of solve self time, so the ceiling is
+   a few ms against ±12% run-to-run noise. If attempted, first build a repeated-run measurement (20+
+   solves, compare medians); a single run cannot tell success from noise.
+
+Original list follows.
 
 Each item one commit, with `verify-golden` and the solve time from `node tools/harness/run.mjs
 pen_files/arches.pen --json` (prints `solve : N ms`) before/after in the message.
