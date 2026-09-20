@@ -259,6 +259,23 @@ function updateSelColor(){
   const selColor = colorDistance(bg, ACCENT_HEX) < SEL_CLOSE_THRESHOLD ? ACCENT_INK_HEX : ACCENT_HEX;
   document.documentElement.style.setProperty('--sel-color', selColor);
 }
+/* ================= "Blend colors" preview compositing =================
+   Purely a preview compositing toggle — no geometry changes, so it flips a
+   class directly on #plot itself (Preview mode — covers both the live
+   drawing AND the Layout overlay, see styles.css) and on the shared Layout
+   blocks container (Layout mode — one toggle there affects every block,
+   since isolation lives at that one shared level, not per-block — again see
+   styles.css), rather than going through markStale like every regen setting
+   (settings.js). Lives in the Export panel, so it is reachable from both
+   tabs. Session-only: never saved to a .pen scene, same as the Layout
+   overlay switches (layout-list.js). */
+export let blendMultiplyOn = false;
+export function applyBlendMultiply(){
+  const plot = document.getElementById('plot');
+  if (plot) plot.classList.toggle('blendMultiply', blendMultiplyOn);
+  const blocksLayer = document.getElementById('layoutBlocksLayer');
+  if (blocksLayer) blocksLayer.classList.toggle('blendMultiplyLayout', blendMultiplyOn);
+}
 export function syncMarginMode(){
   const on = $('marginIndependent').checked;
   $('marginSingleRow').style.display = on ? 'none' : '';
@@ -291,18 +308,10 @@ export function initPaperLayout(){
   updateGuideColor();   // seed --guide-color for the default page color at boot, before any user edit fires applyPageColor
   updateSelColor();     // same, for --sel-color
   $('marginIndependent').addEventListener('change', syncMarginMode);
-  // Purely a preview compositing toggle — no geometry changes, so this
-  // flips the class directly on #plot itself (Preview mode — covers both the
-  // live drawing AND the Layout overlay, see styles.css) and the shared
-  // Layout blocks container (Layout mode — a single toggle there affects
-  // every block, since isolation lives at that one shared level, not
-  // per-block — see styles.css), rather than going through markStale like
-  // every regen setting (settings.js).
-  $('blendMultiplyOn').addEventListener('change', () => {
-    const on = $('blendMultiplyOn').checked;
-    const plot = document.getElementById('plot');
-    if (plot) plot.classList.toggle('blendMultiply', on);
-    const blocksLayer = document.getElementById('layoutBlocksLayer');
-    if (blocksLayer) blocksLayer.classList.toggle('blendMultiplyLayout', on);
+  $('blendMultiplyBtn').addEventListener('click', () => {
+    blendMultiplyOn = !blendMultiplyOn;
+    $('blendMultiplyBtn').setAttribute('aria-checked', String(blendMultiplyOn));
+    $('blendMultiplyBtn').classList.toggle('active', blendMultiplyOn);
+    applyBlendMultiply();
   });
 }

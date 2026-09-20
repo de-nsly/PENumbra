@@ -472,10 +472,33 @@ function setPanelMode(mode){
   positionSegPill($('panelModeToggle'));
 }
 
+/* ================= collapsible panel sections =================
+   An <h2 data-collapsible> folds away the .sec that follows it, so a long
+   tab can be narrowed down to the sections being worked on. The control is
+   the same disclosure triangle a fill layer row uses (.rowExpand, built by
+   layer-rows.js) with the same rotate-when-open styling — here the open
+   state rides on the button itself, since the header has no row to carry
+   it. View-only and session-only: no setting changes, nothing regenerates,
+   nothing is written to a .pen scene. Opt in from the markup alone. */
+function initCollapsibleSections(){
+  for (const head of document.querySelectorAll('#panelScroll h2[data-collapsible]')){
+    const sec = head.nextElementSibling;
+    const btn = head.querySelector('.rowExpand');
+    if (!sec || !btn) continue;
+    btn.addEventListener('click', () => {
+      const open = !btn.classList.contains('rowExpanded');
+      btn.classList.toggle('rowExpanded', open);
+      btn.setAttribute('aria-expanded', String(open));
+      sec.hidden = !open;
+    });
+  }
+}
+
 /* ================= init =================
    Everything above only declares. This wires the DOM and starts the
    module's live behaviour — called once by app.js, in script order. */
 export function initPanelControls(){
+  initCollapsibleSections();
   // Every solve-affecting control (settings.js: regen) re-runs the pipeline
   // on input; the entry's flags say what else that edit has to move. Every
   // range control gets the double-click value editor.

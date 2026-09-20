@@ -127,6 +127,10 @@
           <button class="btn primary" id="genBtn">Generate →</button>
         </div>
         <button class="btn" id="exportBtn">Export SVG</button>
+        <span class="switchWrap" id="blendMultiplyWrap" title="Multiply-blend overlapping ink colors so you can see where pens would cross — preview only, in both Live preview and Layout. Never affects the export.">
+          <span>Blend colors (preview)</span>
+          <button class="pillToggle" id="blendMultiplyBtn" role="switch" aria-checked="false" aria-label="blend overlapping colors (preview only)"></button>
+        </span>
       </div>
       <div id="addToLayoutFloat">
         <button type="button" class="btn addToLayoutBtn" id="addToLayoutBtn"
@@ -381,7 +385,11 @@
       </div>
     </div>
     <div id="linesTab">
-    <h2>Lines</h2>
+    <!-- data-collapsible: the .sec right after this header folds away when the
+         triangle is clicked (initCollapsibleSections, panel-controls.js). -->
+    <h2 data-collapsible>Lines
+      <button type="button" class="rowExpand rowExpanded" aria-expanded="true" aria-label="Lines section"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M4 2 L10 7 L4 12 Z" fill="currentColor"/></svg></button>
+    </h2>
     <div class="sec">
       <div class="rowsHead"><span></span><span></span><span>layer</span><span>pen</span><span>dash</span></div>
       <!-- The layer rows are built from the layer instances (layers.js) into these
@@ -406,13 +414,11 @@
         <input type="range" id="creaseDeg" min="0" max="120" step="0.1" value="1">
         <span class="val" id="creaseDegVal">1.0°</span>
       </div>
-      <label class="chk">
-        <input type="checkbox" id="blendMultiplyOn">
-        Blend overlapping colors (preview only)
-      </label>
     </div>
 
-    <h2>Fill layers</h2>
+    <h2 data-collapsible>Fill layers
+      <button type="button" class="rowExpand rowExpanded" aria-expanded="true" aria-label="Fill layers section"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M4 2 L10 7 L4 12 Z" fill="currentColor"/></svg></button>
+    </h2>
     <div class="sec">
       <!-- Fill layer rows are built into #fillRows (layer-rows.js): as many
            of each type as wanted, each row carrying its own settings (its

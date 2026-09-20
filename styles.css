@@ -287,9 +287,9 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
 /* #addToLayoutFloat is only 224px wide, so its .ctl label column is tightened
    (same reasoning as the #camFloat/#rotateFloat overrides above). */
 #addToLayoutFloat .ctl{grid-template-columns:50px 1fr 34px}
-#addToLayoutSaveViewWrap,#zUpWrap{margin-top:10px}
+#addToLayoutSaveViewWrap,#zUpWrap,#blendMultiplyWrap{margin-top:10px}
 #layoutOverlayWrap{margin-top:6px}
-#addToLayoutSaveViewWrap,#layoutOverlayWrap{width:100%;justify-content:space-between}
+#addToLayoutSaveViewWrap,#layoutOverlayWrap,#blendMultiplyWrap{width:100%;justify-content:space-between}
 #layoutOverlayControls{margin-top:2px}
 #layoutOverlayControls .projRow{margin:6px 0 2px}
 #addToLayoutMsg{width:224px;text-align:center;font-family:var(--mono);font-size:var(--fs-data);
@@ -576,6 +576,12 @@ body.dragging #paperTabs{display:none}
   color:var(--muted);text-transform:uppercase;padding:14px 7px 8px 14px;border-top:1px solid var(--line);
   display:flex;justify-content:space-between;align-items:center}
 #panel h2:first-child{border-top:0}
+/* A collapsible section header's disclosure triangle is the same .rowExpand
+   control a fill layer row uses, only shrunk to the header's own line box:
+   left at its default height it would make these headers ~10px taller than
+   the plain ones next to them. The triangle stays centred (see .rowExpand),
+   so the height change doesn't move the rotation pivot. */
+#panel h2 .rowExpand{height:14px}
 /* 14px in from the panel's left edge, half that on the right: #panelScroll's
    scrollbar gutter already holds --sbw of clear space out there, so a second
    full 14px on top of it read as a lopsided margin. Same split on #panel h2
@@ -693,10 +699,24 @@ input[type=number]{width:58px}
    front and duplicate/delete at the end, and its own settings panel
    (.layerSettings, a stack of ordinary .ctl rows) shown while expanded. */
 .gridRow.fillRow{grid-template-columns:20px 16px 50px 1fr 72px 44px 24px 24px;cursor:grab}
-.rowExpand{background:none;border:0;padding:0;color:var(--muted);cursor:pointer;
-  font-size:calc(var(--fs-data)*2);line-height:1;transition:transform .12s}
+/* The triangle is an inline SVG, not a text glyph, for one reason: rotating
+   it means rotating about transform-origin, i.e. the BUTTON's box centre —
+   and a glyph's box is the font's advance width, which puts the ink off to
+   one side of it by however much side bearing (and inherited letter-spacing,
+   as in a #panel h2) the resolved fallback font happens to carry. The pivot
+   then sits beside the triangle instead of inside it. An SVG centred in the
+   button has its own geometry: the path's bounding box is centred on the
+   viewBox, so box centre = triangle centre, in any font, at any size.
+   22px is the line box the old glyph produced — kept so fill row heights,
+   which this button is the tallest thing in, don't move. */
+.rowExpand{display:flex;align-items:center;justify-content:center;height:22px;
+  background:none;border:0;padding:0;color:var(--muted);cursor:pointer;
+  transition:transform .12s}
 .rowExpand:hover{color:var(--accent)}
-.fillRow.rowExpanded .rowExpand{transform:rotate(90deg);color:var(--accent)}
+/* Open state. A fill row carries it on the row (the row is what the rest of
+   .fillRow styling hangs off); a collapsible #panel h2 carries it on the
+   button itself, since the header has no other state to show. */
+.fillRow.rowExpanded .rowExpand,.rowExpand.rowExpanded{transform:rotate(90deg);color:var(--accent)}
 .layerSettings{padding:2px 0 6px 20px;border-bottom:1px dashed var(--divider)}
 .swatch{width:50px;height:14px;background:var(--paper);border-radius:2px;display:block}
 #pageColor{width:56px;height:24px;border:1px solid var(--line);border-radius:4px;background:none;cursor:pointer}

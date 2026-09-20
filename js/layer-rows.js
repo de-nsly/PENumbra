@@ -396,7 +396,11 @@ export function buildLayerRows(){
     const row = document.createElement('div');
     row.className = 'gridRow' + (isFill ? ' fillRow' : '');
     row.innerHTML =
-      (isFill ? '<button type="button" class="rowExpand" aria-label="' + name + ' settings">&#9656;</button>' : '') +
+      // The triangle is an inline SVG, not a ▸ glyph, so rotating it pivots on
+      // the triangle rather than on the font's advance box — see .rowExpand in
+      // styles.css. Same markup as the collapsible #panel h2 headers use.
+      (isFill ? '<button type="button" class="rowExpand" aria-label="' + name + ' settings">' +
+        '<svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M4 2 L10 7 L4 12 Z" fill="currentColor"/></svg></button>' : '') +
       '<input type="checkbox" aria-label="' + name + ' on">' +
       '<svg class="swatch" viewBox="0 0 50 14" aria-hidden="true"><path d="M3 7 L47 7" fill="none"/></svg>' +
       '<span class="nm' + (name.startsWith('·') ? ' hid' : '') + '"></span>' +

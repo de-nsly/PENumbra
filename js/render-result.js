@@ -21,7 +21,7 @@ import { activeTab, generateFinished } from './panel-controls.js';
 import { computeLayoutStats } from './layout/layout-model.js';
 import { resetPaperViewFit } from './paper-preview.js';
 import { exportSoIvOverlayNow, takePendingSoIvExport } from './scene-io.js';
-import { computePaperLayout, pxPerMm, renderPaper } from './paper-layout.js';
+import { blendMultiplyOn, computePaperLayout, pxPerMm, renderPaper } from './paper-layout.js';
 import { applyLayerStyle, layerStyle } from './layer-rows.js';
 export function renderResult(m){
   generateFinished(m);
@@ -37,7 +37,7 @@ export function renderResult(m){
   // margin changes are pure re-layout — no path data is ever touched or rebuilt.
   const content = svgEl('g');
   content.id = 'paperContent';
-  content.classList.toggle('blendMultiply', $('blendMultiplyOn').checked);
+  content.classList.toggle('blendMultiply', blendMultiplyOn);
   svg.appendChild(content);
 
   // Silhouette and Silhouette individual (so/iv/ih) segments already trace

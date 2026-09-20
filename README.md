@@ -335,8 +335,8 @@ is 0.15 mm or 1.2 mm. Each pattern has a live preview.
 
 - **Split dashes** (Pen library tab) — on export, turn dashed strokes into real separate path segments
   rather than relying on SVG `stroke-dasharray`, which many plotter toolchains ignore.
-- **Blend overlapping colours** (Lines tab) — a preview-only multiply blend so you can see where inks
-  would overlap; it does not change the export.
+- **Blend colors** (Export panel, on the paper pane) — a preview-only multiply blend so you can see
+  where inks would overlap; it does not change the export. Available in both Live preview and Layout.
 
 ---
 

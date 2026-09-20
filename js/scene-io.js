@@ -385,7 +385,7 @@ export function initSceneIO(){
     doGenerate();
   });
   $('loadBtn').addEventListener('click', () => $('fileInput').click());
-  for (const [wrap, btn] of [['zUpWrap','zUpBtn'], ['autoWrap','autoGenBtn'], ['addToLayoutSaveViewWrap','addToLayoutSaveViewBtn']])
+  for (const [wrap, btn] of [['zUpWrap','zUpBtn'], ['autoWrap','autoGenBtn'], ['addToLayoutSaveViewWrap','addToLayoutSaveViewBtn'], ['blendMultiplyWrap','blendMultiplyBtn']])
     $(wrap).addEventListener('click', e => { if (e.target !== $(btn)) $(btn).click(); });
   $('fileInput').addEventListener('change', e => {
     if (e.target.files[0]) openDroppedFile(e.target.files[0]);
