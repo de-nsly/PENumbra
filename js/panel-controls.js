@@ -335,7 +335,7 @@ export function syncShadowUI(){
 // the solver's own gate exactly, so a disabled slider is genuinely inert
 // rather than merely hidden: Contour Cleanup and Max hops feed
 // buildContourDrops, which does nothing unless layerOn.sv || layerOn.sh, and
-// Crease angle is only read inside the worker's own `wantC` guard, which is
+// Crease angle is only read inside the worker's own `wantCrease` guard, which is
 // this same cv || ch test on gatherSettings' layerOn.
 //
 // Never clears or rewrites a slider's value — re-enabling a layer resumes

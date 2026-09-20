@@ -375,7 +375,7 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
    the band between page edge and margin reads as bare paper and whatever
    the export is about to clip away simply isn't visible. Purely a display
    stand-in for the real clip, which happens on the export clone only (see
-   trimCloneToMargins in svg-export.js). Deliberately NOT given a blend
+   trimCloneToMargins in path-model.js). Deliberately NOT given a blend
    mode: it lives outside #paperContent/.layoutLayerStroke, the only two
    things the "Blend overlapping colors" rules below target, so it always
    paints opaquely over the ink regardless of that toggle. */

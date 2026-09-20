@@ -1,12 +1,18 @@
-# PENumbra cleanup — remaining phases (handoff)
+# PENumbra cleanup — the record (all phases done)
 
-Written 2026-09-15 at the end of Phase 3, for whoever (human or model) continues the cleanup on
-branch `cleanup`. It is self-contained: read this, `CLAUDE.md`, and the file headers, and you have
-everything the earlier sessions had.
+Written 2026-09-15 at the end of Phase 3 as a handoff, and kept up to date as each phase ran. **The
+cleanup finished on 2026-09-18**: Phases 0–7 are all done. What stays useful here is the ground rules
+in §1 (they govern any future change to this code, not just the cleanup), the DONE note at the head of
+each phase saying what was actually built and how it differs from the plan, and §6's measurements,
+which say why three performance items were declined.
 
-The goal of the whole effort: bring the code to the state it would be in if written from scratch today
-with every feature designed in, **without changing the output**. Phases 0–3 are done. Phases 4–7 remain,
-and Phase 4 also has to lay the ground for two planned features (§2.1).
+The goal of the whole effort was to bring the code to the state it would be in if written from scratch
+today with every feature designed in, **without changing the output** — every step verified with
+`verify-golden`, plus the user's own browser testing for everything headless checks cannot reach.
+
+Read this, `CLAUDE.md` (the current map) and the file headers, and you have everything the earlier
+sessions had. Each phase section below keeps its original spec after its DONE note, so a claim can
+always be checked against what was actually asked for.
 
 ---
 
@@ -19,12 +25,12 @@ and Phase 4 also has to lay the ground for two planned features (§2.1).
    step *intentionally* changes output (there is none planned below), re-capture in its own commit
    with the reason in the message.
 2. **Never reorder floating-point work** in `js/worker/*` or in the chaining/merge passes of
-   `svg-export.js` (`chainSegments`, `mergeSilhouetteClose`, `chainByRun`, `mergeContourRunSplits`,
+   `js/chain.js` (`chainSegments`, `mergeSilhouetteClose`, `chainByRun`, `mergeContourRunSplits`,
    `mergeAdjacentTouching`, `mergeCreaseScreenSpace`, `splitSelfTouching`, `simplifyCollinear`,
-   `trimContourFoldbacks`, `dropRedundantContourSlivers`, `subtractCovered`, `dedupCollinear`,
-   `dedupCrossRunCoincident`). A "harmless" change of loop order, tie-break, or accumulation order
-   changes the SVG. Moving a function between files is fine; editing its body is not, unless the
-   goldens prove it neutral.
+   `trimContourFoldbacks`, `dropRedundantContourSlivers`) and `js/worker/dedup.js`
+   (`subtractCovered`, `dedupCollinear`, `dedupCrossRunCoincident`). A "harmless" change of loop
+   order, tie-break, or accumulation order changes the SVG. Moving a function between files is fine;
+   editing its body is not, unless the goldens prove it neutral.
 3. **Do not rename persisted keys.** These are written into `.pen` files and clipboard payloads and
    must keep loading old files:
    - layer keys `so iv ih sv sh cv ch h1 h2 h3 cr` (`sv/sh` mean *Contour*, historically
@@ -43,9 +49,11 @@ and Phase 4 also has to lay the ground for two planned features (§2.1).
    `tools/harness/app-env.mjs`; if you move or rename an exported declaration, the harness fails at
    link time — update `tools/harness/app.mjs` / `svg.mjs` imports.
 5. **No new code that switches on `h1 / h2 / h3 / cr` literals**, no new DOM cloning by id suffix, no
-   new `HATCH_ANGLE_OFFSET`-style tables. Phase 4 removes the existing ones.
-6. **Don't re-propose splitting only the Contour part of `generate()`** — it was specced and declined
-   (2026-09-13). Decomposing the *whole* of `generate()` is a Phase 5 item the user decides on.
+   new `HATCH_ANGLE_OFFSET`-style tables. Phase 4 removed the existing ones; a fill layer's settings
+   live on its instance and its type's `settings` schema drives its row.
+6. **Don't re-propose decomposing `generate()`** — the Contour-only split was specced and declined
+   (2026-09-13), and the user declined decomposing the whole of it at the start of Phase 5
+   (2026-09-17). It stays one function unless the user reopens it.
 7. Keep the CSS conventions in `CLAUDE.md` (tokens, shared classes, no one-off rules, no inline styles).
 8. No build step, no `package.json`, no bundler, three.js stays r128 from the CDN as a classic script.
 9. Testing split: the node harness is run by the model; **all browser testing is done by the user** —
@@ -60,7 +68,12 @@ and Phase 4 also has to lay the ground for two planned features (§2.1).
 
 ---
 
-## 2. Where things stand after Phase 3
+## 2. Where things stood after Phase 3 (historical — see CLAUDE.md for the current state)
+
+**Read this as a snapshot, not as guidance.** Most of the file and function names below were changed by
+Phases 5 and 6: `svg-export.js` became seven files, `layout-canvas.js` four, `initSvgExport` became
+three inits, `onResult` became `renderResult`. CLAUDE.md's module list is the current map; the DONE
+notes in §3–§6 are what actually happened.
 
 - `index.html` loads `three.min.js` (classic) and `js/app.js` (module). `app.js` calls, in order:
   `buildPerLayerTextureTabs, initSegPills, bootWorker` (main.js), then `initViewport3d,
