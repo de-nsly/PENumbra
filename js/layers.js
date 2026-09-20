@@ -132,7 +132,7 @@ export function newFillLayer(type, id, over){
 }
 // Keeps a fill setting inside its slider's range (paperHalf sliders are
 // bounded by the page, so only their type is checked here).
-export function clampSetting(spec, v){
+function clampSetting(spec, v){
   const n = +v;
   if (!Number.isFinite(n)) return spec.def;
   if (spec.paperHalf) return n;
@@ -170,7 +170,7 @@ export function nextFillId(){
   return id;
 }
 // A scene import brings its own ids: keep the counter ahead of them.
-export function noteFillIds(list){
+function noteFillIds(list){
   for (const L of list){
     const m = /^f(\d+)$/.exec(L.id);
     if (m && +m[1] > fillIdCounter) fillIdCounter = +m[1];
@@ -295,7 +295,7 @@ const V1_TEXTURE_IDS = {
 // `!!value`; a number that doesn't parse becomes 0, so the reader's own
 // `|| fallback` (readWobbleParams etc. in hatch-texture.js) lands on exactly
 // the value the old `+el.value || fallback` read produced.
-export function v1TextureStack(settings, layerId, geometry){
+function v1TextureStack(settings, layerId, geometry){
   const suffix = settings.texIndividualOn ? '_' + layerId : '';
   const stack = [];
   for (const type in V1_TEXTURE_IDS){

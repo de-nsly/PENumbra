@@ -44,7 +44,7 @@ export function syncPenLibraryUI(){
   refreshPenSelects();
 }
 
-export function renderPenLibrary(){
+function renderPenLibrary(){
   const list = $('penLibList');
   list.innerHTML = '';
   for (const pen of PEN_LIBRARY){

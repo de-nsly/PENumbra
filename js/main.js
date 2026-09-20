@@ -28,7 +28,7 @@ export function svgEl(tag, attrs){
        must keep its arrow keys, but it holds no text, so Ctrl+C there is
        still ours to handle.
    `input` with no type attribute defaults to text, hence the || 'text'. */
-export const TEXT_ENTRY_INPUT_TYPES = new Set(['text','search','url','tel','email','password','number']);
+const TEXT_ENTRY_INPUT_TYPES = new Set(['text','search','url','tel','email','password','number']);
 export function isTextEntryTarget(){
   const a = document.activeElement;
   if (!a) return false;

@@ -130,9 +130,9 @@ function buildPenPathsExport(isLayout, dims){
 }
 
 /* The Export button. Named rather than the anonymous listener it used to
-   be inside the Lines-tab init, so the two export modes have one entry point
-   the rest of the app (and a future menu item) can call. */
-export function exportSvg(){
+   be inside the Lines-tab init, so the two export modes have one readable
+   entry point; not exported, since only initExport below wires it. */
+function exportSvg(){
   const isLayout = activeTab === 'layout';
   if (isLayout){
     if (!blocks.length){ $('statusL').textContent = 'no blocks to export'; return; }

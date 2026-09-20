@@ -152,7 +152,7 @@ export function markStale(){
   $('sheet').classList.add('stale');
   scheduleAuto();
 }
-export function scheduleAuto(){
+function scheduleAuto(){
   if (activeTab !== 'preview') return;
   if (!autoGenOn || !modelMesh || genSeq === staleSeq) return;
   clearTimeout(autoTimer);
@@ -160,7 +160,7 @@ export function scheduleAuto(){
   const wait = lastResult ? Math.min(2000, Math.max(280, lastResult.ms * 1.5)) : 280;
   autoTimer = setTimeout(() => { if (!busy) doGenerate(); }, wait);
 }
-export function clearStale(){
+function clearStale(){
   $('paperPane').classList.remove('stale');
   $('sheet').classList.remove('stale');
 }
@@ -463,7 +463,7 @@ const PANEL_MODES = [
   { mode: 'page',    tab: 'pageTab',     btn: 'pageModeBtn' },
   { mode: 'cog',     tab: 'settingsTab', btn: 'cogModeBtn' },
 ];
-export function setPanelMode(mode){
+function setPanelMode(mode){
   for (const m of PANEL_MODES){
     $(m.tab).style.display = m.mode === mode ? '' : 'none';
     $(m.btn).classList.toggle('active', m.mode === mode);

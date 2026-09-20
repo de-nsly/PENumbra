@@ -16,6 +16,12 @@
    Byte-sensitive: tools/harness (svg.mjs) runs these functions against
    committed fingerprints, and a reordered loop or a changed tie-break
    moves lines in the exported SVG.
+   This file's exports are deliberately wider than its current importers:
+   it is the geometry surface the harness tools build on (svg.mjs re-exports
+   most of it, contour-audit.mjs imports the tolerances under an explicit
+   "never a second copy" rule). A tolerance or pass that no module imports
+   TODAY still stays exported — the alternative is the next tool hard-coding
+   0.3 somewhere, and a duplicated constant in here changes the output.
    ================================================================ */
 /* ================= segment chaining =================
    Chains touching 2-point segments into maximal polylines. A segment's own

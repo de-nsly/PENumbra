@@ -59,7 +59,7 @@ export const SHADOW_BUDGET_PRESETS = [250000, 500000, 1000000, 2000000, 4000000,
 // same idea for the hatch segment safety cap — default (index 2 → 80k)
 // matches the value this app always used before it became adjustable.
 export const HATCH_CAP_PRESETS = [20000, 40000, 80000, 160000, 320000, 640000, 1280000, Number.MAX_SAFE_INTEGER];
-export function fmtBigCount(n){
+function fmtBigCount(n){
   if (n >= Number.MAX_SAFE_INTEGER) return 'unl.';
   if (n >= 1e6) return (n/1e6).toFixed(n % 1e6 === 0 ? 0 : 1) + 'M';
   return Math.round(n/1e3) + 'k';
