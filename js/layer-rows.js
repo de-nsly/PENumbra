@@ -193,17 +193,32 @@ export function applyLayerStyle(id){
    VIEW: its controls write straight into the instance, and applyLayerStyle
    renders the instance back into the row.
    An edge row is the plain five-column .layer grid (checkbox, swatch,
-   name, pen, dash). A fill row adds a disclosure triangle in front and
-   duplicate/delete buttons at the end, and owns a settings panel beneath
-   it holding that layer's own solve settings (its type's `settings`
-   schema), shown while the row is expanded. One row at a time is
-   expanded; the circles centre gizmo follows the expanded layer.
+   name, pen, dash). A fill row is the same grid drawn as a standalone
+   block with duplicate/delete buttons at the end — a stack of them reads
+   like a modifier list.
+   Clicking a fill row SELECTS it. Every fill layer's settings panel (its
+   type's `settings` schema) is built into the one #fillSettings host
+   below the whole list, and the selected layer's is the one shown — so
+   the settings always appear in the same place, whichever block was
+   clicked. Clicking the selected row again deselects it and the panel
+   goes away. The circles centre gizmo follows the selected layer.
    Fill rows can be dragged to reorder among themselves; edge rows keep
    the fixed hierarchy above them. Order is drawing priority and, for the
    hatch passes, the order the shared segment cap runs out in, so a
    reorder re-solves. */
-let expandedId = null;
-export function expandedLayerId(){ return expandedId; }
+let selectedFillId = null;
+export function selectedFillLayerId(){ return selectedFillId; }
+/* The one place selection changes. Rows and panels are matched by their
+   data-layer id, so a null id simply matches nothing — which is exactly
+   the deselected state: no row highlighted, no panel shown. */
+function setSelectedFill(id){
+  selectedFillId = id;
+  for (const row of $('fillRows').querySelectorAll('.fillRow'))
+    row.classList.toggle('rowSelected', row.dataset.layer === id);
+  for (const panel of $('fillSettings').children)
+    panel.hidden = panel.dataset.layer !== id;
+  updateTextureGizmo();   // the gizmo follows whichever circles layer is selected
+}
 // Every fill row's settings sliders, by layer id then setting key, so the
 // gizmo / a paper change / the Soft shadows toggle can refresh them
 // without rebuilding the rows.
@@ -251,12 +266,20 @@ export function syncFillRowSoftState(){
       if (el.spec.soft) el.ctl.classList.toggle('ctlDisabled', !on);
     }
 }
-// The settings panel under one fill row: a .ctl slider per entry in the
-// type's schema, each writing its own field on the instance.
+// One fill layer's settings panel: a .ctl slider per entry in the type's
+// schema, each writing its own field on the instance. Every layer gets one,
+// all of them in the shared #fillSettings host below the list — only the
+// selected layer's is unhidden. The name header is what says which block's
+// settings these are, now that the panel can sit well below the row.
 function buildFillSettings(L){
   const wrap = document.createElement('div');
   wrap.className = 'layerSettings';
-  wrap.hidden = L.id !== expandedId;
+  wrap.dataset.layer = L.id;
+  wrap.hidden = L.id !== selectedFillId;
+  const head = document.createElement('div');
+  head.className = 'vpLabel';
+  head.textContent = layerName(L);
+  wrap.appendChild(head);
   const els = {};
   for (const spec of layerType(L).settings){
     const id = 'ls_' + L.id + '_' + spec.key;
@@ -301,18 +324,18 @@ function fillLayersChanged(){
 }
 function addFillLayer(type){
   layers.push(newFillLayer(type, nextFillId(), { on: true }));
-  expandedId = layers[layers.length-1].id;
+  selectedFillId = layers[layers.length-1].id;
   fillLayersChanged();
 }
 function duplicateFillLayer(L){
   const copy = copyLayer(L, nextFillId());
   layers.splice(layers.indexOf(L) + 1, 0, copy);
-  expandedId = copy.id;
+  selectedFillId = copy.id;
   fillLayersChanged();
 }
 function deleteFillLayer(L){
   layers.splice(layers.indexOf(L), 1);
-  if (expandedId === L.id) expandedId = null;
+  if (selectedFillId === L.id) selectedFillId = null;
   delete fillRowEls[L.id];
   // Its geometry is still in the live SVG until the next solve.
   const g = document.getElementById('g_' + L.id);
@@ -373,7 +396,15 @@ function endFillRowDrag(){
   insertLine.remove();
   row.classList.remove('rowDragging');
   fillDragState = null;
-  if (!moved) return;                     // pressed but never dragged
+  // Pressed but never dragged — that is the click that selects this block.
+  // Doing it here rather than in a click listener of its own is what makes
+  // the two gestures exclusive for free: startFillRowDrag never arms on the
+  // row's own controls (checkbox, pen, dash, duplicate, delete), so a press
+  // on one of those can't select either.
+  if (!moved){
+    setSelectedFill(selectedFillId === L.id ? null : L.id);
+    return;
+  }
   // `others` is the fill run without the dragged layer, in the same order,
   // so the row index carries straight over to the layer list.
   const before = layers.filter(e2 => layerType(e2).kind === 'fill');
@@ -389,6 +420,7 @@ export function buildLayerRows(){
   for (const id in layerEls) delete layerEls[id];
   for (const id in fillRowEls) delete fillRowEls[id];
   for (const host of new Set(Object.values(LAYER_TYPES).map(T => T.host))) $(host).replaceChildren();
+  $('fillSettings').replaceChildren();
   for (const L of layers){
     const T = layerType(L);
     const isFill = T.kind === 'fill';
@@ -396,11 +428,6 @@ export function buildLayerRows(){
     const row = document.createElement('div');
     row.className = 'gridRow' + (isFill ? ' fillRow' : '');
     row.innerHTML =
-      // The triangle is an inline SVG, not a ▸ glyph, so rotating it pivots on
-      // the triangle rather than on the font's advance box — see .rowExpand in
-      // styles.css. Same markup as the collapsible #panel h2 headers use.
-      (isFill ? '<button type="button" class="rowExpand" aria-label="' + name + ' settings">' +
-        '<svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M4 2 L10 7 L4 12 Z" fill="currentColor"/></svg></button>' : '') +
       '<input type="checkbox" aria-label="' + name + ' on">' +
       '<svg class="swatch" viewBox="0 0 50 14" aria-hidden="true"><path d="M3 7 L47 7" fill="none"/></svg>' +
       '<span class="nm' + (name.startsWith('·') ? ' hid' : '') + '"></span>' +
@@ -412,7 +439,6 @@ export function buildLayerRows(){
         : '');
     const host = $(T.host);
     host.appendChild(row);
-    const expand = isFill ? row.children[0] : null;
     const chk = row.querySelector('input[type=checkbox]');
     const sw = row.querySelector('.swatch').firstChild;
     const [pen, dash] = row.querySelectorAll('select');
@@ -430,16 +456,11 @@ export function buildLayerRows(){
       updateTextureGizmo();   // the Circles centre gizmo follows its layer's checkbox
     });
     if (isFill){
-      const panel = buildFillSettings(L);
-      host.appendChild(panel);
-      row.classList.toggle('rowExpanded', L.id === expandedId);
-      expand.addEventListener('click', () => {
-        expandedId = expandedId === L.id ? null : L.id;
-        for (const other of host.querySelectorAll('.fillRow')) other.classList.remove('rowExpanded');
-        for (const other of host.querySelectorAll('.layerSettings')) other.hidden = true;
-        if (expandedId === L.id){ row.classList.add('rowExpanded'); panel.hidden = false; }
-        updateTextureGizmo();   // the gizmo follows whichever circles layer is open
-      });
+      // The settings panel goes to the shared host below the whole list, not
+      // under this row — data-layer is what pairs the two up (setSelectedFill).
+      row.dataset.layer = L.id;
+      $('fillSettings').appendChild(buildFillSettings(L));
+      row.classList.toggle('rowSelected', L.id === selectedFillId);
       row.querySelector('.rowDup').addEventListener('click', () => duplicateFillLayer(L));
       row.querySelector('.rowDelete').addEventListener('click', () => deleteFillLayer(L));
       row.addEventListener('pointerdown', e => startFillRowDrag(e, row, L));

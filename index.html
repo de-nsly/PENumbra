@@ -298,25 +298,6 @@
       </div>
     </div>
     <div id="textureTab" style="display:none">
-        <h2>Hatching</h2>
-        <div class="sec">
-          <div class="ctl">
-            <label for="lightAz">Light azim.</label>
-            <input type="range" id="lightAz" min="0" max="360" step="1" value="35">
-            <span class="val" id="lightAzVal">35°</span>
-          </div>
-          <div class="ctl">
-            <label for="lightEl">Light elev.</label>
-            <input type="range" id="lightEl" min="0" max="90" step="1" value="42">
-            <span class="val" id="lightElVal">42°</span>
-          </div>
-          <div class="ctl">
-            <label for="hatchCap" title="Safety cap on total hatch segments per generate. Higher allows denser/more complex hatching before it gets cut off, at the cost of a slower solve.">Hatch cap</label>
-            <input type="range" id="hatchCap" min="0" max="7" step="1" value="4">
-            <span class="val" id="hatchCapVal">320k</span>
-          </div>
-        </div>
-
         <h2>Texture</h2>
         <div class="sec">
           <!-- Per-layer texture stack (texture-stack.js): pick a fill layer, add
@@ -325,11 +306,11 @@
             <label for="texLayerSelect">Layer</label>
             <select id="texLayerSelect" aria-label="Layer whose texture is edited"></select>
           </div>
-          <div id="texStackList"></div>
           <div class="ctl">
             <label for="texAddFilter">Filter</label>
             <select id="texAddFilter" aria-label="Add a texture filter"></select>
           </div>
+          <div id="texStackList"></div>
         </div>
     </div>
     <div id="settingsTab" style="display:none">
@@ -388,7 +369,7 @@
     <!-- data-collapsible: the .sec right after this header folds away when the
          triangle is clicked (initCollapsibleSections, panel-controls.js). -->
     <h2 data-collapsible>Lines
-      <button type="button" class="rowExpand rowExpanded" aria-expanded="true" aria-label="Lines section"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M4 2 L10 7 L4 12 Z" fill="currentColor"/></svg></button>
+      <button type="button" class="rowExpand rowExpanded" aria-expanded="true" aria-label="Lines section"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M10 2 L4 7 L10 12 Z" fill="currentColor"/></svg></button>
     </h2>
     <div class="sec">
       <div class="rowsHead"><span></span><span></span><span>layer</span><span>pen</span><span>dash</span></div>
@@ -417,21 +398,34 @@
     </div>
 
     <h2 data-collapsible>Fill layers
-      <button type="button" class="rowExpand rowExpanded" aria-expanded="true" aria-label="Fill layers section"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M4 2 L10 7 L4 12 Z" fill="currentColor"/></svg></button>
+      <button type="button" class="rowExpand rowExpanded" aria-expanded="true" aria-label="Fill layers section"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M10 2 L4 7 L10 12 Z" fill="currentColor"/></svg></button>
     </h2>
     <div class="sec">
       <!-- Fill layer rows are built into #fillRows (layer-rows.js): as many
-           of each type as wanted, each row carrying its own settings (its
-           expander) and its own texture stack (the Texture tab). -->
+           of each type as wanted, each with its own texture stack (the
+           Texture tab). Their settings panels are all built into
+           #fillSettings below, which shows whichever row is selected. -->
       <div class="ctl">
         <label for="addLayerSelect">Add layer</label>
         <select id="addLayerSelect" aria-label="Add a fill layer"></select>
       </div>
       <div id="fillRows"></div>
+      <div id="fillSettings"></div>
     </div>
 
     <h2>Shadows</h2>
     <div class="sec">
+      <!-- The light direction first: it is what casts every shadow below. -->
+      <div class="ctl">
+        <label for="lightAz">Light azim.</label>
+        <input type="range" id="lightAz" min="0" max="360" step="1" value="35">
+        <span class="val" id="lightAzVal">35°</span>
+      </div>
+      <div class="ctl">
+        <label for="lightEl">Light elev.</label>
+        <input type="range" id="lightEl" min="0" max="90" step="1" value="42">
+        <span class="val" id="lightElVal">42°</span>
+      </div>
       <div class="chkRow">
         <label class="chk"><input type="checkbox" id="softShadows" checked>
           Soft shadows</label>
@@ -447,6 +441,12 @@
         <label for="shadowBudget" title="Higher = more shadow-test samples allowed per generate, catching finer detail on complex scenes at the cost of a slower solve. Object self-shadow only — Ground shadow is analytic and never uses this budget.">Shadow budg.</label>
         <input type="range" id="shadowBudget" min="0" max="7" step="1" value="1">
         <span class="val" id="shadowBudgetVal">500k</span>
+      </div>
+      <!-- Beside Shadow budg.: both are per-generate solve budgets. -->
+      <div class="ctl">
+        <label for="hatchCap" title="Safety cap on total hatch segments per generate. Higher allows denser/more complex hatching before it gets cut off, at the cost of a slower solve.">Hatch cap</label>
+        <input type="range" id="hatchCap" min="0" max="7" step="1" value="4">
+        <span class="val" id="hatchCapVal">320k</span>
       </div>
       <div class="ctl ctlDisabled" id="groundOffCtl">
         <label for="groundOff">Plane offset</label>

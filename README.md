@@ -127,9 +127,9 @@ Five tabs, switched with the icon toggle at the top:
 
 | Tab | Contents |
 |---|---|
-| **Lines** | The layer list (on/off, pen and dash per layer), Contour cleanup, crease angle, and all the shadow controls |
+| **Lines** | The layer list (on/off, pen and dash per layer), Contour cleanup, crease angle, and all the shadow controls — including the light direction and the hatch cap |
 | **Pen library** | The pens (name, colour, width), the export mode, and the dash-pattern editor |
-| **Texture** | Hatching parameters, the circle-fill pattern, and the line-texture effects |
+| **Texture** | Each fill layer's texture stack: the line-texture effects (trim, overshoot, jitter, wobble, gaps) |
 | **Page** | Paper size, orientation, page colour, margins, guide grid |
 | **General** | Model options (e.g. *Assume watertight*), dedup tuning, and debug exports |
 
@@ -211,8 +211,8 @@ Both are multipliers on the solver's own zoom-independent tolerance; `1.00×` is
 
 ## Shading
 
-Shading is driven by a virtual light. Set its direction with **Light azimuth / elevation** (Texture
-tab) or by dragging the light gizmo in the 3D viewport.
+Shading is driven by a virtual light. Set its direction with **Light azimuth / elevation** (Lines
+tab, Shadows section) or by dragging the light gizmo in the 3D viewport.
 
 **Fill thresholds** decide which fill a face gets, based on how dark it is (0 = black, 1 = fully lit):
 

@@ -576,12 +576,6 @@ body.dragging #paperTabs{display:none}
   color:var(--muted);text-transform:uppercase;padding:14px 7px 8px 14px;border-top:1px solid var(--line);
   display:flex;justify-content:space-between;align-items:center}
 #panel h2:first-child{border-top:0}
-/* A collapsible section header's disclosure triangle is the same .rowExpand
-   control a fill layer row uses, only shrunk to the header's own line box:
-   left at its default height it would make these headers ~10px taller than
-   the plain ones next to them. The triangle stays centred (see .rowExpand),
-   so the height change doesn't move the rotation pivot. */
-#panel h2 .rowExpand{height:14px}
 /* 14px in from the panel's left edge, half that on the right: #panelScroll's
    scrollbar gutter already holds --sbw of clear space out there, so a second
    full 14px on top of it read as a lopsided margin. Same split on #panel h2
@@ -651,12 +645,17 @@ input[type=number]{width:58px}
 .dashField span{font-size:var(--fs-caps);color:var(--muted);text-transform:uppercase;letter-spacing:var(--ls-caps)}
 
 /* Texture section (texture tab) — each filter in a layer's stack is a
-   .textureGroup: a .dashGroupLabel header, then its parameter controls. */
-.textureGroup{margin:10px 0}
+   .textureGroup: a .dashGroupLabel header, then its parameter controls,
+   drawn as one of the panel blocks below. The Layer and Filter pickers sit
+   together above the stack, so "add a filter" stays in one fixed place
+   however many are already applied. */
+.textureGroup{margin:6px 0;padding:8px}
 
-/* layer rows — pen swatch style. #fillRows holds the fill rows and their
-   settings panels, and anchors the drag-reorder insertion line. */
+/* layer rows — pen swatch style. #fillRows holds the fill rows and anchors
+   the drag-reorder insertion line; #fillSettings below it holds every fill
+   layer's settings panel, of which the selected layer's is the one shown. */
 #fillRows{position:relative}
+#fillSettings{margin-top:6px}
 /* Applied to #plot itself (the shared parent of #paperContent AND
    #previewLayoutOverlay — see the "Layout overlay" toggle), not to
    #paperContent alone, so the live drawing's own strokes and the Preview
@@ -695,29 +694,45 @@ input[type=number]{width:58px}
    above, only with their own columns: preview | name | color | width | delete. */
 .gridRow.penLibRow,.rowsHead.penLibRow{grid-template-columns:50px 1fr 26px 56px 24px}
 .penLibRow .nm{cursor:text}
-/* A fill layer's row: the same .gridRow grid with a disclosure triangle in
-   front and duplicate/delete at the end, and its own settings panel
-   (.layerSettings, a stack of ordinary .ctl rows) shown while expanded. */
-.gridRow.fillRow{grid-template-columns:20px 16px 50px 1fr 72px 44px 24px 24px;cursor:grab}
-/* The triangle is an inline SVG, not a text glyph, for one reason: rotating
-   it means rotating about transform-origin, i.e. the BUTTON's box centre —
-   and a glyph's box is the font's advance width, which puts the ink off to
-   one side of it by however much side bearing (and inherited letter-spacing,
-   as in a #panel h2) the resolved fallback font happens to carry. The pivot
-   then sits beside the triangle instead of inside it. An SVG centred in the
-   button has its own geometry: the path's bounding box is centred on the
-   viewBox, so box centre = triangle centre, in any font, at any size.
-   22px is the line box the old glyph produced — kept so fill row heights,
-   which this button is the tallest thing in, don't move. */
-.rowExpand{display:flex;align-items:center;justify-content:center;height:22px;
+/* A fill layer's row: the same .gridRow grid with duplicate/delete at the
+   end, but drawn as a standalone block rather than a separated list row —
+   a stack of them reads like a modifier list. No separator (the gap between
+   blocks is the separation), and three states: resting, hover, and the one
+   selected row whose settings #fillSettings is showing. The accent tint is
+   the same "this row is selected" treatment .listRow.rowSelected uses in the
+   Layout blocks list, mixed into the block's own fill so it stays opaque. */
+/* The block surface itself — one source of truth for the three things drawn
+   this way: a fill layer's row, its settings panel below the list, and each
+   filter in a texture stack. Padding and spacing differ per use (below and
+   in the Texture section); the surface does not. */
+.gridRow.fillRow,.layerSettings,.textureGroup{background:var(--panel2);border-radius:6px}
+.gridRow.fillRow{grid-template-columns:16px 50px 1fr 72px 44px 24px 24px;
+  cursor:grab;border-bottom:0;padding:5px 8px;margin-bottom:3px;
+  transition:background .12s}
+.gridRow.fillRow:hover{background:var(--panel3)}
+.gridRow.fillRow.rowSelected,.gridRow.fillRow.rowSelected:hover{
+  background:color-mix(in srgb, var(--accent) 10%, var(--panel2))}
+/* The disclosure triangle on a collapsible #panel h2. It is an inline SVG,
+   not a text glyph, for one reason: rotating it means rotating about
+   transform-origin, i.e. the BUTTON's box centre — and a glyph's box is the
+   font's advance width, which puts the ink off to one side of it by however
+   much side bearing (and inherited letter-spacing, as in a #panel h2) the
+   resolved fallback font happens to carry. The pivot then sits beside the
+   triangle instead of inside it. An SVG centred in the button has its own
+   geometry: the path's bounding box is centred on the viewBox, so box
+   centre = triangle centre, in any font, at any size.
+   Collapsed it points LEFT, back at the header's title on the other end of
+   the row; opening turns it a quarter-turn counter-clockwise, to point down
+   at the section it just revealed. */
+.rowExpand{display:flex;align-items:center;justify-content:center;height:14px;
   background:none;border:0;padding:0;color:var(--muted);cursor:pointer;
   transition:transform .12s}
 .rowExpand:hover{color:var(--accent)}
-/* Open state. A fill row carries it on the row (the row is what the rest of
-   .fillRow styling hangs off); a collapsible #panel h2 carries it on the
-   button itself, since the header has no other state to show. */
-.fillRow.rowExpanded .rowExpand,.rowExpand.rowExpanded{transform:rotate(90deg);color:var(--accent)}
-.layerSettings{padding:2px 0 6px 20px;border-bottom:1px dashed var(--divider)}
+.rowExpand.rowExpanded{transform:rotate(-90deg);color:var(--accent)}
+/* One fill layer's settings, in the shared #fillSettings host below the
+   list: the same block surface as the rows it belongs to, headed by the
+   layer's name (.vpLabel) since it can sit well below the row clicked. */
+.layerSettings{padding:0 8px 8px}
 .swatch{width:50px;height:14px;background:var(--paper);border-radius:2px;display:block}
 #pageColor{width:56px;height:24px;border:1px solid var(--line);border-radius:4px;background:none;cursor:pointer}
 .rowsHead{display:grid;grid-template-columns:16px 50px 1fr 88px 58px;gap:6px;

@@ -18,18 +18,18 @@
 import { $, onMiddleDblClick, svgEl } from './main.js';
 import { layerType, layers } from './layers.js';
 import { baseSheetSize, computePaperLayout } from './paper-layout.js';
-import { expandedLayerId, syncFillRowValues } from './layer-rows.js';
+import { selectedFillLayerId, syncFillRowValues } from './layer-rows.js';
 import { computeLayoutPaperDims } from './layout/layout-model.js';
 import { selectedBlocks, updateSelectionOverlay } from './layout/layout-interaction.js';
 import { activeTab, markStale } from './panel-controls.js';
 
-// The circles layer the centre gizmo belongs to: the one whose row is open
-// in the Lines tab, and only that one — with every row collapsed there is no
-// layer the gizmo would be dragging, so it stays hidden. Whether that layer
-// is currently drawing doesn't matter: its centre is worth placing before
+// The circles layer the centre gizmo belongs to: the selected fill layer in
+// the Lines tab, and only that one — with nothing selected there is no layer
+// the gizmo would be dragging, so it stays hidden. Whether that layer is
+// currently drawing doesn't matter: its centre is worth placing before
 // switching it on.
 function gizmoCirclesLayer(){
-  return layers.find(L => L.type === 'circles' && L.id === expandedLayerId()) || null;
+  return layers.find(L => L.type === 'circles' && L.id === selectedFillLayerId()) || null;
 }
 
 const paperPane = $('paperPane');
@@ -230,7 +230,7 @@ export function updateTextureGizmo(){
   // redrawn here, before any of the gizmo's own early returns below.
   updateRuler();
   drawPathEndpointMarkers();
-  // The gizmo drags the centre of the circles layer whose row is expanded
+  // The gizmo drags the centre of the selected circles layer
   // (gizmoCirclesLayer) — that is also what makes it appear at all.
   const L = gizmoCirclesLayer();
   if (activeTab !== 'preview' || !L) return;

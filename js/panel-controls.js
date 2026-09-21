@@ -475,11 +475,10 @@ function setPanelMode(mode){
 /* ================= collapsible panel sections =================
    An <h2 data-collapsible> folds away the .sec that follows it, so a long
    tab can be narrowed down to the sections being worked on. The control is
-   the same disclosure triangle a fill layer row uses (.rowExpand, built by
-   layer-rows.js) with the same rotate-when-open styling — here the open
-   state rides on the button itself, since the header has no row to carry
-   it. View-only and session-only: no setting changes, nothing regenerates,
-   nothing is written to a .pen scene. Opt in from the markup alone. */
+   the .rowExpand disclosure triangle (styles.css), which carries both its
+   own open state and the rotation. View-only and session-only: no setting
+   changes, nothing regenerates, nothing is written to a .pen scene. Opt in
+   from the markup alone. */
 function initCollapsibleSections(){
   for (const head of document.querySelectorAll('#panelScroll h2[data-collapsible]')){
     const sec = head.nextElementSibling;
