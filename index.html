@@ -216,7 +216,10 @@
       </button>
     </div>
     </div>
-    <!-- Only this part scrolls — everything in #panelHead above stays pinned (see styles.css) -->
+    <!-- Only this part scrolls — everything in #panelHead above stays pinned (see styles.css).
+         Every <h2> in here is a collapsible section header: the triangle is added
+         by initCollapsibleSections (panel-controls.js) and folds away the .sec right
+         after it. Sections start open; data-collapsed on the h2 starts one closed. -->
     <div id="panelScroll">
     <div id="pageTab" style="display:none">
       <h2>Page Settings</h2>
@@ -300,12 +303,10 @@
     <div id="textureTab" style="display:none">
         <h2>Texture</h2>
         <div class="sec">
-          <!-- Per-layer texture stack (texture-stack.js): pick a fill layer, add
-               filters from TEXTURE_FILTERS (layers.js), edit each one's parameters. -->
-          <div class="ctl">
-            <label for="texLayerSelect">Layer</label>
-            <select id="texLayerSelect" aria-label="Layer whose texture is edited"></select>
-          </div>
+          <!-- Per-layer texture stack (texture-stack.js): pick a layer from the
+               button list, add filters from TEXTURE_FILTERS (layers.js), edit
+               each one's parameters. -->
+          <div id="texLayerList" role="group" aria-label="Layer whose texture is edited"></div>
           <div class="ctl">
             <label for="texAddFilter">Filter</label>
             <select id="texAddFilter" aria-label="Add a texture filter"></select>
@@ -341,7 +342,7 @@
         </div>
       </div>
 
-      <h2>Debug</h2>
+      <h2 data-collapsed>Debug</h2>
       <div class="sec">
         <p class="hint">
           Exports every edge whose crease angle passes the Crease angle
@@ -366,11 +367,7 @@
       </div>
     </div>
     <div id="linesTab">
-    <!-- data-collapsible: the .sec right after this header folds away when the
-         triangle is clicked (initCollapsibleSections, panel-controls.js). -->
-    <h2 data-collapsible>Lines
-      <button type="button" class="rowExpand rowExpanded" aria-expanded="true" aria-label="Lines section"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M10 2 L4 7 L10 12 Z" fill="currentColor"/></svg></button>
-    </h2>
+    <h2>Lines</h2>
     <div class="sec">
       <div class="rowsHead"><span></span><span></span><span>layer</span><span>pen</span><span>dash</span></div>
       <!-- The layer rows are built from the layer instances (layers.js) into these
@@ -397,9 +394,7 @@
       </div>
     </div>
 
-    <h2 data-collapsible>Fill layers
-      <button type="button" class="rowExpand rowExpanded" aria-expanded="true" aria-label="Fill layers section"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M10 2 L4 7 L10 12 Z" fill="currentColor"/></svg></button>
-    </h2>
+    <h2>Fill layers</h2>
     <div class="sec">
       <!-- Fill layer rows are built into #fillRows (layer-rows.js): as many
            of each type as wanted, each with its own texture stack (the

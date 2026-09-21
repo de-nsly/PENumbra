@@ -473,23 +473,33 @@ function setPanelMode(mode){
 }
 
 /* ================= collapsible panel sections =================
-   An <h2 data-collapsible> folds away the .sec that follows it, so a long
-   tab can be narrowed down to the sections being worked on. The control is
-   the .rowExpand disclosure triangle (styles.css), which carries both its
-   own open state and the rotation. View-only and session-only: no setting
-   changes, nothing regenerates, nothing is written to a .pen scene. Opt in
-   from the markup alone. */
+   Every section header in the settings panel (#panelScroll h2) folds away
+   the .sec that follows it, so a long tab can be narrowed down to the
+   sections being worked on. Sections start open; an h2 marked
+   data-collapsed starts closed instead. The control is the .rowExpand
+   disclosure triangle (styles.css), built here once per header rather than
+   repeated in the markup, and it carries both its own open state and the
+   rotation. View-only and session-only: no setting changes, nothing
+   regenerates, nothing is written to a .pen scene. */
+const COLLAPSE_TRIANGLE_SVG =
+  '<svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M10 2 L4 7 L10 12 Z" fill="currentColor"/></svg>';
+function setSectionOpen(btn, sec, open){
+  btn.classList.toggle('rowExpanded', open);
+  btn.setAttribute('aria-expanded', String(open));
+  sec.hidden = !open;
+}
 function initCollapsibleSections(){
-  for (const head of document.querySelectorAll('#panelScroll h2[data-collapsible]')){
+  for (const head of document.querySelectorAll('#panelScroll h2')){
     const sec = head.nextElementSibling;
-    const btn = head.querySelector('.rowExpand');
-    if (!sec || !btn) continue;
-    btn.addEventListener('click', () => {
-      const open = !btn.classList.contains('rowExpanded');
-      btn.classList.toggle('rowExpanded', open);
-      btn.setAttribute('aria-expanded', String(open));
-      sec.hidden = !open;
-    });
+    if (!sec) continue;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'rowExpand';
+    btn.setAttribute('aria-label', head.textContent.trim() + ' section');
+    btn.innerHTML = COLLAPSE_TRIANGLE_SVG;
+    head.appendChild(btn);
+    setSectionOpen(btn, sec, !('collapsed' in head.dataset));
+    btn.addEventListener('click', () => setSectionOpen(btn, sec, !btn.classList.contains('rowExpanded')));
   }
 }
 

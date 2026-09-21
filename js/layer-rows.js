@@ -18,7 +18,7 @@ import { computePaperLayout, pxPerMm } from './paper-layout.js';
 import { refreshStatusR } from './render-result.js';
 import { formatValue } from './settings.js';
 import { activeTab, makeSliderValueEditable, markStale, syncLineLayerUI } from './panel-controls.js';
-import { renderTextureStack } from './texture-stack.js';
+import { renderTextureStack, setTextureLayer } from './texture-stack.js';
 import { refreshAllBlockStyles, scheduleOverlayRender } from './layout/layout-model.js';
 import { layoutOverlayOn } from './layout/layout-list.js';
 import { updateTextureGizmo } from './paper-preview.js';
@@ -201,18 +201,31 @@ export function applyLayerStyle(id){
    below the whole list, and the selected layer's is the one shown — so
    the settings always appear in the same place, whichever block was
    clicked. Clicking the selected row again deselects it and the panel
-   goes away. The circles centre gizmo follows the selected layer.
+   goes away. The circles centre gizmo follows the selected layer, and so
+   does the Texture tab's layer picker (one way — see selectFill).
    Fill rows can be dragged to reorder among themselves; edge rows keep
    the fixed hierarchy above them. Order is drawing priority and, for the
    hatch passes, the order the shared segment cap runs out in, so a
    reorder re-solves. */
 let selectedFillId = null;
 export function selectedFillLayerId(){ return selectedFillId; }
-/* The one place selection changes. Rows and panels are matched by their
-   data-layer id, so a null id simply matches nothing — which is exactly
-   the deselected state: no row highlighted, no panel shown. */
-function setSelectedFill(id){
+/* The one place the selection is written — a click, an add, a duplicate or
+   a delete all come through here. Whatever gets selected is also pushed to
+   the Texture tab, which follows this selection one way (texture-stack.js);
+   deselecting leaves the Texture tab on whatever it was showing. The
+   caller re-renders both views. */
+function selectFill(id){
   selectedFillId = id;
+  if (id !== null) setTextureLayer(id);
+}
+/* A selection change on the rows as they stand (a click): no rebuild, just
+   the highlight, the settings panel and the Texture tab brought in line.
+   Rows and panels are matched by their data-layer id, so a null id simply
+   matches nothing — which is exactly the deselected state: no row
+   highlighted, no panel shown. */
+function setSelectedFill(id){
+  selectFill(id);
+  if (id !== null) renderTextureStack();
   for (const row of $('fillRows').querySelectorAll('.fillRow'))
     row.classList.toggle('rowSelected', row.dataset.layer === id);
   for (const panel of $('fillSettings').children)
@@ -324,18 +337,18 @@ function fillLayersChanged(){
 }
 function addFillLayer(type){
   layers.push(newFillLayer(type, nextFillId(), { on: true }));
-  selectedFillId = layers[layers.length-1].id;
+  selectFill(layers[layers.length-1].id);
   fillLayersChanged();
 }
 function duplicateFillLayer(L){
   const copy = copyLayer(L, nextFillId());
   layers.splice(layers.indexOf(L) + 1, 0, copy);
-  selectedFillId = copy.id;
+  selectFill(copy.id);
   fillLayersChanged();
 }
 function deleteFillLayer(L){
   layers.splice(layers.indexOf(L), 1);
-  if (selectedFillId === L.id) selectedFillId = null;
+  if (selectedFillId === L.id) selectFill(null);
   delete fillRowEls[L.id];
   // Its geometry is still in the live SVG until the next solve.
   const g = document.getElementById('g_' + L.id);

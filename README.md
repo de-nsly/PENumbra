@@ -236,8 +236,8 @@ these), and **Hatch cap** (a safety limit on total hatch segments per generate).
 - **Smooth shading** — blends face normals for smoother shade gradients (and a smoother 3D preview);
   **Smooth angle** is the dihedral cutoff past which an edge stays hard.
 
-The **Circles** fill radiates from a centre point you position with **Center X / Y** (Texture tab) or
-by dragging the on-canvas gizmo.
+The **Circles** fill radiates from a centre point you position with **Center X / Y** (the circles
+layer's settings, Lines tab) or by dragging the on-canvas gizmo.
 
 ![Crosshatch + deep shadow + cast shadow](docs/shading-hatch.png)
 ![The same model with the concentric-circle fill instead](docs/shading-circles.png)
@@ -262,8 +262,8 @@ and give them a looser, hand-drawn character:
 > **Note:** these effects currently apply to the **shading fills** (Hatch / Crosshatch / Deep shadow /
 > Circles) only — not to the silhouette, contour or crease edge lines.
 
-**Individual texture settings** (Texture tab) switches from one shared set of values to a separate set
-per fill layer (H1 / H2 / H3 / Circles).
+Every fill layer has its own texture stack. In the Texture tab, click a layer in the list to edit
+its stack; the list starts on whichever fill layer you last selected in the Lines tab.
 
 ![Hatching with overshoot, wobble and gaps](docs/texture.png)
 

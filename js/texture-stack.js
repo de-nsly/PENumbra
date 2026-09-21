@@ -1,28 +1,106 @@
 /* ================================================================
    texture-stack.js — the Texture tab's per-layer stack editor
    Edits one layer's texture stack (layers.js: the instance's `texture`
-   array, entries typed by TEXTURE_FILTERS): pick a layer, add a filter
-   from the types its geometry supports, edit each entry's parameters,
-   remove an entry. Only the fill layers are offered today — edge layers
-   carry an empty stack that nothing applies yet (refactor plan §4e).
+   array, entries typed by TEXTURE_FILTERS): pick a layer from the button
+   list, add a filter from the types its geometry supports, edit each
+   entry's parameters, remove an entry. Which layers are offered is
+   textureLayers() alone — only the fill layers today; edge layers carry
+   an empty stack that nothing applies yet (refactor plan §4e).
+   The layer being edited follows the Lines tab's selection, one way: a
+   fill row selected there is pushed here (setTextureLayer, called by
+   layer-rows.js), but picking a layer here never selects anything there.
    Every edit marks the drawing stale, as the texture controls always
    did; renderResult (render-result.js) applies the stacks when the result comes
    back. Rebuilt wholesale (renderTextureStack) after a scene import
    replaces the layer list.
    ================================================================ */
 import { $ } from './main.js';
-import { TEXTURE_FILTERS, fillLayers, filterSupports, layerById, layerName, layerType, newFilter } from './layers.js';
+import { TEXTURE_FILTERS, fillLayers, filterSupports, layerName, layerType, newFilter } from './layers.js';
 import { formatValue } from './settings.js';
 import { makeSliderValueEditable, markStale } from './panel-controls.js';
 
 let selectedLayerId = null;
+// The Lines tab's selection, pushed in as it changes. Only records the id —
+// the caller re-renders (layer-rows.js does, straight after).
+export function setTextureLayer(id){ selectedLayerId = id; }
+
+/* Which layers can carry a texture stack: the one switch for letting more
+   layer kinds take filters. Only the fill layers apply theirs today
+   (applyTextureStack, via render-result.js), so only they are offered.
+   Opening this to edge layers also needs a `geometry` on their LAYER_TYPES
+   entries, which is what the Filter menu's filterSupports() checks. */
+function textureLayers(){ return fillLayers(); }
+// Group headings for the layer list, named after the Lines tab's own
+// sections. Only shown once the list holds more than one kind.
+const KIND_LABELS = { edge: 'Lines', fill: 'Fill layers' };
 
 function selectedLayer(){
-  const L = selectedLayerId && layerById(selectedLayerId);
-  if (L && layerType(L).kind === 'fill') return L;
-  const first = fillLayers()[0] || null;
+  const candidates = textureLayers();
+  const L = candidates.find(C => C.id === selectedLayerId);
+  if (L) return L;
+  const first = candidates[0] || null;
   selectedLayerId = first ? first.id : null;
   return first;
+}
+
+/* One block button per layer, in layer order, grouped by kind — so edge
+   layers, once offered, land above the fill layers exactly as they do in
+   the Lines tab. Each shows how many filters its stack holds on the right,
+   or nothing when the stack is empty; every add/remove re-renders the list,
+   so the count is never stale. A click picks that layer; clicking the one
+   already picked does nothing, since this tab always edits some layer. */
+function buildLayerList(current){
+  const list = $('texLayerList');
+  list.replaceChildren();
+  const groups = new Map();
+  for (const L of textureLayers()){
+    const kind = layerType(L).kind;
+    if (!groups.has(kind)) groups.set(kind, []);
+    groups.get(kind).push(L);
+  }
+  if (!groups.size){
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = 'No fill layers yet — add one in the Lines tab.';
+    list.appendChild(hint);
+    return;
+  }
+  for (const [kind, members] of groups){
+    if (groups.size > 1){
+      const head = document.createElement('div');
+      head.className = 'vpLabel';
+      head.textContent = KIND_LABELS[kind];
+      list.appendChild(head);
+    }
+    for (const L of members){
+      const picked = L === current;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'texLayerBtn' + (picked ? ' rowSelected' : '');
+      btn.setAttribute('aria-pressed', String(picked));
+      const name = document.createElement('span');
+      name.className = 'texLayerName';
+      name.textContent = layerName(L);
+      btn.appendChild(name);
+      const n = L.texture.length;
+      if (n){
+        const filters = n + (n === 1 ? ' filter' : ' filters');
+        const count = document.createElement('span');
+        count.className = 'texLayerCount';
+        count.textContent = n;
+        count.title = filters + ' applied';
+        btn.appendChild(count);
+        // Read as "Hatch 1, 2 filters", not the bare "Hatch 1 2".
+        btn.setAttribute('aria-label', layerName(L) + ', ' + filters);
+      }
+      btn.addEventListener('click', () => {
+        if (picked) return;
+        selectedLayerId = L.id;
+        renderTextureStack();
+      });
+      list.appendChild(btn);
+    }
+  }
 }
 
 // One stack entry: a header row with the filter's name and a delete
@@ -80,20 +158,14 @@ function buildEntry(L, entry, index){
 }
 
 export function renderTextureStack(){
-  const layerSel = $('texLayerSelect');
   const addSel = $('texAddFilter');
   const list = $('texStackList');
   const L = selectedLayer();
-  layerSel.replaceChildren(...fillLayers().map(F => {
-    const opt = document.createElement('option');
-    opt.value = F.id; opt.textContent = layerName(F);
-    return opt;
-  }));
+  buildLayerList(L);
   list.replaceChildren();
   addSel.replaceChildren();
-  if (!L){ layerSel.disabled = addSel.disabled = true; return; }
-  layerSel.disabled = addSel.disabled = false;
-  layerSel.value = L.id;
+  if (!L){ addSel.disabled = true; return; }
+  addSel.disabled = false;
   L.texture.forEach((entry, i) => list.appendChild(buildEntry(L, entry, i)));
   // The add menu offers what this layer's geometry supports and the stack
   // doesn't hold yet (one entry per type — see stackEntry in layers.js).
@@ -115,10 +187,6 @@ export function renderTextureStack(){
    Everything above only declares. This wires the DOM and starts the
    module's live behaviour — called once by app.js, in script order. */
 export function initTextureStack(){
-  $('texLayerSelect').addEventListener('change', () => {
-    selectedLayerId = $('texLayerSelect').value;
-    renderTextureStack();
-  });
   $('texAddFilter').addEventListener('change', () => {
     const type = $('texAddFilter').value;
     const L = selectedLayer();
