@@ -717,7 +717,7 @@ input[type=number]{width:58px}
    spacing differ per use (below and in the Texture section); the surface
    does not. */
 .gridRow.fillRow,.layerSettings,.textureGroup,.texLayerBtn{background:var(--panel2);border-radius:6px}
-.gridRow.fillRow{grid-template-columns:16px 50px 1fr 72px 44px 24px 24px;
+.gridRow.fillRow{grid-template-columns:16px 50px 1fr 82px 44px 24px 24px;
   cursor:grab;border-bottom:0;padding:5px 8px;margin-bottom:3px}
 /* The two SELECTABLE kinds of block — fill rows, and the Texture tab's
    layer buttons — share the same hover and selected states. */

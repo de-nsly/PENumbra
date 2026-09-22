@@ -72,8 +72,8 @@ export const APP_VERSION = '0.8.7';
 export function defaultPens(){
   return [
     { id:'p1', name:'Black 1.2', color:'#000000', width:1.2  },
-    { id:'p2', name:'Ink 0.8',   color:'#14171c', width:0.8  },
-    { id:'p3', name:'Ink 0.35',  color:'#14171c', width:0.35 },
+    { id:'p2', name:'Black 0.8',   color:'#000000', width:0.8  },
+    { id:'p3', name:'Black 0.35',  color:'#000000', width:0.35 },
     { id:'p4', name:'Grey 0.2',  color:'#9aa0a8', width:0.2  },
     { id:'p5', name:'Blue 0.2',  color:'#2c5aa8', width:0.2  },
   ];

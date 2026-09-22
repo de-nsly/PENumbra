@@ -119,7 +119,7 @@ export function defaultLayers(){
     { id:'ch', type:'ch', on:false, pen:'p4', dash:'D1',    texture:[] },
     newFillLayer('hatch',   'h1', { on:true,  angleDeg:45,  threshold:0.92 }),
     newFillLayer('hatch',   'h2', { on:true,  angleDeg:135, threshold:0.45 }),
-    newFillLayer('hatch',   'h3', { on:false, angleDeg:90,  threshold:0.18 }),
+    //newFillLayer('hatch',   'h3', { on:false, angleDeg:90,  threshold:0.18 }),
     newFillLayer('circles', 'cr', { on:false }),
   ];
 }
