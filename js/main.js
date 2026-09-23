@@ -51,7 +51,7 @@ export function downloadFile(name, text, mime){
 }
 
 // App version (shown in the About dialog footer). Bump on release.
-export const APP_VERSION = '0.8.9';
+export const APP_VERSION = '0.9.0';
 
 /* ================= pen library =================
    Every stroke's colour and width come from a pen here — edge/fill layers
