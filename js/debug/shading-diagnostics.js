@@ -125,18 +125,23 @@ import { captureShadingBuffer } from '../viewport/shading-capture.js';
       flipped.copyWithin(o1, o2, o2+rowFloats);
       flipped.set(tmp, o2);
     }
+    // Texel centres at i+0.5, geometry texels only — sampleShading's
+    // conventions (see its comment). Its no-geometry fallback isn't
+    // mirrored: a point with no geometry among its four texels is skipped.
     const sampleRef = (sx, sy) => {
-      const x = Math.max(0, Math.min(w - 1, sx));
-      const y = Math.max(0, Math.min(h - 1, sy));
+      const x = Math.max(0, Math.min(w - 1, sx - 0.5));
+      const y = Math.max(0, Math.min(h - 1, sy - 0.5));
       const x0 = Math.floor(x), y0 = Math.floor(y);
       const x1 = Math.min(w-1, x0+1), y1 = Math.min(h-1, y0+1);
       const fx = x-x0, fy = y-y0;
       const idx = (xi,yi) => (yi*w+xi)*4;
       const ia=idx(x0,y0), ib=idx(x1,y0), ic=idx(x0,y1), id=idx(x1,y1);
-      const wA=(1-fx)*(1-fy), wB=fx*(1-fy), wC=(1-fx)*fy, wD=fx*fy;
+      const wA=(1-fx)*(1-fy)*flipped[ia+1], wB=fx*(1-fy)*flipped[ib+1], wC=(1-fx)*fy*flipped[ic+1], wD=fx*fy*flipped[id+1];
+      const g = wA + wB + wC + wD;
+      if (g <= 1e-6) return null;
       return {
-        brightness: flipped[ia]*wA + flipped[ib]*wB + flipped[ic]*wC + flipped[id]*wD,
-        hasGeometry: (flipped[ia+1]*wA + flipped[ib+1]*wB + flipped[ic+1]*wC + flipped[id+1]*wD) > 0.5,
+        brightness: (flipped[ia]*wA + flipped[ib]*wB + flipped[ic]*wC + flipped[id]*wD) / g,
+        hasGeometry: g > 0.5,
       };
     };
     pendingReference = points.map(([sx,sy]) => sampleRef(sx,sy));
@@ -154,6 +159,7 @@ import { captureShadingBuffer } from '../viewport/shading-capture.js';
     let allMatch = true;
     reference.forEach((ref, i) => {
       const got = m.values[i];
+      if (!ref){ console.log('[shadingTest] point ' + i + ': no geometry near it — skipped'); return; }
       const brightDiff = Math.abs(ref.brightness - got.brightness);
       const match = brightDiff < 1e-4 && ref.hasGeometry === got.hasGeometry;
       if (!match) allMatch = false;

@@ -417,8 +417,7 @@ export function mergeRingPieces(pieces, tolPx){
 // screen coordinates (matching cam.w/cam.h — the same source
 // captureShadingBuffer sizes its render target from, so no rescaling is
 // needed here, just the row order). Flipped ONCE on receipt rather than
-// baking a flip into every sampleShading call, so that function stays a
-// plain, ordinary bilinear lookup.
+// baking a flip into every sampleShading call.
 export function flipBufferRowsY(buf, w, h){
   const rowFloats = w * 4;
   const tmp = new Float32Array(rowFloats);
@@ -437,16 +436,45 @@ export function flipBufferRowsY(buf, w, h){
 // screen-pixel space as everything else in this file (top-down, origin
 // top-left) — clamped to the buffer's own edges rather than wrapping or
 // erroring on out-of-range input.
+//
+// Two details keep hatch/circles clean along silhouettes, where the
+// raster and the analytic outline disagree by under a pixel:
+// - Texel i covers screen [i, i+1] with its centre at i+0.5 (the solver's
+//   projection maps NDC ±1 to 0 and W), hence the half-texel shift.
+// - Brightness blends geometry texels only (weights × G, renormalised).
+//   Background texels are R=0, indistinguishable from full shadow, so
+//   blending them in reads a lit face's edge as dark — densest spacing,
+//   a stub on every carrier. When none of the four neighbours is geometry
+//   (a sliver thinner than the raster grid) the nearest geometry texel
+//   within SHADING_FALLBACK_R texels stands in; with none, the point reads
+//   fully lit (brightness 1, not below any threshold), so no ink.
+const SHADING_FALLBACK_R = 2;
 export function sampleShading(buf, w, h, sx, sy){
-  const x = Math.max(0, Math.min(w - 1, sx));
-  const y = Math.max(0, Math.min(h - 1, sy));
+  const x = Math.max(0, Math.min(w - 1, sx - 0.5));
+  const y = Math.max(0, Math.min(h - 1, sy - 0.5));
   const x0 = Math.floor(x), y0 = Math.floor(y);
   const x1 = Math.min(w - 1, x0 + 1), y1 = Math.min(h - 1, y0 + 1);
   const fx = x - x0, fy = y - y0;
   const idx = (xi, yi) => (yi*w + xi) * 4;
   const ia = idx(x0,y0), ib = idx(x1,y0), ic = idx(x0,y1), id = idx(x1,y1);
-  const w00 = (1-fx)*(1-fy), w10 = fx*(1-fy), w01 = (1-fx)*fy, w11 = fx*fy;
-  const brightness = buf[ia]*w00 + buf[ib]*w10 + buf[ic]*w01 + buf[id]*w11;
-  const geomWeight  = buf[ia+1]*w00 + buf[ib+1]*w10 + buf[ic+1]*w01 + buf[id+1]*w11;
-  return { brightness, hasGeometry: geomWeight > 0.5 };
+  const w00 = (1-fx)*(1-fy)*buf[ia+1], w10 = fx*(1-fy)*buf[ib+1], w01 = (1-fx)*fy*buf[ic+1], w11 = fx*fy*buf[id+1];
+  const geomWeight = w00 + w10 + w01 + w11;
+  if (geomWeight > 1e-6){
+    const brightness = (buf[ia]*w00 + buf[ib]*w10 + buf[ic]*w01 + buf[id]*w11) / geomWeight;
+    return { brightness, hasGeometry: geomWeight > 0.5 };
+  }
+  // (x,y) lies between texels x0 and x0+1, so this window reaches
+  // SHADING_FALLBACK_R texels out on each side of it.
+  const xa = Math.max(0, x0 - SHADING_FALLBACK_R + 1), xb = Math.min(w - 1, x0 + SHADING_FALLBACK_R);
+  const ya = Math.max(0, y0 - SHADING_FALLBACK_R + 1), yb = Math.min(h - 1, y0 + SHADING_FALLBACK_R);
+  let best = -1, bestD2 = 1/0;
+  for (let yi = ya; yi <= yb; yi++){
+    for (let xi = xa; xi <= xb; xi++){
+      const i = idx(xi, yi);
+      if (buf[i+1] <= 0.5) continue;
+      const d2 = (xi - x)*(xi - x) + (yi - y)*(yi - y);
+      if (d2 < bestD2){ bestD2 = d2; best = i; }
+    }
+  }
+  return { brightness: best >= 0 ? buf[best] : 1, hasGeometry: false };
 }

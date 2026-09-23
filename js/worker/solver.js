@@ -2312,14 +2312,12 @@ function generate(cam, S, shadingBuffer){
     // axis to reconcile here at all, unlike flat mode below. Mirrors the
     // same bisection shape the old analytic version's per-point smooth
     // hatch boundary used, just sourced from the buffer instead.
-    // Doesn't check hasGeometry — an earlier version did, flagging any
-    // disagreement for inspection, and that's exactly how it was confirmed
-    // this only ever happens right at silhouette edges (ordinary bilinear-
-    // interpolation blur where the buffer's nearest texels straddle real
-    // geometry and background), never in a face's interior. This function
-    // only ever runs on segments the analytic solver already clipped to
-    // real, visible geometry, so the spatial correctness was never in
-    // question — brightness is used as-is regardless of the G channel.
+    // Doesn't check hasGeometry: this only ever runs on segments the
+    // analytic solver already clipped to real, visible geometry, and the
+    // raster and analytic outlines disagree only at silhouettes, by under a
+    // pixel. There sampleShading blends geometry texels only, so the
+    // background (R=0, which reads as full shadow) can't leak in and turn
+    // the edge into a row of densest-spacing stubs — see its own comment.
     const bufferSplit = (x0,y0,x1,y1, u0,u1, k, pass) => {
       const pxPerU = Math.hypot(x1-x0, y1-y0);
       const Px = u => x0+(x1-x0)*u, Py = u => y0+(y1-y0)*u;
