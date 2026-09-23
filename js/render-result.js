@@ -5,8 +5,9 @@
    layer order (so the highest-priority layer paints last, on top),
    each holding one <path>. Which builder turns a layer's flat segments
    into that path is its type's `chain` (LAYER_TYPES in layers.js):
-   contour, silhouette and crease go through chain.js, a fill layer's
-   pieces through its texture stack (hatch-texture.js). Paper transform,
+   contour, silhouette and crease are chained into pieces by chain.js; a
+   fill layer's are the worker's own. Either way they then go through the
+   layer's texture stack (hatch-texture.js). Paper transform,
    pen styling and the pan/zoom fit are then re-applied by renderPaper()
    and applyLayerStyle().
    refreshStatusR() is the bottom-right stats readout for whichever tab
@@ -15,7 +16,7 @@
    ================================================================ */
 import { $, dashOnFraction, svgEl } from './main.js';
 import { layerById, layerType, layers } from './layers.js';
-import { appendContourPathD, appendCreasePathD, buildChainedPathD } from './chain.js';
+import { appendPolylineD, contourPieces, creasePieces, silhouettePieces } from './chain.js';
 import { appendTexturedPolylinesD, applyTextureStack, arcToBezierSegments, hatchFamilyAngleDeg } from './hatch-texture.js';
 import { activeTab, generateFinished } from './panel-controls.js';
 import { computeLayoutStats } from './layout/layout-model.js';
@@ -23,6 +24,18 @@ import { resetPaperViewFit } from './paper-preview.js';
 import { exportSoIvOverlayNow, takePendingSoIvExport } from './scene-io.js';
 import { blendMultiplyOn, computePaperLayout, pxPerMm, renderPaper } from './paper-layout.js';
 import { applyLayerStyle, layerStyle } from './layer-rows.js';
+// An edge layer's worker segments → its finished polylines, by the chaining
+// its type names (LAYER_TYPES[…].chain).
+function edgePieces(L, T, segs, m){
+  if (T.chain === 'contour')
+    return contourPieces(segs, m.runIds[L.id], m.seqs[L.id], m.counts && m.counts.contourAdjacency);
+  if (T.chain === 'silhouette'){
+    // Silhouette and Individual Silhouette get identical treatment here —
+    // no exceptions, every gap gets closed.
+    return silhouettePieces(segs, { tolMerge: 0.25 * pxPerMm(), foldbackAngleThreshDeg: 150 });
+  }
+  return creasePieces(segs);
+}
 export function renderResult(m){
   generateFinished(m);
   if (takePendingSoIvExport()) exportSoIvOverlayNow();
@@ -138,17 +151,13 @@ export function renderResult(m){
     g.setAttribute('stroke-linejoin', 'round');
     const d = [];
     const stats = layerOn ? pathStats : null;
-    if (T.chain === 'contour'){
-      appendContourPathD(d, segs, m.runIds[L.id], m.seqs[L.id],
-        m.counts && m.counts.contourAdjacency, stats);
-    } else if (T.chain === 'silhouette'){
-      const mmToPx = pxPerMm();
-      // Silhouette and Individual Silhouette get identical treatment here —
-      // no exceptions, every gap gets closed.
-      const silMergeOpts = { tolMerge: 0.25 * mmToPx, foldbackAngleThreshDeg: 150 };
-      d.push(buildChainedPathD(segs, stats, silMergeOpts));
-    } else if (T.chain === 'crease'){
-      appendCreasePathD(d, segs, stats);
+    if (T.chain){
+      // Edge layer: chained into {pts, closed} pieces, run through its
+      // texture stack (an empty one hands them back untouched), then one
+      // subpath each — Z where a piece is still closed.
+      const tex = applyTextureStack({ rep: 'paths', paths: edgePieces(L, T, segs, m) }, L.texture,
+        { geometry: T.geometry, mmToPx: pxPerMm() });
+      for (const { pts, closed } of tex.paths) appendPolylineD(d, pts, closed, stats);
     } else {
       // Hatch: one path per layer, one subpath per segment: subpaths stay
       // separate pen strokes for plotter software; nothing is joined or

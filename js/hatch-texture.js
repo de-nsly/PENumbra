@@ -488,6 +488,11 @@ export function arcToBezierSegments(cx, cy, radius, u0, u1){
      arcs       { pieces }  Circles pieces {cx, cy, radius, u0, u1, …}
      polylines  { polylines, closed }  flat [x0,y0,x1,y1,…] arrays; closed is
                 a per-polyline boolean array, or null for "all open"
+     paths      { paths: [{pts, closed}] }  an edge layer's chained pieces in
+                chain.js's own shape (pts = [[x,y],…], the first point not
+                repeated when closed). Only edge layers produce it and only
+                the edge filters implement it, so it never meets the fill
+                reps above; it comes back as paths.
    A filter can change the rep (wobble turns segments or arcs into
    polylines). When a filter has no implementation for segments but has one
    for polylines, the segments become 2-point polylines first. A filter
@@ -497,10 +502,9 @@ export function arcToBezierSegments(cx, cy, radius, u0, u1){
    polylines; arcs stay arcs (renderResult emits them as Béziers).
    Closed paths: a filter that keeps the polylines one-to-one passes
    `closed` through; one that can split a path (gaps) returns closed:null,
-   i.e. every output path open, since a gap opens a ring. Only hatch and
-   circles call this today; an edge layer's chained polylines could come
-   in as rep:'polylines' with their Z flags as `closed`, and with its empty
-   stack come back untouched (refactor plan §4e).
+   i.e. every output path open, since a gap opens a ring. The paths rep
+   carries `closed` per piece instead, and its filters keep it true on any
+   path they leave whole.
    Overshoot, spacing jitter and angle jitter on segments are ONE combined
    step (applyHatchTexture), run where the first of them sits in the stack:
    they share per-carrier random draws and are applied rotate → shift →
@@ -562,7 +566,7 @@ const TEXTURE_IMPL = {
     },
   },
 };
-// ctx: { geometry ('lines' | 'arcs' | null for edge layers), mmToPx,
+// ctx: { geometry ('lines' | 'arcs' | 'paths'), mmToPx,
 // familyAngleDeg (lines: the hatch family's angle) }
 export function applyTextureStack(input, stack, ctx){
   let st = input;

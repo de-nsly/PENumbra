@@ -23,8 +23,9 @@
      on/pen/dash   the row's state — the instance IS the state, the row
               DOM (layer-rows.js) is a view of it
      texture  the ordered texture stack: [{ type, ...params }] with types
-              from TEXTURE_FILTERS. Empty = no texture. Only fill layers
-              apply theirs today (renderResult); edge layers carry [].
+              from TEXTURE_FILTERS. Empty = no texture, the default for
+              every layer. renderResult applies it to fill and edge
+              layers alike.
      fill settings  every solve setting of a fill layer, one field per
               entry in its type's `settings` schema: angleDeg (hatch),
               minSpacing/maxSpacing (mm), threshold, and centerX/centerY
@@ -45,8 +46,9 @@
 /* chain — how renderResult joins an edge layer's worker segments into paths:
    'silhouette' (buildChainedPathD), 'contour' (appendContourPathD, by
    the worker's run identity), 'crease' (appendCreasePathD).
-   geometry — what a fill layer's pieces are, which decides which texture
-   filters apply: 'lines' (hatch strokes) or 'arcs' (circle pieces).
+   geometry — what a layer's pieces are, which decides which texture
+   filters apply: 'paths' (an edge layer's chained polylines, open or
+   closed), 'lines' (hatch strokes) or 'arcs' (circle pieces).
    host — the container in index.html the row is appended to; the edge
    layers are split across three so each group's solve settings can sit
    directly under the rows they affect.
@@ -74,13 +76,13 @@
      f1 f2 …   every fill layer added since (nextFillId; never reused
                within a session) */
 export const LAYER_TYPES = {
-  so: { kind:'edge', name:'Silhouette',            chain:'silhouette', host:'edgeRowsSil' },
-  iv: { kind:'edge', name:'Silhouette individual', chain:'silhouette', host:'edgeRowsSil' },
-  ih: { kind:'edge', name:'· hidden',              chain:'silhouette', host:'edgeRowsSil' },
-  sv: { kind:'edge', name:'Contour',               chain:'contour',    host:'edgeRowsContour' },
-  sh: { kind:'edge', name:'· hidden',              chain:'contour',    host:'edgeRowsContour' },
-  cv: { kind:'edge', name:'Crease',                chain:'crease',     host:'edgeRowsCrease' },
-  ch: { kind:'edge', name:'· hidden',              chain:'crease',     host:'edgeRowsCrease' },
+  so: { kind:'edge', name:'Silhouette',            chain:'silhouette', geometry:'paths', host:'edgeRowsSil' },
+  iv: { kind:'edge', name:'Silhouette individual', chain:'silhouette', geometry:'paths', host:'edgeRowsSil' },
+  ih: { kind:'edge', name:'· hidden',              chain:'silhouette', geometry:'paths', host:'edgeRowsSil' },
+  sv: { kind:'edge', name:'Contour',               chain:'contour',    geometry:'paths', host:'edgeRowsContour' },
+  sh: { kind:'edge', name:'· hidden',              chain:'contour',    geometry:'paths', host:'edgeRowsContour' },
+  cv: { kind:'edge', name:'Crease',                chain:'crease',     geometry:'paths', host:'edgeRowsCrease' },
+  ch: { kind:'edge', name:'· hidden',              chain:'crease',     geometry:'paths', host:'edgeRowsCrease' },
   hatch: { kind:'fill', name:'Hatch', geometry:'lines', host:'fillRows', pen:'p5', settings:[
     // A full turn, not the half a line family repeats over: the carrier
     // lines of 217° and of 37° are the same direction but anchored from
@@ -368,7 +370,7 @@ export function sceneLayers(data, resolvePen){
         if (!L) continue;
         L.on = !!s.on; L.pen = resolvePen(s, L.pen);
         if (typeof s.dash === 'string') L.dash = s.dash;
-        L.texture = sanitizeStack(s.texture, null);
+        L.texture = sanitizeStack(s.texture, T.geometry);
         continue;
       }
       if (out.some(e => e.id === s.id)) continue;
