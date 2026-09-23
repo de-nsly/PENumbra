@@ -184,7 +184,8 @@ function noteFillIds(list){
    parameters (with the slider ranges and defaults the stack editor uses,
    and the fallback the reader uses for a missing value) and which
    geometry kinds it applies to (LAYER_TYPES[…].geometry). Edge layers
-   ('paths') take trim, overshoot, wobble and gaps; spacing jitter, angle
+   ('paths') take break at corners (theirs alone), trim, overshoot, wobble
+   and gaps; spacing jitter, angle
    jitter and regular wobble need a hatch family's angle or carrier lines,
    which edge paths don't have (refactor plan §10.2). The implementations live with the rest
    of the geometry code in hatch-texture.js (TEXTURE_IMPL, run by
@@ -194,6 +195,11 @@ function noteFillIds(list){
    (the old fixed pipeline's order), and it keeps the three line jitters —
    one combined step in applyTextureStack — adjacent. */
 export const TEXTURE_FILTERS = {
+  // Edge paths only, and first on purpose: it turns a path into one stroke
+  // per corner-to-corner stretch, which every filter after it then acts on.
+  breakCorners: { name:'Break at corners', geometry:['paths'], params:[
+    { key:'angle', label:'Angle', min:1, max:179, step:1, def:30, unit:'°' },
+  ]},
   trim: { name:'Trim / extend', geometry:['lines','arcs','paths'], params:[
     { key:'value', label:'Value', min:-10, max:10, step:0.1, def:0, unit:'mm' },
   ]},

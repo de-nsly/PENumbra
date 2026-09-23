@@ -514,6 +514,53 @@ function adjustPathEnds(pts, a0, a1){
   }
   return work;
 }
+/* Splits every path at each vertex where it turns by more than angleDeg, so
+   a box outline becomes its four sides and the filters after this act on
+   each stroke; a smooth curve (every turn under the angle) stays whole.
+   The turn at a vertex is measured between its neighbouring DISTINCT
+   vertices (one within 1e-6px of the one before it has no direction of
+   its own). An open path's ends are never corners. A closed path with no
+   corner stays closed; with some, it is re-started at its first corner —
+   the file's own start point is arbitrary and must not become a break —
+   and cut into open strokes. */
+function applyPathBreakCorners(paths, angleDeg){
+  const cosMax = Math.cos(angleDeg * Math.PI/180);
+  const out = [];
+  for (const p of paths){
+    const pts = p.pts, n = pts.length;
+    const idx = [0];
+    for (let i = 1; i < n; i++){
+      const a = pts[idx[idx.length-1]];
+      if (Math.hypot(pts[i][0]-a[0], pts[i][1]-a[1]) > 1e-6) idx.push(i);
+    }
+    if (p.closed && idx.length > 1){
+      const a = pts[idx[idx.length-1]];
+      if (Math.hypot(pts[0][0]-a[0], pts[0][1]-a[1]) <= 1e-6) idx.pop();
+    }
+    const M = idx.length;
+    const corners = [];
+    if (M >= 3){
+      for (let m = p.closed ? 0 : 1; m < (p.closed ? M : M-1); m++){
+        const a = pts[idx[(m-1+M) % M]], v = pts[idx[m]], b = pts[idx[(m+1) % M]];
+        const ux = v[0]-a[0], uy = v[1]-a[1], wx = b[0]-v[0], wy = b[1]-v[1];
+        const dot = (ux*wx + uy*wy) / (Math.hypot(ux, uy) * Math.hypot(wx, wy));
+        if (dot < cosMax) corners.push(idx[m]);
+      }
+    }
+    if (!corners.length){ out.push(p); continue; }
+    let ring = pts, cuts;
+    if (p.closed){
+      const c0 = corners[0];
+      ring = pts.slice(c0).concat(pts.slice(0, c0 + 1));
+      cuts = corners.map(c => c - c0).concat([n]);   // starts at 0: the first corner
+    } else {
+      cuts = [0].concat(corners, [n-1]);
+    }
+    for (let k = 0; k < cuts.length - 1; k++)
+      out.push({ pts: ring.slice(cuts[k], cuts[k+1] + 1), closed: false });
+  }
+  return out;
+}
 // Constant trim/extend of both ends of every open path. A closed path has no
 // ends and passes through, as an intact circle does.
 function applyPathTrimExtend(paths, trimPx){
@@ -693,6 +740,9 @@ function lineJitter(st, f, ctx, stack){
   return { rep: 'segments', segs: applyHatchTexture(st.segs, st.carrier, ctx.familyAngleDeg, ctx.mmToPx, stack), carrier: st.carrier };
 }
 const TEXTURE_IMPL = {
+  breakCorners: {
+    paths: (st, f) => ({ rep: 'paths', paths: applyPathBreakCorners(st.paths, +f.angle || 30) }),
+  },
   trim: {
     segments: (st, f, ctx) => {
       const r = applyHatchTrimExtend(st.segs, st.carrier, (+f.value || 0) * ctx.mmToPx);
