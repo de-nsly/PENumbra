@@ -687,10 +687,28 @@ would be its own change.
 
 ---
 
-## 10. Texture stacks on edge layers (feature 2, the rest of it) — SPEC, agreed 2026-09-23
+## 10. Texture stacks on edge layers (feature 2, the rest of it) — DONE 2026-09-23
 
 §2.1's second feature: a texture stack on every layer, edge layers included. §4e left the fill side
-done and the edge side unwired. This section is the agreed design; nothing is built yet.
+done and the edge side unwired. Built as specified below, in five commits (chain split → wiring with
+empty stacks → trim/overshoot/wobble/gaps → Break at corners → Texture tab list), with these details:
+- `render-result.js` always takes the piece route for edge layers (piece builder → `applyTextureStack`
+  → `appendPolylineD`) rather than keeping the wrappers for an empty stack: it is the same token stream,
+  and the render comparison proved it. The wrappers stay for `tools/harness`.
+- Filter params may carry `decimals` for the editor's value label (default 1); Break at corners' Angle
+  uses 0.
+- The Texture tab now opens on Silhouette (the first layer) until a fill row is selected in the Lines
+  tab, which still pushes its selection there.
+- A gap the Poisson walk clamps at a closed path's end ends exactly at its seam, so a stroke may start
+  there; the join rule only merges the two strokes when no gap touches the seam.
+- **Verified:** `verify-golden` identical at every commit; a `renderResult` comparison (the real
+  function on a recording DOM, `Math.random` seeded, demo + `arches.pen` × 30 fill-texture
+  configurations, edge stacks empty) 60/60 identical against the pre-change tree at every commit (a
+  skewed seed: 2/60, only the texture-free configurations); scratch invariant checks on every edge
+  layer of both scenes — trim changes open lengths by exactly 2×value and leaves closed paths
+  byte-identical, overshoot within bounds, a shared wobble field tears 0 of 147/226/119/115 shared
+  vertices where a per-path field tears all of them, gaps never leaves two strokes meeting at a seam,
+  Break at corners preserves ink length exactly and passes box / circle / L / duplicate-vertex cases.
 
 **Already in place before this:** the stack editor's "Sync filter settings across layers" checkbox
 (`texSyncParams`, a saved scene setting, `texture-stack.js`). With it on, editing a parameter writes the

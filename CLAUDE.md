@@ -145,8 +145,10 @@ layer's own — `angleDeg` (hatch), `minSpacing`/`maxSpacing` in mm, `threshold`
 circles — declared by its type's `settings` schema, which also drives the row's sliders. Names are derived
 from the type plus the layer's number among its type (`layerName`), never stored. The instance is the
 state; the Lines-tab rows (`layerEls`, `layer-rows.js`) are a view of it. `texture` is an ordered stack of
-filter entries typed by `TEXTURE_FILTERS`; an empty stack is no texture, and only fill layers apply theirs
-today. Order is the drawing-priority hierarchy:
+filter entries typed by `TEXTURE_FILTERS`; an empty stack is no texture. Every layer applies its own —
+a type's `geometry` (`paths` for edge layers, `lines` hatch, `arcs` circles) decides which filters it
+can hold; edge layers are chained into `{pts, closed}` pieces first (`silhouettePieces`/`contourPieces`/
+`creasePieces`, `chain.js`), see `docs/refactor-plan.md` §10. Order is the drawing-priority hierarchy:
 higher entries win ink-avoidance against lower ones, and the array is walked in reverse when painting so
 the highest-priority layer ends up on top. Toggling any single layer can change what survives in every
 layer below it, so every layer checkbox re-runs the pipeline; there is no display-only toggle.

@@ -3,9 +3,9 @@
    Edits one layer's texture stack (layers.js: the instance's `texture`
    array, entries typed by TEXTURE_FILTERS): pick a layer from the button
    list, add a filter from the types its geometry supports, edit each
-   entry's parameters, remove an entry. Which layers are offered is
-   textureLayers() alone — only the fill layers today; edge layers carry
-   an empty stack that nothing applies yet (refactor plan §4e).
+   entry's parameters, remove an entry. Every layer is offered, edge and
+   fill alike (textureLayers()); the Filter menu offers what that layer's
+   geometry supports (refactor plan §10).
    The layer being edited follows the Lines tab's selection, one way: a
    fill row selected there is pushed here (setTextureLayer, called by
    layer-rows.js), but picking a layer here never selects anything there.
@@ -22,7 +22,7 @@
    differ stay different until one of them is edited.
    ================================================================ */
 import { $ } from './main.js';
-import { TEXTURE_FILTERS, fillLayers, filterSupports, layerName, layerType, layers, newFilter, stackEntry } from './layers.js';
+import { TEXTURE_FILTERS, filterSupports, layerFullName, layerType, layers, newFilter, stackEntry } from './layers.js';
 import { formatValue } from './settings.js';
 import { makeSliderValueEditable, markStale } from './panel-controls.js';
 
@@ -31,21 +31,19 @@ let selectedLayerId = null;
 // the caller re-renders (layer-rows.js does, straight after).
 export function setTextureLayer(id){ selectedLayerId = id; }
 
-/* Which layers can carry a texture stack: the one switch for letting more
-   layer kinds take filters. Only the fill layers apply theirs today
-   (applyTextureStack, via render-result.js), so only they are offered.
-   Opening this to edge layers also needs a `geometry` on their LAYER_TYPES
-   entries, which is what the Filter menu's filterSupports() checks. */
-function textureLayers(){ return fillLayers(); }
+/* Which layers can carry a texture stack: all of them, in layer order.
+   renderResult applies every layer's stack (applyTextureStack). Edge rows
+   in the Lines tab can't be selected, so this list is how an edge layer
+   is picked (the user's choice, refactor plan §10.4). */
+function textureLayers(){ return layers; }
 // Group headings for the layer list, named after the Lines tab's own
 // sections. Only shown once the list holds more than one kind.
 const KIND_LABELS = { edge: 'Lines', fill: 'Fill layers' };
 
 function syncOn(){ return $('texSyncParams').checked; }
 // Writes one parameter of one stack entry — and, with sync on, the same
-// parameter of every other layer's entry of that filter type. Walks every
-// layer rather than textureLayers(): a stack only ever holds entries its
-// layer was offered, so no layer outside the editor is touched.
+// parameter of every other layer's entry of that filter type, edge and fill
+// alike.
 function setParam(entry, key, value){
   entry[key] = value;
   if (!syncOn()) return;
@@ -77,10 +75,12 @@ function selectedLayer(){
 }
 
 /* One block button per layer, in layer order, grouped by kind — so edge
-   layers, once offered, land above the fill layers exactly as they do in
-   the Lines tab. Each shows how many filters its stack holds on the right,
-   or nothing when the stack is empty; every add/remove re-renders the list,
-   so the count is never stale. A click picks that layer; clicking the one
+   layers land above the fill layers exactly as they do in the Lines tab,
+   each under its full name (layerFullName: "Contour hidden", since the
+   Lines tab's grouping isn't here to explain "· hidden"). Each shows how
+   many filters its stack holds on the right, or nothing when the stack is
+   empty; every add/remove re-renders the list, so the count is never
+   stale. A click picks that layer; clicking the one
    already picked does nothing, since this tab always edits some layer. */
 function buildLayerList(current){
   const list = $('texLayerList');
@@ -90,13 +90,6 @@ function buildLayerList(current){
     const kind = layerType(L).kind;
     if (!groups.has(kind)) groups.set(kind, []);
     groups.get(kind).push(L);
-  }
-  if (!groups.size){
-    const hint = document.createElement('p');
-    hint.className = 'hint';
-    hint.textContent = 'No fill layers yet — add one in the Lines tab.';
-    list.appendChild(hint);
-    return;
   }
   for (const [kind, members] of groups){
     if (groups.size > 1){
@@ -113,7 +106,7 @@ function buildLayerList(current){
       btn.setAttribute('aria-pressed', String(picked));
       const name = document.createElement('span');
       name.className = 'texLayerName';
-      name.textContent = layerName(L);
+      name.textContent = layerFullName(L);
       btn.appendChild(name);
       const n = L.texture.length;
       if (n){
@@ -124,7 +117,7 @@ function buildLayerList(current){
         count.title = filters + ' applied';
         btn.appendChild(count);
         // Read as "Hatch 1, 2 filters", not the bare "Hatch 1 2".
-        btn.setAttribute('aria-label', layerName(L) + ', ' + filters);
+        btn.setAttribute('aria-label', layerFullName(L) + ', ' + filters);
       }
       btn.addEventListener('click', () => {
         if (picked) return;
@@ -179,7 +172,7 @@ function buildEntry(L, entry, index){
     range.value = entry[p.key];
     const val = document.createElement('span');
     val.className = 'val';
-    const refresh = () => { val.textContent = formatValue({ unit: p.unit, decimals: 1 }, range.value); };
+    const refresh = () => { val.textContent = formatValue({ unit: p.unit, decimals: p.decimals ?? 1 }, range.value); };
     refresh();
     range.addEventListener('input', () => { setParam(entry, p.key, +range.value); refresh(); markStale(); });
     makeSliderValueEditable(range, val, { unit: p.unit }, refresh);

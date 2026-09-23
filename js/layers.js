@@ -59,6 +59,8 @@
    Soft shadows disables, dimmed in the row like the shadow controls.
    thrFallback — only the loaders use it: the threshold an old scene's
    global slider stood for when it held no number.
+   fullName — the name out of context (layerFullName), for a type whose
+   `name` only reads under its parent row ("· hidden").
 
    THE LAYER KEYS ARE PERSISTED and several of them no longer read like
    what they draw. They are written into every `.pen` file (the layer
@@ -78,11 +80,11 @@
 export const LAYER_TYPES = {
   so: { kind:'edge', name:'Silhouette',            chain:'silhouette', geometry:'paths', host:'edgeRowsSil' },
   iv: { kind:'edge', name:'Silhouette individual', chain:'silhouette', geometry:'paths', host:'edgeRowsSil' },
-  ih: { kind:'edge', name:'· hidden',              chain:'silhouette', geometry:'paths', host:'edgeRowsSil' },
+  ih: { kind:'edge', name:'· hidden',              chain:'silhouette', geometry:'paths', host:'edgeRowsSil', fullName:'Silhouette individual hidden' },
   sv: { kind:'edge', name:'Contour',               chain:'contour',    geometry:'paths', host:'edgeRowsContour' },
-  sh: { kind:'edge', name:'· hidden',              chain:'contour',    geometry:'paths', host:'edgeRowsContour' },
+  sh: { kind:'edge', name:'· hidden',              chain:'contour',    geometry:'paths', host:'edgeRowsContour', fullName:'Contour hidden' },
   cv: { kind:'edge', name:'Crease',                chain:'crease',     geometry:'paths', host:'edgeRowsCrease' },
-  ch: { kind:'edge', name:'· hidden',              chain:'crease',     geometry:'paths', host:'edgeRowsCrease' },
+  ch: { kind:'edge', name:'· hidden',              chain:'crease',     geometry:'paths', host:'edgeRowsCrease', fullName:'Crease hidden' },
   hatch: { kind:'fill', name:'Hatch', geometry:'lines', host:'fillRows', pen:'p5', settings:[
     // A full turn, not the half a line family repeats over: the carrier
     // lines of 217° and of 37° are the same direction but anchored from
@@ -161,6 +163,11 @@ export function layerName(L){
   const sameType = layers.filter(e => e.type === L.type);
   return T.name + ' ' + (sameType.indexOf(L) + 1);
 }
+// The name where the Lines tab's grouping isn't there to explain it (the
+// Texture tab's layer list): "Contour hidden", not "· hidden".
+export function layerFullName(L){
+  return layerType(L).fullName || layerName(L);
+}
 /* Ids for layers added in this session: f1, f2, … The counter only ever
    climbs, and never reuses an id even after a delete or a scene import —
    a Layout block frozen from an old layer must never be re-matched to a
@@ -198,7 +205,7 @@ export const TEXTURE_FILTERS = {
   // Edge paths only, and first on purpose: it turns a path into one stroke
   // per corner-to-corner stretch, which every filter after it then acts on.
   breakCorners: { name:'Break at corners', geometry:['paths'], params:[
-    { key:'angle', label:'Angle', min:1, max:179, step:1, def:30, unit:'°' },
+    { key:'angle', label:'Angle', min:1, max:179, step:1, def:30, unit:'°', decimals:0 },
   ]},
   trim: { name:'Trim / extend', geometry:['lines','arcs','paths'], params:[
     { key:'value', label:'Value', min:-10, max:10, step:0.1, def:0, unit:'mm' },
