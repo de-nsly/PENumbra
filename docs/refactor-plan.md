@@ -684,3 +684,139 @@ Both goldens re-captured. Browser-verified by the user.
 through the screen-space fallback (1 join on the demo mesh). `mergeCreaseScreenSpace` still pairs
 arbitrarily at junctions; it now handles ~1% of the joins, and straightest-continuation scoring there
 would be its own change.
+
+---
+
+## 10. Texture stacks on edge layers (feature 2, the rest of it) — SPEC, agreed 2026-09-23
+
+§2.1's second feature: a texture stack on every layer, edge layers included. §4e left the fill side
+done and the edge side unwired. This section is the agreed design; nothing is built yet.
+
+**Already in place before this:** the stack editor's "Sync filter settings across layers" checkbox
+(`texSyncParams`, a saved scene setting, `texture-stack.js`). With it on, editing a parameter writes the
+same value into every layer's entry of that filter type, and a newly added filter copies an existing
+entry of its type. It walks every layer, so edge layers join in with no extra work.
+
+### 10.1 What edge geometry is
+
+After chaining, an edge layer is a list of `{pts, closed}` polylines (`pts` = `[[x,y],…]`, the first
+point never repeated, `Z` in the SVG when closed). Unlike hatch lines they are long and connected:
+straight runs are simplified to 2 points, curves keep their mesh vertices. Many are closed loops
+(Silhouette and Contour outlines). They share endpoints: Crease arms at junctions, Crease ending on
+Contour, and the visible and hidden halves of one edge meeting where its visibility changes — the last
+two are between *different layers*. And there is no family angle or carrier index.
+
+### 10.2 Which filters apply
+
+| filter | edges | why |
+|---|---|---|
+| Break at corners (**new**) | yes, edges only | splits paths into strokes at sharp turns, so the filters after it act per stroke |
+| Trim / extend | yes, new `paths` impl | end extensions are the construction-line sketch look |
+| Overshoot / undershoot | yes, new `paths` impl | the same, random per end |
+| Spacing jitter | **no** | edges have no spacing; the only analogue, shifting a whole path, detaches it at every junction |
+| Angle jitter | **no** (this round) | rotating a long path about its midpoint moves its far end by mm and detaches it at every junction |
+| Wobble | yes, new `paths` impl | the hatch version would tear a polyline apart at every vertex |
+| Regular wobble | **no** | depends on the hatch angle; along-path variants kink at corners, seam on closed loops, and dephase at junctions; a 2D sine field cancels on 45° lines |
+| Gaps | yes, adapted | the polyline version nearly works; closed loops need care |
+
+Angle jitter is the one to revisit: after Break at corners most strokes are near straight, and rotating
+a stroke is then the classic sketchy-box look. Only the long curved strokes (no corner above the
+threshold) would still misbehave. Left out of this round on purpose.
+
+### 10.3 The filters
+
+**Break at corners** (`breakCorners`, new; `geometry:['paths']`; one param `angle`, the turn in degrees
+above which a vertex splits the path: slider 1–179, step 1, default 30, unit °).
+- It is the first key of `TEXTURE_FILTERS`, so the editor always inserts it first in the stack and every
+  other filter sees strokes. Nothing else reads that key order in a way this changes (the v1 loader walks
+  `V1_TEXTURE_IDS`; fill layers can't hold a `paths`-only filter).
+- The turn at vertex i is the angle between the incoming and outgoing directions, skipping zero-length
+  neighbours (< 1e-6 px).
+- Open path: split at every vertex whose turn exceeds `angle`; each piece is an open stroke sharing its
+  end vertex with the next.
+- Closed path: with no qualifying vertex it stays closed and untouched. With k ≥ 1, rotate the loop to
+  start at a qualifying corner (so the file's arbitrary start point doesn't become an extra break) and
+  split into k open strokes.
+- A path whose vertices are all dense curve samples (turns under the threshold) passes through whole.
+
+**Trim / extend** (`value`, mm).
+- Open paths: positive extends each end straight out along its end segment (the first one longer than
+  1e-6 px); negative walks inward by that length along the path and cuts there. A path no longer than
+  2·|value| is dropped, like the hatch rule.
+- Closed paths pass through unchanged — a loop has no ends, the same rule intact circles follow.
+  (After Break at corners, a broken loop is open strokes, which is the point of running it first.)
+
+**Overshoot / undershoot** (`min`, `max`, mm).
+- As trim, but each end draws its own amount from [min, max]; undershoot is capped at 30% of the
+  path's length (hatch caps at 30% of its segment). Closed paths skipped.
+- Its own step here: on hatch it is combined with the two jitters (`applyHatchTexture`), which edges
+  don't have.
+
+**Wobble** (`spacing`, `amp`, `variation`, `varScale`, `shared`).
+- Resample: every original vertex is kept (corners stay sharp) and each segment is subdivided into
+  `max(1, round(len/spacing))` pieces, the hatch rule.
+- Displace each point by a 2D offset: x from one noise field, y from another, each
+  `(noise(p·freq + offset) − 0.5)·amp`, `freq = 1/(spacing·3)` as for hatch. Because the offset
+  depends only on position within a field, two paths sharing a point in the same field move it
+  identically: closed loops stay closed and junctions stay joined, with no special cases. The two axes
+  being independent and equally scaled, the component perpendicular to any line direction has the same
+  spread as the hatch wobble's perpendicular push, so one `amp` means the same on both kinds.
+- Variation: a third noise field scales the offset, `1 − variation·(1 − env)`, as for hatch.
+- `shared` keeps its fill meaning (the user's choice, option B): **on** = one random field per layer
+  per render (seeds drawn once, as `readWobbleParams` does) — junctions and corner breaks within the
+  layer stay joined, junctions *between* layers tear (each layer has its own seeds even when sync
+  makes the parameters equal); **off** = a random field per path — every stroke wobbles independently
+  and junctions tear, deliberately.
+
+**Gaps** (`spacing`, `max`, mm).
+- Reuse the Poisson interval generator (`generateGapIntervals`) over each path's arc length. A closed
+  path is measured including its closing segment.
+- A path that receives at least one gap becomes open strokes. On a closed path, the stroke running to
+  the end of the loop and the one starting at its beginning are one continuous line (no gap at the
+  seam), so they are joined into one stroke. A path that receives **no** gap keeps its `closed` flag and
+  its `Z` — unlike the fill `polylines` impl, which marks everything open.
+
+Stack order: break at corners → trim → overshoot → wobble → gaps (the `TEXTURE_FILTERS` key order).
+
+### 10.4 Wiring
+
+1. **Geometry kind.** Every edge type in `LAYER_TYPES` gets `geometry:'paths'`; `TEXTURE_FILTERS` adds
+   `'paths'` to trim, overshoot, wobble and gaps and gains `breakCorners`. `filterSupports`, the editor's
+   Filter menu and `sanitizeStack` then need nothing else; `sceneLayers` passes the edge type's geometry
+   instead of `null`, so an edge layer's saved filters survive a load. No `.pen` version bump: v2 files
+   already carry an edge `texture` (always `[]` so far), and an older app reading a newer file drops the
+   filters it doesn't know through the same sanitizer.
+2. **A new rep, `paths`:** `{ rep:'paths', paths:[{pts, closed}] }`, in the chain's own point format. The
+   edge filters are `TEXTURE_IMPL[type].paths`. Fill layers never produce this rep, so their dispatch is
+   provably untouched — no new `polylines` impl that a fill stack could reach. `applyTextureStack`
+   returns a `paths` input as `paths`.
+3. **Chaining hands back pieces.** Split each of `buildChainedPathD`, `appendContourPathD`,
+   `appendCreasePathD` into a piece builder (today's body, up to where it calls `appendPolylineD`) and
+   the existing function as a thin wrapper that emits the pieces. The chaining itself is not touched
+   (ground rule 2); `tools/harness` keeps calling the wrappers.
+4. **`render-result.js`.** Empty stack → the wrapper, exactly as today, so output is byte-identical.
+   Non-empty → piece builder → `applyTextureStack` → `appendPolylineD` per path (it writes `Z` for a
+   closed one and counts stats). Randomness is re-drawn per render, as for fill layers.
+5. **Texture tab.** `textureLayers()` returns every layer; the "Lines" / "Fill layers" headings already
+   exist in `buildLayerList`. The list needs full names: the hidden rows are named "· hidden", which
+   only reads under their parent row. Add a `fullName` to `ih`/`sh`/`ch` in `LAYER_TYPES` ("Silhouette
+   individual hidden", "Contour hidden", "Crease hidden") and a `layerFullName(L)` the list uses. (The
+   Layout block menu shows the same "· hidden" names out of context — a candidate for the same
+   function, not part of this.) Edge rows in the Lines tab stay unselectable (the user's choice); the
+   Texture tab's own list is how an edge layer is picked. Update the empty-list hint and the
+   `texture-stack.js` / `layers.js` / `hatch-texture.js` headers that say only fill layers apply stacks.
+
+Everything downstream reads the rendered `d` and needs no change: Layout freeze, both export modes,
+dash splitting, margin trim, the endpoint-dot debug overlay.
+
+### 10.5 Verification
+
+- `verify-golden` identical (every edge stack is empty).
+- Render comparison, old vs new `renderResult`, demo + `arches.pen`, edge stacks empty, fill textures
+  seeded: every layer's `d`, group order and status text identical.
+- Scratch checks with edge filters on: Break at corners splits a box outline into its sides and leaves
+  a smooth curve whole; trim/overshoot leave closed paths byte-identical; wobble with `shared` on keeps
+  every within-layer junction and every closed path intact; gaps keeps `Z` on a path it skipped and
+  leaves no break at a closed path's seam.
+- Browser (the user): add each filter to each edge layer, sync on/off across edge + fill layers,
+  save/load a `.pen` with edge filters, open an older `.pen`, export in both modes, Add to Layout.
