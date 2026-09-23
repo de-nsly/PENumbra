@@ -8,8 +8,10 @@
    mergeSilhouetteClose), Crease (cv/ch) pairs array-adjacent pieces and
    falls back to screen space (mergeAdjacentTouching ->
    mergeCreaseScreenSpace); all three finish through splitSelfTouching +
-   simplifyCollinear and are turned into path tokens by the appendXPathD
-   builders at the end of the file.
+   simplifyCollinear. The builders at the end of the file hand the result
+   back as pieces ({pts, closed} — silhouettePieces, contourPieces,
+   creasePieces, which a texture stack runs on) or as path tokens
+   (buildChainedPathD, appendContourPathD, appendCreasePathD).
    Pure geometry — no DOM, no app state, imports nothing. If a line ends
    up in the wrong place on the page, this file and the worker's
    worldOnFace/intersectSegs/subtractCovered are the two suspects.
@@ -655,18 +657,32 @@ export function appendPolylineD(d, pts, closed, stats){
   if (closed) d.push('Z');
 }
 
-/* Silhouette / Silhouette individual (so/iv/ih) layer → path data string:
-   global coordinate chaining, then Silhouette's own tip cleanup
-   (trimTipFoldback + mergeSilhouetteClose, see silMergeOpts), then the
-   shared split-self-touching / collinear-simplify tail. */
-export function buildChainedPathD(segs, stats, silMergeOpts){
-  const d = [];
+/* Each edge layer has a piece builder (silhouettePieces, contourPieces,
+   creasePieces) returning its finished polylines as [{pts, closed}], and a
+   path builder wrapping it that turns those into path tokens. render-result.js
+   takes the pieces when the layer has a texture stack to run on them. */
+function appendPiecesD(d, pieces, stats){
+  for (const { pts, closed } of pieces) appendPolylineD(d, pts, closed, stats);
+}
+
+/* Silhouette / Silhouette individual (so/iv/ih) layer → pieces: global
+   coordinate chaining, then Silhouette's own tip cleanup (trimTipFoldback +
+   mergeSilhouetteClose, see silMergeOpts), then the shared
+   split-self-touching / collinear-simplify tail. */
+export function silhouettePieces(segs, silMergeOpts){
+  const pieces = [];
   let chains = chainSegments(segs);
   chains = trimTipFoldback(chains, silMergeOpts.foldbackAngleThreshDeg);
   chains = mergeSilhouetteClose(chains, silMergeOpts.tolMerge);
   for (const chain of chains)
     for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
-      appendPolylineD(d, simplifyCollinear(rawPts, closed), closed, stats);
+      pieces.push({ pts: simplifyCollinear(rawPts, closed), closed });
+  return pieces;
+}
+// → a path data string
+export function buildChainedPathD(segs, stats, silMergeOpts){
+  const d = [];
+  appendPiecesD(d, silhouettePieces(segs, silMergeOpts), stats);
   return d.join(' ');
 }
 
@@ -974,7 +990,7 @@ export function dropRedundantContourSlivers(pieces){
   });
 }
 
-/* Contour (sv/sh) layer → path tokens appended to `d`. Built straight from
+/* Contour (sv/sh) layer → pieces. Built straight from
    the worker's own runId/seq chain identity (chainByRun), never from
    coordinate re-matching. mergeContourRunSplits then re-joins any run that's
    permanently split across a vanished-artifact run or a shared-vertex
@@ -983,17 +999,20 @@ export function dropRedundantContourSlivers(pieces){
    aren't relevant to this layer are no-ops. Then the shared
    split-self-touching / collinear-simplify tail, plus Contour's own
    micro-geometry cleanup (trimContourFoldbacks, dropRedundantContourSlivers). */
-export function appendContourPathD(d, segs, runIds, seqs, adjacency, stats){
+export function contourPieces(segs, runIds, seqs, adjacency){
   const contourChains = mergeContourRunSplits(chainByRun(segs, runIds, seqs), adjacency);
-  let pieces = [];
+  const pieces = [];
   for (const chain of contourChains)
     for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
       pieces.push({ pts: simplifyCollinear(rawPts, closed), closed });
-  pieces = dropRedundantContourSlivers(trimContourFoldbacks(pieces));
-  for (const { pts, closed } of pieces) appendPolylineD(d, pts, closed, stats);
+  return dropRedundantContourSlivers(trimContourFoldbacks(pieces));
+}
+// → path tokens appended to `d`
+export function appendContourPathD(d, segs, runIds, seqs, adjacency, stats){
+  appendPiecesD(d, contourPieces(segs, runIds, seqs, adjacency), stats);
 }
 
-/* Crease (cv/ch) layer → path tokens appended to `d`:
+/* Crease (cv/ch) layer → pieces:
    1) mergeAdjacentTouching — local, topology-trusting merge of array-adjacent
       touching pieces
    2) mergeCreaseScreenSpace — screen-space fallback that mops up whatever (1)
@@ -1002,8 +1021,14 @@ export function appendContourPathD(d, segs, runIds, seqs, adjacency, stats){
    3) splitSelfTouching safety net — see its own comment for the
       Blender-import bug this specifically guards
    then collinear simplify. */
-export function appendCreasePathD(d, segs, stats){
+export function creasePieces(segs){
+  const pieces = [];
   for (const chain of mergeCreaseScreenSpace(mergeAdjacentTouching(segs)))
     for (const { pts: rawPts, closed } of splitSelfTouching(chain.pts, chain.closed))
-      appendPolylineD(d, simplifyCollinear(rawPts, closed), closed, stats);
+      pieces.push({ pts: simplifyCollinear(rawPts, closed), closed });
+  return pieces;
+}
+// → path tokens appended to `d`
+export function appendCreasePathD(d, segs, stats){
+  appendPiecesD(d, creasePieces(segs), stats);
 }
