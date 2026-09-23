@@ -443,13 +443,17 @@ function generate(cam, S, shadingBuffer){
 
   /* 3 · occluder triangles (near-clipped, screen space) */
   const oc=[], ofc=[];                               // 9 floats/tri: x,y,iz ×3 · face id
-  const pushOcc=(p0,p1,p2,f)=>{ oc.push(p0[0],p0[1],p0[2], p1[0],p1[1],p1[2], p2[0],p2[1],p2[2]); ofc.push(f); };
+  // ofw: 1 when the occluder IS its whole face, corners in tri[f*3..f*3+2]
+  // order — lets the straddle test (occlude) map a corner back to its mesh
+  // vertex. Near-clipped fan pieces carry 0.
+  const ofw=[];
+  const pushOcc=(p0,p1,p2,f,whole)=>{ oc.push(p0[0],p0[1],p0[2], p1[0],p1[1],p1[2], p2[0],p2[1],p2[2]); ofc.push(f); ofw.push(whole?1:0); };
   for (let f=0; f<nt; f++){
     if (S.watertight && !front[f]) continue;
     const a=tri[f*3], b=tri[f*3+1], c=tri[f*3+2];
     const behind=(ok[a]?0:1)+(ok[b]?0:1)+(ok[c]?0:1);
     if (behind===3) continue;
-    if (behind===0){ pushOcc([sx[a],sy[a],iz[a]],[sx[b],sy[b],iz[b]],[sx[c],sy[c],iz[c]],f); continue; }
+    if (behind===0){ pushOcc([sx[a],sy[a],iz[a]],[sx[b],sy[b],iz[b]],[sx[c],sy[c],iz[c]],f,true); continue; }
     // Sutherland–Hodgman clip against z<=nearZ in view space, then fan
     const P3=[[vx[a],vy[a],vz[a]],[vx[b],vy[b],vz[b]],[vx[c],vy[c],vz[c]]], out=[];
     for (let i=0;i<3;i++){
@@ -462,7 +466,7 @@ function generate(cam, S, shadingBuffer){
     }
     if (out.length<3) continue;
     const pr=out.map(p=>projView(p[0],p[1],p[2]));
-    for (let k=2;k<pr.length;k++) pushOcc(pr[0],pr[k-1],pr[k],f);
+    for (let k=2;k<pr.length;k++) pushOcc(pr[0],pr[k-1],pr[k],f,false);
   }
   const nOcc=ofc.length;
 
@@ -575,6 +579,44 @@ function generate(cam, S, shadingBuffer){
     return w0*az + w1*bz + w2*cz;
   };
 
+  /* The straddle test's one exception (see it in occlude): occluder j lies
+     wholly on one side of the segment's line, touching it along one of its
+     own edges — but that edge is INTERIOR to the occluding surface, and the
+     face across it reaches past the line on the other side. Neither triangle
+     straddles alone; together they do, and the segment runs behind the seam
+     between them rather than along the surface's outline. da/db/dc are the
+     straddle test's own signed px distances of j's corners from the line.
+     Measured before this existed: in the demo scene's top-down perspective
+     view the pedestal's vertical corner edges project exactly onto the top
+     face's triangulation diagonal, and float noise let only ONE of its two
+     triangles reach the veto at all — so it takes one toucher plus a mesh
+     neighbour, not two touchers. Whole (unclipped) occluders only: a clipped
+     fan piece's corners are not mesh vertices. */
+  const { faceAdjStart, faceAdjList } = M;
+  const pairStraddles = (j, f, da, db, dc, x0, y0, dxs, dys, segInvLen, skipA, skipB) => {
+    if (!ofw[j]) return false;
+    const d = [da, db, dc];
+    let k0 = -1, k1 = -1, own = 0;                   // the two corners on the line, the third's distance
+    for (let k=0;k<3;k++){
+      if (Math.abs(d[k]) <= EPS_STRADDLE_PX){ if (k0<0) k0=k; else k1=k; }
+      else own = d[k];
+    }
+    if (k1<0 || own===0) return false;               // not touching along an edge
+    const u=tri[f*3+k0], v=tri[f*3+k1];
+    for (let q=faceAdjStart[f]; q<faceAdjStart[f+1]; q++){
+      const nb = faceAdjList[q];
+      const t0=tri[nb*3], t1=tri[nb*3+1], t2=tri[nb*3+2];
+      if (!((t0===u||t1===u||t2===u) && (t0===v||t1===v||t2===v))) continue;   // not across THIS edge
+      // the neighbour must itself be an occluder (and not the segment's own face)
+      if (!(front[nb] || !S.watertight) || nb===skipA || nb===skipB) return false;
+      const w = (t0!==u && t0!==v) ? t0 : (t1!==u && t1!==v) ? t1 : t2;
+      if (!ok[w]) return false;
+      const dw = (dxs*(sy[w]-y0)-dys*(sx[w]-x0))*segInvLen;
+      return own > 0 ? dw < -EPS_STRADDLE_PX : dw > EPS_STRADDLE_PX;
+    }
+    return false;                                    // boundary edge: the surface's outline
+  };
+
   /* 5 · segment occlusion: returns merged occluded t-intervals over [0,1] */
   const COMP = M.comp;
   const occIv=[];
@@ -635,12 +677,22 @@ function generate(cam, S, shadingBuffer){
              Placed after the clip rather than before it purely for speed: this
              is a veto, so it only has to run on the few candidates the clip
              already accepted, and the clip rejects the overwhelming majority
-             on its first half-plane. */
+             on its first half-plane.
+             Touching IS covering when the touched edge is interior to the
+             occluding surface and the face across it reaches the other side —
+             pairStraddles. Without that exception, any edge projecting exactly
+             onto an interior mesh edge of a nearer surface was never hidden.
+             Ray-cast against the mesh, the rule without it was wrong at every
+             crease sample where the two rules disagree (74,963 over 28 views
+             of the demo, arches, pipe and knot scenes), and the
+             Silhouette-only and Contour-only outputs of those scenes are
+             unchanged by it. */
           const da=(dxs*(ay-y0)-dys*(ax-x0))*segInvLen;
           const db=(dxs*(by-y0)-dys*(bx-x0))*segInvLen;
           const dc=(dxs*(cvy-y0)-dys*(cx-x0))*segInvLen;
           if (!(Math.min(da,db,dc) < -EPS_STRADDLE_PX &&
-                Math.max(da,db,dc) >  EPS_STRADDLE_PX)) continue;
+                Math.max(da,db,dc) >  EPS_STRADDLE_PX) &&
+              !pairStraddles(j, f, da, db, dc, x0, y0, dxs, dys, segInvLen, skipA, skipB)) continue;
           // depth plane of triangle in (x, y, 1/z) space — precomputed
           const A=oA[j], B=oB[j], C=oC[j];
           // Per-occluder slope-scaled bias (see EPS_SLOPE_PX above). The full
