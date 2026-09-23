@@ -676,10 +676,11 @@ order irrelevant, but touches the worker post, `render-result.js`, `chain.js`, `
 0 gap cells in every view (the `--diff` coverage drops are sub-0.5px shifts); segment counts and pen
 travel unchanged; Crease pen lifts cv 847 → 665, ch 1582 → 928. Near-axis views restore only partially
 (`axis+Y` cv 35 → 36 paths): where the dedup merges heavily, a backbone absorbing two chains lands at one
-chain's index. Browser-verified by the user.
+chain's index. `arches.pen`, same sweep: again only `cv`/`ch` (56 pairs) and 0 gap cells, but pen lifts
+are flat (cv 3468 → 3469, ch 4700 → 4698) — the join order changes there, the path count doesn't.
+Both goldens re-captured. Browser-verified by the user.
 
 **Leftovers.** 6.8's restored crease is appended after the 6.2 chains, so it still reaches its own chain
 through the screen-space fallback (1 join on the demo mesh). `mergeCreaseScreenSpace` still pairs
 arbitrarily at junctions; it now handles ~1% of the joins, and straightest-continuation scoring there
-would be its own change. `golden/arches.json` and its `combined-sha256.txt` line need re-capturing where
-`pen_files/arches.pen` exists — only the demo goldens could be updated when this landed.
+would be its own change.
