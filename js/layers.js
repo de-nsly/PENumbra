@@ -43,9 +43,9 @@
    headlessly, and sceneLayers() is the loader for every .pen version.
    ================================================================ */
 
-/* chain — how renderResult joins an edge layer's worker segments into paths:
-   'silhouette' (buildChainedPathD), 'contour' (appendContourPathD, by
-   the worker's run identity), 'crease' (appendCreasePathD).
+/* chain — how renderResult joins an edge layer's worker segments into paths
+   (chain.js): 'silhouette' (silhouettePieces), 'contour' (contourPieces, by
+   the worker's run identity), 'crease' (creasePieces).
    geometry — what a layer's pieces are, which decides which texture
    filters apply: 'paths' (an edge layer's chained polylines, open or
    closed), 'lines' (hatch strokes) or 'arcs' (circle pieces).
@@ -180,10 +180,13 @@ function noteFillIds(list){
 }
 
 /* ================= texture filters =================
-   The schema of every texture effect a fill layer's stack can hold: its
+   The schema of every texture effect a layer's stack can hold: its
    parameters (with the slider ranges and defaults the stack editor uses,
    and the fallback the reader uses for a missing value) and which
-   geometry kinds it applies to. The implementations live with the rest
+   geometry kinds it applies to (LAYER_TYPES[…].geometry). Edge layers
+   ('paths') take trim, overshoot, wobble and gaps; spacing jitter, angle
+   jitter and regular wobble need a hatch family's angle or carrier lines,
+   which edge paths don't have (refactor plan §10.2). The implementations live with the rest
    of the geometry code in hatch-texture.js (TEXTURE_IMPL, run by
    applyTextureStack in stack order), keyed by these same type names. Key
    order here is the canonical order: the stack editor inserts a new entry
@@ -191,10 +194,10 @@ function noteFillIds(list){
    (the old fixed pipeline's order), and it keeps the three line jitters —
    one combined step in applyTextureStack — adjacent. */
 export const TEXTURE_FILTERS = {
-  trim: { name:'Trim / extend', geometry:['lines','arcs'], params:[
+  trim: { name:'Trim / extend', geometry:['lines','arcs','paths'], params:[
     { key:'value', label:'Value', min:-10, max:10, step:0.1, def:0, unit:'mm' },
   ]},
-  overshoot: { name:'Overshoot / undershoot', geometry:['lines','arcs'], params:[
+  overshoot: { name:'Overshoot / undershoot', geometry:['lines','arcs','paths'], params:[
     { key:'min', label:'Min', min:-10, max:10, step:0.1, def:-2, unit:'mm' },
     { key:'max', label:'Max', min:-10, max:10, step:0.1, def:1,  unit:'mm' },
   ]},
@@ -206,7 +209,7 @@ export const TEXTURE_FILTERS = {
     { key:'min', label:'Min', min:0, max:10, step:0.1, def:0,   unit:'°' },
     { key:'max', label:'Max', min:0, max:10, step:0.1, def:0.5, unit:'°' },
   ]},
-  wobble: { name:'Wobble', geometry:['lines','arcs'], params:[
+  wobble: { name:'Wobble', geometry:['lines','arcs','paths'], params:[
     { key:'shared',    label:'Same noise field per layer', kind:'checkbox', def:false },
     { key:'spacing',   label:'Spacing',    min:0.1, max:10, step:0.1, def:1,   unit:'mm' },
     { key:'amp',       label:'Amplitude',  min:0,   max:10, step:0.1, def:0.5, unit:'mm' },
@@ -217,7 +220,7 @@ export const TEXTURE_FILTERS = {
     { key:'amp',        label:'Amplitude',  min:0,   max:10, step:0.1, def:0.5, unit:'mm' },
     { key:'wavelength', label:'Wavelength', min:0.5, max:50, step:0.5, def:5,   unit:'mm' },
   ]},
-  gaps: { name:'Gaps', geometry:['lines','arcs'], params:[
+  gaps: { name:'Gaps', geometry:['lines','arcs','paths'], params:[
     { key:'spacing', label:'Avg. spacing', min:1,   max:100, step:0.5, def:30, unit:'mm' },
     { key:'max',     label:'Max gap',      min:0.1, max:10,  step:0.1, def:2,  unit:'mm' },
   ]},

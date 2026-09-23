@@ -454,6 +454,178 @@ function applyCircleGaps(pieces, minLenPx, maxGapPx){
   }
   return out;
 }
+/* ================= edge paths =================
+   The edge layers' versions (rep 'paths'): each path is {pts, closed},
+   pts = [[x,y],…] in chain.js's shape, the first point never repeated
+   when closed. Unlike a hatch segment an edge path is long and connected
+   and shares its endpoints with other paths (junctions, visibility
+   changes), which is what shapes every choice below. */
+// Cumulative arc length at each point.
+function pathCum(pts){
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++)
+    cum.push(cum[i-1] + Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]));
+  return cum;
+}
+// The point at arc length s on segment i-1 → i.
+function pathPointAt(pts, cum, i, s){
+  const len = cum[i] - cum[i-1];
+  const t = len > 1e-12 ? (s - cum[i-1]) / len : 0;
+  return [pts[i-1][0] + (pts[i][0]-pts[i-1][0])*t, pts[i-1][1] + (pts[i][1]-pts[i-1][1])*t];
+}
+// The stretch of an open polyline between arc lengths s0 < s1: an
+// interpolated point at each end, the original vertices in between.
+function slicePath(pts, cum, s0, s1){
+  const n = pts.length;
+  let i = 1;
+  while (i < n-1 && cum[i] <= s0) i++;
+  const out = [pathPointAt(pts, cum, i, s0)];
+  for (; i < n-1 && cum[i] < s1; i++) out.push(pts[i]);
+  out.push(pathPointAt(pts, cum, i, s1));
+  return out;
+}
+// Unit direction pointing OUT of the path at its first point: away from the
+// first later vertex that isn't (almost) on top of it. null if there is none.
+function outwardDir(pts){
+  for (let j = 1; j < pts.length; j++){
+    const dx = pts[0][0]-pts[j][0], dy = pts[0][1]-pts[j][1], len = Math.hypot(dx, dy);
+    if (len > 1e-6) return [dx/len, dy/len];
+  }
+  return null;
+}
+/* Moves an open path's two ends along the path: a0 at the start, a1 at the
+   end, positive extends straight out along the end segment, negative cuts
+   that much arc length off. null when the cuts meet (nothing left) — the
+   same rule a hatch segment's trim has. */
+function adjustPathEnds(pts, a0, a1){
+  const cum = pathCum(pts);
+  const total = cum[cum.length-1];
+  const s0 = Math.max(0, -a0), s1 = total - Math.max(0, -a1);
+  if (s1 - s0 <= 1e-6) return null;
+  const work = (s0 > 0 || s1 < total) ? slicePath(pts, cum, s0, s1) : pts.slice();
+  if (a0 > 0){
+    const u = outwardDir(work);
+    if (u) work.unshift([work[0][0] + u[0]*a0, work[0][1] + u[1]*a0]);
+  }
+  if (a1 > 0){
+    const rev = work.slice().reverse();
+    const u = outwardDir(rev);
+    if (u) work.push([rev[0][0] + u[0]*a1, rev[0][1] + u[1]*a1]);
+  }
+  return work;
+}
+// Constant trim/extend of both ends of every open path. A closed path has no
+// ends and passes through, as an intact circle does.
+function applyPathTrimExtend(paths, trimPx){
+  if (trimPx === 0) return paths;
+  const out = [];
+  for (const p of paths){
+    if (p.closed || p.pts.length < 2){ out.push(p); continue; }
+    const pts = adjustPathEnds(p.pts, trimPx, trimPx);
+    if (pts) out.push({ pts, closed: false });
+  }
+  return out;
+}
+// Each end of every open path drawn independently from [oMin, oMax];
+// undershoot capped at 30% of the path's length so both ends can't
+// consume a short path. Closed paths pass through.
+function applyPathOvershootUndershoot(paths, oMin, oMax){
+  if (oMin === 0 && oMax === 0) return paths;
+  const out = [];
+  for (const p of paths){
+    if (p.closed || p.pts.length < 2){ out.push(p); continue; }
+    const cum = pathCum(p.pts);
+    const maxUndershoot = 0.3 * cum[cum.length-1];
+    let m0 = oMin + Math.random()*(oMax-oMin);
+    let m1 = oMin + Math.random()*(oMax-oMin);
+    if (m0 < -maxUndershoot) m0 = -maxUndershoot;
+    if (m1 < -maxUndershoot) m1 = -maxUndershoot;
+    const pts = adjustPathEnds(p.pts, m0, m1);
+    if (pts) out.push({ pts, closed: false });
+  }
+  return out;
+}
+/* Wobble as a displacement FIELD: every point moves by a 2D offset read from
+   two noise fields (x and y) at its own position, scaled to ±amp/2 per axis,
+   times the variation envelope from a third. The offset depends only on
+   where the point is, so two paths sharing a point in one field move it
+   identically — a closed path stays closed and, with the field shared,
+   every junction in the layer stays joined. With the two axes independent
+   and equally scaled, the part of the offset across any line has the same
+   spread as the hatch wobble's sideways push, so `amp` means the same on
+   both. Every original vertex is kept (corners stay sharp) and each segment
+   is subdivided at the hatch wobble's rule, round(len/spacing).
+   Seeds: `shared` → one set for the whole layer, drawn once per render;
+   otherwise a set per path, so every path wobbles on its own. */
+function wobbleSeeds(){
+  const s = [];
+  for (let i = 0; i < 6; i++) s.push(Math.random()*10000);
+  return s;
+}
+function applyPathWobble(paths, entry, mmToPx){
+  const spacingPx = (+entry.spacing || 1) * mmToPx;
+  const ampPx = (+entry.amp || 0) * mmToPx;
+  const variation = +entry.variation || 0;
+  const envScalePx = (+entry.varScale || 10) * mmToPx;
+  if (ampPx <= 0 || spacingPx <= 0) return paths;
+  const freq = 1 / Math.max(1e-6, spacingPx*3);
+  const envFreq = 1 / Math.max(1e-6, envScalePx);
+  const shared = entry.shared ? wobbleSeeds() : null;
+  const out = [];
+  for (const p of paths){
+    const s = shared || wobbleSeeds();
+    const move = (x, y) => {
+      let k = ampPx;
+      if (variation > 0) k *= 1 - variation*(1 - hatchNoise2D(x*envFreq + s[4], y*envFreq + s[5]));
+      return [x + (hatchNoise2D(x*freq + s[0], y*freq + s[1]) - 0.5)*k,
+              y + (hatchNoise2D(x*freq + s[2], y*freq + s[3]) - 0.5)*k];
+    };
+    const pts = p.pts, n = pts.length;
+    const nSegs = p.closed ? n : n - 1;
+    const res = [];
+    for (let i = 0; i < nSegs; i++){
+      const a = pts[i], b = pts[(i+1) % n];
+      const nSub = Math.max(1, Math.round(Math.hypot(b[0]-a[0], b[1]-a[1]) / spacingPx));
+      for (let k = 0; k < nSub; k++){
+        const t = k / nSub;
+        res.push(move(a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t));
+      }
+    }
+    if (!p.closed) res.push(move(pts[n-1][0], pts[n-1][1]));
+    out.push({ pts: res, closed: p.closed });
+  }
+  return out;
+}
+/* Poisson gaps along each path (generateGapIntervals, as for hatch and
+   circles). A closed path is measured round its closing segment too. A
+   path that gets no gap is left as it was, closed or not. A closed path
+   that does is cut into open strokes, and the stroke that runs to the
+   end of the loop is joined to the one that starts it: there is no gap
+   at the seam, which is only where the file happened to start the loop. */
+function applyPathGaps(paths, minLenPx, maxGapPx){
+  if (maxGapPx <= 0 || minLenPx <= 0) return paths;
+  const out = [];
+  for (const p of paths){
+    const pts = p.closed ? p.pts.concat([p.pts[0]]) : p.pts;
+    if (pts.length < 2){ out.push(p); continue; }
+    const cum = pathCum(pts);
+    const total = cum[cum.length-1];
+    const gaps = generateGapIntervals(total, minLenPx, maxGapPx);
+    if (!gaps){ out.push(p); continue; }
+    const ons = [];
+    let onStart = 0;
+    for (const [gs, ge] of gaps){
+      if (gs > onStart + 1e-6) ons.push([onStart, gs]);
+      onStart = ge;
+    }
+    if (onStart < total - 1e-6) ons.push([onStart, total]);
+    const strokes = ons.map(([a, b]) => slicePath(pts, cum, a, b));
+    if (p.closed && strokes.length >= 2 && ons[0][0] === 0 && ons[ons.length-1][1] === total)
+      strokes.splice(0, 1, strokes.pop().concat(strokes[0].slice(1)));
+    for (const s of strokes) out.push({ pts: s, closed: false });
+  }
+  return out;
+}
 // Standard circular-arc-to-cubic-Bezier conversion: splits the u0..u1
 // span into sub-arcs of at most 90 degrees each (the well-known accuracy
 // limit for this formula — verified numerically at ~0.027% max radial
@@ -527,10 +699,12 @@ const TEXTURE_IMPL = {
       return { rep: 'segments', segs: r.segs, carrier: r.carrierIdx };
     },
     arcs: (st, f, ctx) => ({ rep: 'arcs', pieces: applyCircleTrimExtend(st.pieces, (+f.value || 0) * ctx.mmToPx) }),
+    paths: (st, f, ctx) => ({ rep: 'paths', paths: applyPathTrimExtend(st.paths, (+f.value || 0) * ctx.mmToPx) }),
   },
   overshoot: {
     segments: lineJitter,
     arcs: (st, f, ctx) => ({ rep: 'arcs', pieces: applyCircleOvershootUndershoot(st.pieces, (+f.min || 0) * ctx.mmToPx, (+f.max || 0) * ctx.mmToPx) }),
+    paths: (st, f, ctx) => ({ rep: 'paths', paths: applyPathOvershootUndershoot(st.paths, (+f.min || 0) * ctx.mmToPx, (+f.max || 0) * ctx.mmToPx) }),
   },
   spacingJitter: {
     segments: lineJitter,
@@ -550,6 +724,8 @@ const TEXTURE_IMPL = {
       return { rep: 'polylines', closed: null,
         polylines: applyCircleWobble(st.pieces, wb.spacingPx, wb.ampPx, wb.sharedSeed, wb.variationAmount, wb.envScalePx, wb.sharedEnvSeed) };
     },
+    // Edge paths stay paths: the displacement field keeps closed ones closed.
+    paths: (st, f, ctx) => ({ rep: 'paths', paths: applyPathWobble(st.paths, f, ctx.mmToPx) }),
   },
   regularWobble: {
     polylines: (st, f, ctx) => ({ rep: 'polylines', closed: st.closed,
@@ -559,6 +735,10 @@ const TEXTURE_IMPL = {
     arcs: (st, f, ctx) => {
       const gp = readGapParams(f, ctx.mmToPx);
       return { rep: 'arcs', pieces: applyCircleGaps(st.pieces, gp.minLenPx, gp.maxGapPx) };
+    },
+    paths: (st, f, ctx) => {
+      const gp = readGapParams(f, ctx.mmToPx);
+      return { rep: 'paths', paths: applyPathGaps(st.paths, gp.minLenPx, gp.maxGapPx) };
     },
     polylines: (st, f, ctx) => {
       const gp = readGapParams(f, ctx.mmToPx);
