@@ -59,8 +59,9 @@
    Soft shadows disables, dimmed in the row like the shadow controls.
    thrFallback — only the loaders use it: the threshold an old scene's
    global slider stood for when it held no number.
-   fullName — the name out of context (layerFullName), for a type whose
-   `name` only reads under its parent row ("· hidden").
+   listName — the name in the Texture tab's layer list (layerListName),
+   for a type whose `name` only reads under its parent row ("· hidden")
+   or is too long for that list's half-width column.
 
    THE LAYER KEYS ARE PERSISTED and several of them no longer read like
    what they draw. They are written into every `.pen` file (the layer
@@ -79,12 +80,12 @@
                within a session) */
 export const LAYER_TYPES = {
   so: { kind:'edge', name:'Silhouette',            chain:'silhouette', geometry:'paths', host:'edgeRowsSil' },
-  iv: { kind:'edge', name:'Silhouette individual', chain:'silhouette', geometry:'paths', host:'edgeRowsSil' },
-  ih: { kind:'edge', name:'· hidden',              chain:'silhouette', geometry:'paths', host:'edgeRowsSil', fullName:'Silhouette individual hidden' },
+  iv: { kind:'edge', name:'Silhouette individual', chain:'silhouette', geometry:'paths', host:'edgeRowsSil', listName:'Silhouette ind.' },
+  ih: { kind:'edge', name:'· hidden',              chain:'silhouette', geometry:'paths', host:'edgeRowsSil', listName:'Silhouette ind. hidden' },
   sv: { kind:'edge', name:'Contour',               chain:'contour',    geometry:'paths', host:'edgeRowsContour' },
-  sh: { kind:'edge', name:'· hidden',              chain:'contour',    geometry:'paths', host:'edgeRowsContour', fullName:'Contour hidden' },
+  sh: { kind:'edge', name:'· hidden',              chain:'contour',    geometry:'paths', host:'edgeRowsContour', listName:'Contour hidden' },
   cv: { kind:'edge', name:'Crease',                chain:'crease',     geometry:'paths', host:'edgeRowsCrease' },
-  ch: { kind:'edge', name:'· hidden',              chain:'crease',     geometry:'paths', host:'edgeRowsCrease', fullName:'Crease hidden' },
+  ch: { kind:'edge', name:'· hidden',              chain:'crease',     geometry:'paths', host:'edgeRowsCrease', listName:'Crease hidden' },
   hatch: { kind:'fill', name:'Hatch', geometry:'lines', host:'fillRows', pen:'p5', settings:[
     // A full turn, not the half a line family repeats over: the carrier
     // lines of 217° and of 37° are the same direction but anchored from
@@ -163,10 +164,11 @@ export function layerName(L){
   const sameType = layers.filter(e => e.type === L.type);
   return T.name + ' ' + (sameType.indexOf(L) + 1);
 }
-// The name where the Lines tab's grouping isn't there to explain it (the
-// Texture tab's layer list): "Contour hidden", not "· hidden".
-export function layerFullName(L){
-  return layerType(L).fullName || layerName(L);
+// The name in the Texture tab's layer list, where the Lines tab's grouping
+// isn't there to explain "· hidden" and a half-width column has no room for
+// "individual": "Contour hidden", "Silhouette ind.".
+export function layerListName(L){
+  return layerType(L).listName || layerName(L);
 }
 /* Ids for layers added in this session: f1, f2, … The counter only ever
    climbs, and never reuses an id even after a delete or a scene import —

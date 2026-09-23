@@ -467,6 +467,7 @@ export function buildLayerRows(){
       // group draws nothing (panel-controls.js).
       syncLineLayerUI();
       updateTextureGizmo();   // the Circles centre gizmo follows its layer's checkbox
+      renderTextureStack();   // the Texture tab lists only enabled layers
     });
     if (isFill){
       // The settings panel goes to the shared host below the whole list, not

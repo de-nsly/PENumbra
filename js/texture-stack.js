@@ -3,9 +3,10 @@
    Edits one layer's texture stack (layers.js: the instance's `texture`
    array, entries typed by TEXTURE_FILTERS): pick a layer from the button
    list, add a filter from the types its geometry supports, edit each
-   entry's parameters, remove an entry. Every layer is offered, edge and
-   fill alike (textureLayers()); the Filter menu offers what that layer's
-   geometry supports (refactor plan §10).
+   entry's parameters, remove an entry. Every enabled layer is offered,
+   edge and fill alike, in two columns (textureLayers(), buildLayerList);
+   the Filter menu offers what that layer's geometry supports (refactor
+   plan §10).
    The layer being edited follows the Lines tab's selection, one way: a
    fill row selected there is pushed here (setTextureLayer, called by
    layer-rows.js), but picking a layer here never selects anything there.
@@ -22,7 +23,7 @@
    differ stay different until one of them is edited.
    ================================================================ */
 import { $ } from './main.js';
-import { TEXTURE_FILTERS, filterSupports, layerFullName, layerType, layers, newFilter, stackEntry } from './layers.js';
+import { TEXTURE_FILTERS, filterSupports, layerListName, layerType, layers, newFilter, stackEntry } from './layers.js';
 import { formatValue } from './settings.js';
 import { makeSliderValueEditable, markStale } from './panel-controls.js';
 
@@ -31,14 +32,17 @@ let selectedLayerId = null;
 // the caller re-renders (layer-rows.js does, straight after).
 export function setTextureLayer(id){ selectedLayerId = id; }
 
-/* Which layers can carry a texture stack: all of them, in layer order.
-   renderResult applies every layer's stack (applyTextureStack). Edge rows
-   in the Lines tab can't be selected, so this list is how an edge layer
-   is picked (the user's choice, refactor plan §10.4). */
-function textureLayers(){ return layers; }
-// Group headings for the layer list, named after the Lines tab's own
-// sections. Only shown once the list holds more than one kind.
-const KIND_LABELS = { edge: 'Lines', fill: 'Fill layers' };
+/* Which layers the list offers: the enabled ones, in layer order — a layer
+   switched off draws nothing, so there is nothing to texture. Every layer
+   can hold a stack (renderResult applies each one's), and a switched-off
+   layer keeps its own, which sync still reaches (setParam walks every
+   layer). Edge rows in the Lines tab can't be selected, so this list is
+   how an edge layer is picked (the user's choice, refactor plan §10.4).
+   The list is re-rendered when a layer's checkbox changes (layer-rows.js). */
+function textureLayers(){ return layers.filter(L => L.on); }
+// The list's two columns, left to right, headed like the Lines tab's own
+// sections.
+const KIND_COLUMNS = [['edge', 'Lines'], ['fill', 'Fill layers']];
 
 function syncOn(){ return $('texSyncParams').checked; }
 // Writes one parameter of one stack entry — and, with sync on, the same
@@ -65,38 +69,39 @@ function filterToAdd(L, type){
   return newFilter(type);
 }
 
+// The layer being edited: the picked one while it is enabled, else the first
+// enabled layer. The pick itself is kept, so switching a layer off and on
+// again comes back to it.
 function selectedLayer(){
   const candidates = textureLayers();
-  const L = candidates.find(C => C.id === selectedLayerId);
-  if (L) return L;
-  const first = candidates[0] || null;
-  selectedLayerId = first ? first.id : null;
-  return first;
+  return candidates.find(C => C.id === selectedLayerId) || candidates[0] || null;
 }
 
-/* One block button per layer, in layer order, grouped by kind — so edge
-   layers land above the fill layers exactly as they do in the Lines tab,
-   each under its full name (layerFullName: "Contour hidden", since the
-   Lines tab's grouping isn't here to explain "· hidden"). Each shows how
-   many filters its stack holds on the right, or nothing when the stack is
-   empty; every add/remove re-renders the list, so the count is never
-   stale. A click picks that layer; clicking the one
-   already picked does nothing, since this tab always edits some layer. */
+/* Two columns, Lines on the left and Fill layers on the right, each
+   always shown with its heading (a hint when none of its layers is
+   enabled). One block button per enabled layer, in layer order, under its
+   list name (layerListName: "Contour hidden", "Silhouette ind."). Each
+   shows how many filters its stack holds on the right, or nothing when the
+   stack is empty; every add/remove re-renders the list, so the count is
+   never stale. A click picks that layer; clicking the one already picked
+   does nothing, since this tab always edits some layer. */
 function buildLayerList(current){
   const list = $('texLayerList');
   list.replaceChildren();
-  const groups = new Map();
-  for (const L of textureLayers()){
-    const kind = layerType(L).kind;
-    if (!groups.has(kind)) groups.set(kind, []);
-    groups.get(kind).push(L);
-  }
-  for (const [kind, members] of groups){
-    if (groups.size > 1){
-      const head = document.createElement('div');
-      head.className = 'vpLabel';
-      head.textContent = KIND_LABELS[kind];
-      list.appendChild(head);
+  const enabled = textureLayers();
+  for (const [kind, heading] of KIND_COLUMNS){
+    const column = document.createElement('div');
+    const head = document.createElement('div');
+    head.className = 'vpLabel';
+    head.textContent = heading;
+    column.appendChild(head);
+    list.appendChild(column);
+    const members = enabled.filter(L => layerType(L).kind === kind);
+    if (!members.length){
+      const hint = document.createElement('p');
+      hint.className = 'hint';
+      hint.textContent = 'None enabled';
+      column.appendChild(hint);
     }
     for (const L of members){
       const picked = L === current;
@@ -106,7 +111,7 @@ function buildLayerList(current){
       btn.setAttribute('aria-pressed', String(picked));
       const name = document.createElement('span');
       name.className = 'texLayerName';
-      name.textContent = layerFullName(L);
+      name.textContent = layerListName(L);
       btn.appendChild(name);
       const n = L.texture.length;
       if (n){
@@ -117,14 +122,14 @@ function buildLayerList(current){
         count.title = filters + ' applied';
         btn.appendChild(count);
         // Read as "Hatch 1, 2 filters", not the bare "Hatch 1 2".
-        btn.setAttribute('aria-label', layerFullName(L) + ', ' + filters);
+        btn.setAttribute('aria-label', layerListName(L) + ', ' + filters);
       }
       btn.addEventListener('click', () => {
         if (picked) return;
         selectedLayerId = L.id;
         renderTextureStack();
       });
-      list.appendChild(btn);
+      column.appendChild(btn);
     }
   }
 }

@@ -697,8 +697,14 @@ empty stacks → trim/overshoot/wobble/gaps → Break at corners → Texture tab
   and the render comparison proved it. The wrappers stay for `tools/harness`.
 - Filter params may carry `decimals` for the editor's value label (default 1); Break at corners' Angle
   uses 0.
-- The Texture tab now opens on Silhouette (the first layer) until a fill row is selected in the Lines
-  tab, which still pushes its selection there.
+- The Texture tab opens on the first enabled layer until a fill row is selected in the Lines tab, which
+  still pushes its selection there.
+- Follow-up UI changes (the user's): the list shows only **enabled** layers, re-rendered on every layer
+  checkbox; a picked layer that gets switched off falls back to the first enabled one and is picked
+  again when it comes back. It is laid out in two `.vpGrid2` columns, Lines | Fill layers, each always
+  headed (a "None enabled" hint when empty). The spec's `fullName`/`layerFullName` became
+  `listName`/`layerListName`, since the list also shortens "Silhouette individual" to "Silhouette
+  ind." (and "Silhouette ind. hidden") to fit a half-width column; the Lines tab keeps the long name.
 - A gap the Poisson walk clamps at a closed path's end ends exactly at its seam, so a stroke may start
   there; the join rule only merges the two strokes when no gap touches the seam.
 - **Verified:** `verify-golden` identical at every commit; a `renderResult` comparison (the real

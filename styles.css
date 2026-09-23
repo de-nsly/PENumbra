@@ -595,6 +595,9 @@ body.dragging #paperTabs{display:none}
   text-transform:uppercase;margin:8px 0 4px}
 .vpGrid{display:grid;gap:4px}
 .vpGrid4{grid-template-columns:repeat(4,1fr)}
+/* two columns whose content may truncate (minmax(0,…) lets a column shrink
+   below its longest no-wrap text): the Texture tab's layer list */
+.vpGrid2{grid-template-columns:repeat(2,minmax(0,1fr))}
 /* compact button — the one deliberate exception to --fs-btn: a 4-up micro-grid
    (NW/NE/SW/SE) that would overflow at button size, so it uses --fs-data. */
 .vpBtn{background:var(--panel2);border:1px solid var(--line);border-radius:50cqh;color:var(--text);
@@ -644,8 +647,9 @@ input[type=number]{width:58px}
   -webkit-appearance:none;margin:0}
 .dashField span{font-size:var(--fs-caps);color:var(--muted);text-transform:uppercase;letter-spacing:var(--ls-caps)}
 
-/* Texture section (texture tab) — a list of layer buttons (.texLayerBtn,
-   one click picks the layer being edited), then the Filter picker, then
+/* Texture section (texture tab) — the enabled layers as buttons in two
+   .vpGrid2 columns, Lines | Fill layers (.texLayerBtn, one click picks the
+   layer being edited), then the Filter picker, then
    that layer's stack. The picker sits between the two so "add a filter"
    stays in one fixed place however many are already applied. Each filter
    in the stack is a .textureGroup: a .dashGroupLabel header, then its
