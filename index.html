@@ -306,6 +306,8 @@
           <!-- Per-layer texture stack (texture-stack.js): pick a layer from the
                button list, add filters from TEXTURE_FILTERS (layers.js), edit
                each one's parameters. -->
+          <label class="chk" title="Editing a filter setting on one layer sets the same setting on every layer that has that filter. Values already different stay different until one is edited.">
+            <input type="checkbox" id="texSyncParams"> Sync filter settings across layers</label>
           <div id="texLayerList" role="group" aria-label="Layer whose texture is edited"></div>
           <div class="ctl">
             <label for="texAddFilter">Filter</label>

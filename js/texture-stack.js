@@ -13,9 +13,16 @@
    did; renderResult (render-result.js) applies the stacks when the result comes
    back. Rebuilt wholesale (renderTextureStack) after a scene import
    replaces the layer list.
+   Sync (#texSyncParams, a saved scene setting): while it is on, editing
+   one parameter writes the same value into that parameter of every
+   layer's entry of the same filter type (setParam), and a newly added
+   filter copies an existing entry of its type instead of the defaults.
+   Only values sync, never which filters a stack holds, and only on edit:
+   turning sync on changes nothing by itself, so values that already
+   differ stay different until one of them is edited.
    ================================================================ */
 import { $ } from './main.js';
-import { TEXTURE_FILTERS, fillLayers, filterSupports, layerName, layerType, newFilter } from './layers.js';
+import { TEXTURE_FILTERS, fillLayers, filterSupports, layerName, layerType, layers, newFilter, stackEntry } from './layers.js';
 import { formatValue } from './settings.js';
 import { makeSliderValueEditable, markStale } from './panel-controls.js';
 
@@ -33,6 +40,32 @@ function textureLayers(){ return fillLayers(); }
 // Group headings for the layer list, named after the Lines tab's own
 // sections. Only shown once the list holds more than one kind.
 const KIND_LABELS = { edge: 'Lines', fill: 'Fill layers' };
+
+function syncOn(){ return $('texSyncParams').checked; }
+// Writes one parameter of one stack entry — and, with sync on, the same
+// parameter of every other layer's entry of that filter type. Walks every
+// layer rather than textureLayers(): a stack only ever holds entries its
+// layer was offered, so no layer outside the editor is touched.
+function setParam(entry, key, value){
+  entry[key] = value;
+  if (!syncOn()) return;
+  for (const O of layers){
+    const other = stackEntry(O.texture, entry.type);
+    if (other) other[key] = value;
+  }
+}
+// A new entry of one type for L's stack: with sync on, a copy of the first
+// entry of that type on another layer (layer order), so it starts in step;
+// otherwise, or when no layer has one, the schema defaults.
+function filterToAdd(L, type){
+  if (syncOn()){
+    for (const O of layers){
+      const src = O !== L && stackEntry(O.texture, type);
+      if (src) return { ...src };
+    }
+  }
+  return newFilter(type);
+}
 
 function selectedLayer(){
   const candidates = textureLayers();
@@ -129,7 +162,7 @@ function buildEntry(L, entry, index){
       const chk = document.createElement('input');
       chk.type = 'checkbox';
       chk.checked = !!entry[p.key];
-      chk.addEventListener('change', () => { entry[p.key] = chk.checked; markStale(); });
+      chk.addEventListener('change', () => { setParam(entry, p.key, chk.checked); markStale(); });
       label.appendChild(chk);
       label.appendChild(document.createTextNode(' ' + p.label));
       fields.appendChild(label);
@@ -148,7 +181,7 @@ function buildEntry(L, entry, index){
     val.className = 'val';
     const refresh = () => { val.textContent = formatValue({ unit: p.unit, decimals: 1 }, range.value); };
     refresh();
-    range.addEventListener('input', () => { entry[p.key] = +range.value; refresh(); markStale(); });
+    range.addEventListener('input', () => { setParam(entry, p.key, +range.value); refresh(); markStale(); });
     makeSliderValueEditable(range, val, { unit: p.unit }, refresh);
     ctl.append(label, range, val);
     fields.appendChild(ctl);
@@ -196,7 +229,7 @@ export function initTextureStack(){
     // jitters, which run as one combined step, adjacent.
     const order = Object.keys(TEXTURE_FILTERS);
     const at = L.texture.findIndex(f => order.indexOf(f.type) > order.indexOf(type));
-    L.texture.splice(at < 0 ? L.texture.length : at, 0, newFilter(type));
+    L.texture.splice(at < 0 ? L.texture.length : at, 0, filterToAdd(L, type));
     renderTextureStack();
     markStale();
   });

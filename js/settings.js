@@ -103,6 +103,9 @@ export const SETTINGS = [
   range('groundOff', { unit:'%', onRestore: syncGroundCatcher }),
   chk('smoothShading', { onRestore: [applySmoothShadingToggle, syncSmoothAngleVisibility] }),
   range('smoothAngleDeg', { unit:'°', onRestore: applySmoothAngleChange }),
+  /* ---- texture (not solve-affecting: only changes how the stack editor
+     writes an edit — texture-stack.js) ---- */
+  { id:'texSyncParams', kind:'checkbox' },
   /* ---- page (not solve-affecting: their own listeners re-lay-out the page) ---- */
   { id:'paperSize', kind:'select',   onRestore: syncMarginMode },
   { id:'orient',    kind:'select',   onRestore: syncMarginMode },
