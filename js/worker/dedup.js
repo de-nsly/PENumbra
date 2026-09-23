@@ -318,7 +318,19 @@ const exactDupPairKey = (x0,y0,x1,y1) => {
   return ka<kb ? ka+'|'+kb : kb+'|'+ka;
 };
 
-export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
+/* keepOrder: return the surviving pieces in the INPUT's own segment order,
+   each in its input segment's own direction. The clustering below regroups
+   segments by angle bucket and sweeps each cluster in canonical +t order, so
+   by default the output order is unrelated to the input's. Crease (cv/ch)
+   needs this: the worker pushes it in chain-walk order and the main thread's
+   mergeAdjacentTouching (js/chain.js) joins it by array adjacency alone —
+   measured on the demo mesh, the regrouping left 6–17% of chain neighbours
+   array-adjacent, and mergeCreaseScreenSpace's arbitrary junction pairing
+   ended up doing nearly all the joining. The ink itself is identical either
+   way; only its order differs. so/iv/ih leave it off: chainSegments picks
+   its chain start points in array order, so reordering them would move their
+   output for no gain. */
+export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL, keepOrder=false){
   const n0 = arr.length/4;
   if (n0 < 2) return arr;
   // Exact-duplicate fast path — see EXACT_DUP_EPS above. Collapses literal
@@ -337,20 +349,24 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
     seen.set(key, i);
     keepIdx.push(i);
   }
+  let srcOf = i => i;                       // index into `arr` -> index into the caller's input
   if (keepIdx.length < n0){
     const reduced = [];
     for (const i of keepIdx) reduced.push(arr[i*4],arr[i*4+1],arr[i*4+2],arr[i*4+3]);
     arr = reduced;
+    srcOf = i => keepIdx[i];
   }
   const n = arr.length/4;
   if (n < 2) return arr;
   const { clusters } = clusterCollinear(arr, offTol, gapTol);
   const out = [];
+  const pieceSrc = [];                      // keepOrder only: input index each emitted piece sorts by
+  const emit = (src, ax,ay,bx,by) => { out.push(ax,ay,bx,by); if (keepOrder) pieceSrc.push(src); };
   for (const L of clusters){
     if (L.idxs.length < 2){
       const i = L.idxs[0];
       const x0=arr[i*4],y0=arr[i*4+1],x1=arr[i*4+2],y1=arr[i*4+3];
-      if (Math.hypot(x1-x0,y1-y0) > MIN_SEG) out.push(x0,y0,x1,y1);
+      if (Math.hypot(x1-x0,y1-y0) > MIN_SEG) emit(srcOf(i), x0,y0,x1,y1);
       continue;
     }
     // union along the line direction (tx,ty) = (-ny,nx)
@@ -367,9 +383,20 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
       // input segment's direction exactly, never a drifted stand-in.
       const lo = t0r<=t1r ? {t:t0r,x:x0,y:y0} : {t:t1r,x:x1,y:y1};
       const hi = t0r<=t1r ? {t:t1r,x:x1,y:y1} : {t:t0r,x:x0,y:y0};
-      spans.push([lo,hi]);
+      // src/plus: the input segment's index, and whether it runs along +t
+      spans.push([lo,hi,{ src: srcOf(i), plus: t0r<=t1r }]);
     }
     spans.sort((a,b)=>a[0].t-b[0].t);
+    /* A backbone can absorb several input segments, so for keepOrder it is
+       placed at its LOWEST contributing input index (the same "lowest
+       contributing id" rule mergeContourRunSplits uses) and drawn in that
+       contributor's direction — this sweep always emits in +t order. */
+    let bMeta = spans[0][2];
+    const flush = (bs, be) => {
+      if (be.t - bs.t <= MIN_SEG) return;
+      if (keepOrder && !bMeta.plus) emit(bMeta.src, be.x, be.y, bs.x, bs.y);
+      else emit(bMeta.src, bs.x, bs.y, be.x, be.y);
+    };
     /* Sweep left-to-right maintaining one "backbone" run — either a single
        original span untouched, a TRIMMED remainder of one original span
        (cut only against that span's own two endpoints), or a bridge of
@@ -394,27 +421,34 @@ export function dedupCollinear(arr, offTol=DEDUP_OFF_TOL, gapTol=DEDUP_GAP_TOL){
        stitched together using whichever endpoint happened to be extremal. */
     let bs = spans[0][0], be = spans[0][1];
     for (let k=1; k<spans.length; k++){
-      const ns = spans[k][0], ne = spans[k][1];
+      const ns = spans[k][0], ne = spans[k][1], nm = spans[k][2];
       if (ne.t <= be.t){
         continue;                                  // fully redundant — drop
       }
       if (ns.t <= be.t){
         // overlaps and extends further: keep backbone whole, trim next's
         // own head at t=be.t using ONLY next's two endpoints
-        if (be.t - bs.t > MIN_SEG) out.push(bs.x, bs.y, be.x, be.y);
+        flush(bs, be);
         const frac = (be.t - ns.t) / Math.max(1e-9, ne.t - ns.t);
         bs = { t: be.t, x: ns.x + (ne.x-ns.x)*frac, y: ns.y + (ne.y-ns.y)*frac };
         be = ne;
+        bMeta = nm;
       } else if (ns.t <= be.t + gapTol){
         be = ne;                                    // real gap, but bridgeable
+        if (nm.src < bMeta.src) bMeta = nm;
       } else {
-        if (be.t - bs.t > MIN_SEG) out.push(bs.x, bs.y, be.x, be.y);
+        flush(bs, be);
         bs = ns; be = ne;
+        bMeta = nm;
       }
     }
-    if (be.t - bs.t > MIN_SEG) out.push(bs.x, bs.y, be.x, be.y);
+    flush(bs, be);
   }
-  return out;
+  if (!keepOrder) return out;
+  const order = pieceSrc.map((s,i) => [s,i]).sort((a,b) => a[0]-b[0] || a[1]-b[1]);
+  const ordered = [];
+  for (const [,i] of order) ordered.push(out[i*4], out[i*4+1], out[i*4+2], out[i*4+3]);
+  return ordered;
 }
 
 /* Remove, from `loArr`, any portion that lies on the same infinite line AND

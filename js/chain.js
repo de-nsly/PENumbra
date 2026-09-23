@@ -681,9 +681,15 @@ export function buildChainedPathD(segs, stats, silMergeOpts){
    whichever OTHER candidate happens to sit at the same point first. This
    merge is deliberately LOCAL: it only ever looks at the immediately
    preceding array entry, so it can never produce a wrong connection —
-   only, rarely (where cross-layer subtraction happened to reorder
-   something), miss a merge it could have made, falling back to one
-   segment per stroke there exactly like before this feature existed. */
+   only miss a merge it could have made, leaving it to
+   mergeCreaseScreenSpace below. That makes it only as good as the order
+   the worker posts: subtractCovered keeps its input's order, and the
+   worker's intra-layer dedupCollinear is called with keepOrder for cv/ch
+   for exactly this reason — without it, its angle-bucket regrouping left
+   only 6–17% of chain neighbours array-adjacent on the demo mesh. What
+   still arrives out of order (a stretch a dedup merge moved to another
+   chain's position, 6.8's restored crease appended after the 6.2 chains)
+   falls through to the screen-space pass. */
 export function mergeAdjacentTouching(segs){
   const n = segs.length/4;
   const eq = (x1,y1,x2,y2) => Math.abs(x1-x2)<0.02 && Math.abs(y1-y2)<0.02;

@@ -2649,9 +2649,12 @@ function generate(cam, S, shadingBuffer){
      edge layers, and without it so and iv diverge in axis-snapped
      orthographic views (so deduped and clean, iv keeping every coincident
      duplicate as its own fragment) from geometry that is identical at the
-     point it leaves 6.9. */
+     point it leaves 6.9.
+     cv/ch keep their input order (dedupCollinear's keepOrder): 6.2 pushed
+     them in chain-walk order, and that order is the only topology the main
+     thread's crease chaining sees. */
   for (const k of ['cv','ch','so','iv','ih']){
-    groups[k] = dedupCollinear(groups[k], effOffTol, effGapTol);
+    groups[k] = dedupCollinear(groups[k], effOffTol, effGapTol, k==='cv' || k==='ch');
   }
   /* Pass 2: cross-layer ink-avoidance across the FULL drawing-priority
      hierarchy (highest first): Silhouette > Silhouette individual >

@@ -644,3 +644,42 @@ path the harness cannot run); `?debug` → `testShadingBufferRoundTrip()`; conso
   unfolded — Phase 5 was moves only, so this consolidation wants its own commit.
 - The plan's original audit (findings A–H with file:line evidence, now partly stale line numbers) is at
   `C:\Users\Michal\.claude\plans\i-have-been-developing-graceful-walrus.md` on the user's machine.
+
+---
+
+## 9. After the cleanup — Crease chain order (2026-09-23, an intended output change)
+
+Not a refactor: this deliberately changes `cv`/`ch` path data, and the goldens were re-captured for it.
+
+**Symptom.** Crease paths in the exported SVG joined edges seemingly at random instead of following the
+mesh. **Cause.** The worker builds Crease topology correctly (6.1 `buildEdgeChains` + `pairJunctionArms`)
+and 6.2 pushes `groups.cv`/`ch` in chain-walk order — the only topology the main thread sees, since
+`mergeAdjacentTouching` joins by array adjacency alone. The intra-layer `dedupCollinear` pass then
+regrouped the segments by angle bucket and swept each cluster in canonical +t order, discarding that
+order. On the demo mesh only 6–17% of chain neighbours stayed array-adjacent (median 25/86 indices
+apart), so `mergeCreaseScreenSpace` — the fallback, which pairs "first two in array order" at a junction
+— did 81–93% of the joining. In generic views the pass removed no ink at all; it only reordered.
+(`subtractCovered` keeps its input order; the old comment in `chain.js` blaming it was wrong.)
+
+**Fix.** `dedupCollinear(…, keepOrder)` (`dedup.js`): each emitted piece sorts by its input index — a
+merged backbone by its lowest contributing index, drawn in that contributor's direction — and the call in
+`solver.js` passes `keepOrder` for `cv`/`ch` only. `so`/`iv`/`ih` leave it off: `chainSegments` picks
+chain starts in array order, so reordering them would move their output for nothing.
+
+**Rejected alternatives (measured).** Dropping `dedupCollinear` for Crease: axis views then double-ink
+(`axis+Y` cv 390 → 780 segments). Reusing `dedupCrossRunCoincident` with chain ids: ~45% of coincident
+Crease ink in axis views is same-chain (a ring's near and far halves), which a cross-run pass cannot see.
+Carrying `chainId`/`seq` like Contour stays the escalation path if order is ever lost again — it makes
+order irrelevant, but touches the worker post, `render-result.js`, `chain.js`, `export.js` and the harness.
+
+**Result, demo mesh, 28 sweep views.** Only `cv`/`ch` changed (54 pairs; every other layer identical);
+0 gap cells in every view (the `--diff` coverage drops are sub-0.5px shifts); segment counts and pen
+travel unchanged; Crease pen lifts cv 847 → 665, ch 1582 → 928. Near-axis views restore only partially
+(`axis+Y` cv 35 → 36 paths): where the dedup merges heavily, a backbone absorbing two chains lands at one
+chain's index. Browser-verified by the user.
+
+**Leftovers.** 6.8's restored crease is appended after the 6.2 chains, so it still reaches its own chain
+through the screen-space fallback (1 join on the demo mesh). `mergeCreaseScreenSpace` still pairs
+arbitrarily at junctions; it now handles ~1% of the joins, and straightest-continuation scoring there
+would be its own change. `golden/arches.json` and its `combined-sha256.txt` line need re-capturing where
+`pen_files/arches.pen` exists — only the demo goldens could be updated when this landed.

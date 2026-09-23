@@ -1,2 +1,2 @@
 2e5de5c447a1b8413f3cd9afe3e01cf56a8fcf33d72b6272b409ce6d2827ebd0 *arches-so+iv+ih+sv+sh+cv+ch+h1+h2+h3.svg
-637b8406ccaa7d792703336d26c51db757b85c9c01dbed81bc9bc4eddf3044ff *demo-so+iv+ih+sv+sh+cv+ch+h1+h2+h3.svg
+fd7da4bc816bd7f29294ab8e6eff707d536be1d979558c1c1eb6d536835e2b0b *demo-so+iv+ih+sv+sh+cv+ch+h1+h2+h3.svg
