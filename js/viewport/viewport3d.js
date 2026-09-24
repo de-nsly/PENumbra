@@ -451,6 +451,44 @@ export function updateModelRotation(){
   syncGroundCatcher();
 }
 
+/* ================= model info panel =================
+   The file name, then its stats and warnings as " · "-separated items. The
+   panel is narrow (#modelInfoFloat's max-width), so the items are packed
+   into lines here rather than left to wrap: a dot only ever sits BETWEEN
+   two items on the same line, never ending or starting one, and no item is
+   split across lines. Widths are measured with each element's own font, so
+   this re-runs once the webfont has loaded (see initViewport3d) — the
+   fallback font measures differently. */
+let modelInfo = null;                   // { statItems, warn } of the loaded model
+let infoMeasureCtx = null;
+const INFO_SEP = ' · ';
+function packInfoLines(el, items){
+  const cs = getComputedStyle(el);
+  const maxW = parseFloat(getComputedStyle($('modelInfoFloat')).maxWidth) || Infinity;
+  if (!infoMeasureCtx) infoMeasureCtx = document.createElement('canvas').getContext('2d');
+  infoMeasureCtx.font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+  const lines = [];
+  for (const item of items.map(t => t.replace(/ /g, ' '))){   // an item never wraps inside itself
+    const joined = lines.length ? lines[lines.length-1] + INFO_SEP + item : null;
+    if (joined !== null && infoMeasureCtx.measureText(joined).width <= maxW) lines[lines.length-1] = joined;
+    else lines.push(item);
+  }
+  return lines;
+}
+function setInfoLines(el, lines){
+  el.append(...lines.flatMap((line, i) => i ? [document.createElement('br'), line] : [line]));
+}
+function renderModelInfo(){
+  if (!modelInfo) return;
+  const stat = $('modelStat'), warnEl = $('modelWarn');
+  const name = document.createElement('b');
+  name.textContent = modelName;
+  stat.replaceChildren(name, document.createElement('br'));
+  setInfoLines(stat, packInfoLines(stat, modelInfo.statItems));
+  warnEl.replaceChildren();
+  setInfoLines(warnEl, packInfoLines(warnEl, modelInfo.warn));
+}
+
 /* ================= model loaded =================
    Called from scene-io.js's worker.onmessage when the worker reports a
    freshly parsed/loaded mesh. */
@@ -542,16 +580,19 @@ export function onLoaded(m){
   perspCam.far  = orthoCam.far  = modelRadius * 60;
 
   const s = m.stats;
-  $('modelStat').innerHTML = '<b>' + modelName + '</b><br>' +
-    s.tris.toLocaleString() + ' tris · ' + s.verts.toLocaleString() + ' verts (welded) · ' +
-    s.shells.toLocaleString() + ' shell' + (s.shells!==1?'s':'') +
-    (s.curveSegs ? ' · ' + s.curveSegs.toLocaleString() + ' curve segment' + (s.curveSegs!==1?'s':'') : '');
+  const statItems = [
+    s.tris.toLocaleString() + ' tris',
+    s.verts.toLocaleString() + ' verts (welded)',
+    s.shells.toLocaleString() + ' shell' + (s.shells!==1?'s':''),
+  ];
+  if (s.curveSegs) statItems.push(s.curveSegs.toLocaleString() + ' curve segment' + (s.curveSegs!==1?'s':''));
   const warn = [];
   if (s.flips)       warn.push(s.flips + ' faces re-wound');
   if (s.reoriented)  warn.push(s.reoriented + ' shell' + (s.reoriented>1?'s':'') + ' re-oriented');
   if (s.boundary)    warn.push(s.boundary + ' boundary edges (open mesh)');
   if (s.nonManifold) warn.push(s.nonManifold + ' non-manifold edges');
-  $('modelWarn').textContent = warn.join(' · ');
+  modelInfo = { statItems, warn };
+  renderModelInfo();
 
   // Scene import in progress: the model just needed to finish loading (its
   // center/radius feed the ground plane, shadow frustum, near/far above) —
@@ -634,6 +675,9 @@ export function initViewport3d(){
   dirLight.shadow.mapSize.set(2048, 2048);
   scene.add(dirLight, dirLight.target, new THREE.AmbientLight(0xffffff, 0.45));
   scene.add(modelPivot);
+  // The model info lines are packed by measured width (renderModelInfo): once
+  // the webfont arrives, pack them again with its real metrics.
+  if (document.fonts) document.fonts.addEventListener('loadingdone', renderModelInfo);
   renderer.domElement.addEventListener('pointerdown', e => {
     dragBtn = (e.button === 2 || e.shiftKey) ? 2 : 0;
     lastX = e.clientX; lastY = e.clientY;

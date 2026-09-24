@@ -2999,17 +2999,16 @@ if (typeof self !== 'undefined' && typeof self.document === 'undefined'){
           }
           // Z-up file → internal Y-up: rotate −90° about X, i.e. (x,y,z) →
           // (x, z, −y). Proper rotation (det +1), so winding/normals are
-          // preserved and buildMesh sees a consistently oriented mesh.
-          if (m.zUp) for (let i=0;i<parsed.soup.length;i+=3){
-            const y = parsed.soup[i+1];
-            parsed.soup[i+1] = parsed.soup[i+2];
-            parsed.soup[i+2] = -y;
+          // preserved and buildMesh sees a consistently oriented mesh. An
+          // OBJ's curves turn with it.
+          if (m.zUp) for (const pts of [parsed.soup, parsed.curves && parsed.curves.pos]){
+            if (!pts) continue;
+            for (let i=0;i<pts.length;i+=3){
+              const y = pts[i+1];
+              pts[i+1] = pts[i+2];
+              pts[i+2] = -y;
+            }
           }
-        }
-        if (m.zUp && parsed.curves) for (let i=0;i<parsed.curves.pos.length;i+=3){   // same flip for the curves
-          const y = parsed.curves.pos[i+1];
-          parsed.curves.pos[i+1] = parsed.curves.pos[i+2];
-          parsed.curves.pos[i+2] = -y;
         }
         const mesh = buildMesh(parsed);
         // Curve chains are pure topology (camera- and rotation-independent),

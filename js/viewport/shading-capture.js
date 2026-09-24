@@ -122,6 +122,7 @@ export function captureShadingBuffer(){
   // The curves likewise: drawn, they would write their own colour into the
   // N·L channel and set the geometry mask along every curve. Curves take no
   // part in shading.
+  const prevCurvesVisible = curveLines ? curveLines.visible : null;
   if (curveLines) curveLines.visible = false;
   // Swaps each mesh's own material for a clone of itself (see
   // makeShadingMaterialFrom) — modelMesh may be a Group of multiple
@@ -142,7 +143,7 @@ export function captureShadingBuffer(){
   for (const [o, mat] of swapped) o.material = mat;   // restore originals
   scene.background = prevBackground;
   if (gridHelper) gridHelper.visible = prevGridVisible;
-  if (curveLines) curveLines.visible = true;
+  if (curveLines) curveLines.visible = prevCurvesVisible;
   if (!shadingMaterialVerified){
     console.warn('[shadingCapture] proceeding despite the shader-injection check above failing — treat this buffer as unverified.');
   }
