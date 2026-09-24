@@ -196,7 +196,8 @@ export class HarnessApp {
     if (Number.isFinite(cs.phi))    orbit.phi    = cs.phi;
     if (Number.isFinite(cs.radius)) orbit.radius = cs.radius;
     orbit.exactPole = Number.isFinite(cs.exactPole) ? cs.exactPole : 0;
-    if (Array.isArray(cs.target)) orbit.target.set(cs.target[0], cs.target[1], cs.target[2]);
+    orbit.twoPoint = !!cs.twoPoint;
+    if (Array.isArray(cs.target))orbit.target.set(cs.target[0], cs.target[1], cs.target[2]);
     orbit.apply();
   }
 

@@ -180,8 +180,8 @@ async function loadFile(file){
    the paper layout controls, which aren't solve-affecting but are still
    part of "what I had"), the pen library, the layer instances (on/pen/
    dash and each layer's texture stack — layers.js), and the camera (orbit
-   angles/distance/target + projection mode — FOV rides along as an
-   ordinary registry control already).
+   angles/distance/target + projection mode + two-point perspective — FOV
+   rides along as an ordinary registry control already).
    A plain JSON container, base64 for the binary model bytes — simple, and
    the model is the only part large enough for that ~33% inflation to
    matter, which is an acceptable trade for not inventing a binary format. */
@@ -277,8 +277,11 @@ export function applyImportedScene(data){
   // orbit.apply() below ignore the restored theta/phi entirely (see the
   // exactPole branch in orbit.apply, viewport3d.js).
   orbit.exactPole = Number.isFinite(cs.exactPole) ? cs.exactPole : 0;
+  // Same reasoning: reset, not left alone — scenes saved before two-point
+  // perspective existed load as plain perspective.
+  orbit.twoPoint = !!cs.twoPoint;
   if (Array.isArray(cs.target))   orbit.target.set(cs.target[0], cs.target[1], cs.target[2]);
-  orbit.apply();                 // also updates the frustum for the restored FOV/ortho state
+  orbit.apply();                // also updates the frustum for the restored FOV/ortho state
   // Every control was set by assignment, so nothing above fired the
   // listeners that normally follow an edit: the shadow/margin/export UI
   // state, the three.js light, shadow flags, model rotation, the smooth-
@@ -385,7 +388,7 @@ export function initSceneIO(){
     doGenerate();
   });
   $('loadBtn').addEventListener('click', () => $('fileInput').click());
-  for (const [wrap, btn] of [['zUpWrap','zUpBtn'], ['autoWrap','autoGenBtn'], ['addToLayoutSaveViewWrap','addToLayoutSaveViewBtn'], ['blendMultiplyWrap','blendMultiplyBtn']])
+  for (const [wrap, btn] of [['zUpWrap','zUpBtn'], ['twoPointWrap','twoPointBtn'],['autoWrap','autoGenBtn'], ['addToLayoutSaveViewWrap','addToLayoutSaveViewBtn'], ['blendMultiplyWrap','blendMultiplyBtn']])
     $(wrap).addEventListener('click', e => { if (e.target !== $(btn)) $(btn).click(); });
   $('fileInput').addEventListener('change', e => {
     if (e.target.files[0]) openDroppedFile(e.target.files[0]);
@@ -423,6 +426,7 @@ export function initSceneIO(){
     const camState = {
       theta: orbit.theta, phi: orbit.phi, radius: orbit.radius,
       exactPole: orbit.exactPole,
+      twoPoint: orbit.twoPoint,
       target: [orbit.target.x, orbit.target.y, orbit.target.z],
       ortho: camera === orthoCam,
     };

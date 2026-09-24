@@ -51,6 +51,11 @@
           <input type="range" id="camShiftY" min="-1" max="1" step="0.01" value="0">
           <span class="val" id="camShiftYVal">0.00</span>
         </div>
+        <span class="switchWrap" id="twoPointWrap"
+          title="Keeps vertical lines parallel: aims the camera level and shifts the lens so the framing stays the same. Orbiting turns it off; pan, zoom, FOV and Shift keep it. Unavailable in orthographic, top/bottom views and past 65° of tilt.">
+          <span>2-point perspective</span>
+          <button type="button" class="pillToggle" id="twoPointBtn" role="switch" aria-checked="false" aria-label="2-point perspective"></button>
+        </span>
         <div class="vpLabel">Isometric</div>
         <div class="vpGrid vpGrid4">
           <button class="vpBtn" data-view="nw">NW</button>

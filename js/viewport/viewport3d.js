@@ -2,7 +2,7 @@
    viewport3d.js — the 3D viewport
    Three.js scene/camera/renderer, orbit controls (drag/zoom), the
    axis gizmo and light-direction gizmo, projection mode toggle,
-   view presets, lighting + shadow sync, onLoaded() which wires a
+   two-point perspective, view presets, lighting + shadow sync, onLoaded() which wires a
    freshly parsed mesh (from the worker) into the live 3D scene, and the
    smooth-shading normals.
    The two things built ON this scene have their own files: the saved
@@ -39,13 +39,24 @@ export function updateFrustum(){
   // 0.330 in the reference material) rather than a raw pixel offset, so it
   // stays meaningful regardless of viewport size.
   const shiftX = +$('camShiftX').value, shiftY = +$('camShiftY').value;
-  if (shiftX || shiftY){
-    perspCam.setViewOffset(w, h, shiftX * w, shiftY * h, w, h);
-    orthoCam.setViewOffset(w, h, shiftX * w, shiftY * h, w, h);
-  } else {
-    perspCam.clearViewOffset();
-    orthoCam.clearViewOffset();
+  // Two-point perspective (orbit.twoPoint): orbit.apply() aims the camera
+  // level, so the orbit target now sits cot(phi)/tan(fov/2) below the frame
+  // centre (NDC), and at depth radius*sin(phi) instead of radius — i.e.
+  // 1/sin(phi) bigger. zoom = sin(phi) undoes the size change; the extra
+  // vertical shift (on top of the user's own Shift Y) brings the target back
+  // to where the tilted camera had it. Net effect: same framing, verticals
+  // straightened. Perspective camera only — ortho verticals are already parallel.
+  let zoom = 1, autoShiftY = 0;
+  if (orbit.twoPoint && !orbit.exactPole){
+    zoom = Math.sin(orbit.phi);
+    autoShiftY = Math.cos(orbit.phi) / (2 * Math.tan(perspCam.fov * Math.PI / 360));
   }
+  perspCam.zoom = zoom;
+  const perspShiftY = shiftY + autoShiftY;
+  if (shiftX || perspShiftY) perspCam.setViewOffset(w, h, shiftX * w, perspShiftY * h, w, h);
+  else perspCam.clearViewOffset();
+  if (shiftX || shiftY) orthoCam.setViewOffset(w, h, shiftX * w, shiftY * h, w, h);
+  else orthoCam.clearViewOffset();
   perspCam.updateProjectionMatrix();
   orthoCam.updateProjectionMatrix();
 }
@@ -78,6 +89,17 @@ export const orbit = {
   // direction sidesteps the degeneracy completely instead of merely
   // shrinking it, giving a bit-exact result with no residual tilt at all.
   exactPole: 0,
+  // Two-point perspective: the perspective camera stays exactly where the
+  // orbit puts it but is aimed level — at the target's point at the
+  // camera's own height — so vertical edges stay parallel on screen;
+  // updateFrustum() then zooms and lens-shifts it back to the same framing.
+  // Derived here on every apply, never written into theta/phi/target, so
+  // turning it off returns exactly to the plain camera with the pivot still
+  // on the model. Set only through the button while twoPointAvailable();
+  // anything that changes the pitch (orbit drag, gizmo, isometric presets)
+  // or the projection (setProjMode) turns it off. Pan, zoom, FOV and Shift
+  // leave phi alone, so they keep it.
+  twoPoint: false,
   apply(){
     if (this.exactPole){
       // Up vectors chosen to exactly match the screen orientation the old
@@ -90,6 +112,7 @@ export const orbit = {
       perspCam.position.set(this.target.x, py, this.target.z); perspCam.lookAt(this.target);
       orthoCam.position.set(this.target.x, py, this.target.z); orthoCam.lookAt(this.target);
       updateFrustum();
+      syncTwoPointUI();
       return;
     }
     perspCam.up.set(0, 1, 0); orthoCam.up.set(0, 1, 0);   // restore default when leaving the exact pole
@@ -97,11 +120,29 @@ export const orbit = {
     const px = this.target.x + this.radius * sp * Math.sin(this.theta),
           py = this.target.y + this.radius * cp,
           pz = this.target.z + this.radius * sp * Math.cos(this.theta);
-    perspCam.position.set(px, py, pz); perspCam.lookAt(this.target);
+    perspCam.position.set(px, py, pz);
+    if (this.twoPoint) perspCam.lookAt(this.target.x, py, this.target.z);
+    else perspCam.lookAt(this.target);
     orthoCam.position.set(px, py, pz); orthoCam.lookAt(this.target);
     updateFrustum();               // ortho framing follows orbit distance
+    syncTwoPointUI();
   }
 };
+// Beyond this tilt from level the lens shift two-point needs runs away
+// (it's infinite at the poles) — the button is disabled past it.
+const TWO_POINT_MAX_PITCH = 65 * Math.PI / 180;
+function twoPointAvailable(){
+  return camera === perspCam && !orbit.exactPole &&
+    Math.abs(orbit.phi - Math.PI / 2) <= TWO_POINT_MAX_PITCH;
+}
+// The button mirrors orbit.twoPoint, and is faded while it can't be turned
+// on (ortho, top/bottom, too steep). Every path that changes those ends in
+// orbit.apply() or setProjMode(), which both call this.
+function syncTwoPointUI(){
+  $('twoPointBtn').classList.toggle('active', orbit.twoPoint);
+  $('twoPointBtn').setAttribute('aria-checked', String(orbit.twoPoint));
+  $('twoPointWrap').classList.toggle('ctlDisabled', !orbit.twoPoint && !twoPointAvailable());
+}
 // For a fixed world-space pan step, the resulting on-screen movement scales
 // as 1/tan(fov/2) — a narrow (telephoto-like) FOV shows far more screen
 // movement for the same world-space shift than a wide one, which is why
@@ -265,6 +306,8 @@ export function setProjMode(mode){
   $('projLblOrtho').classList.toggle('active', ortho);
   camera = mode === 'ortho' ? orthoCam : perspCam;
   $('fovDeg').disabled = mode === 'ortho';
+  if (ortho) orbit.twoPoint = false;   // ortho verticals are parallel already
+  syncTwoPointUI();
   positionSegPill($('projMode').parentElement);
 }
 // canonical CAD views. These set the ANGLE only and respect whichever
@@ -579,6 +622,7 @@ export function initViewport3d(){
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
     if (dragBtn === 0){
+      orbit.twoPoint = false;       // orbiting changes the pitch — back to plain perspective
       const poleEps = 0.001 * Math.PI / 180;
       if (orbit.exactPole){
         orbit.phi = orbit.exactPole > 0 ? poleEps : Math.PI - poleEps;
@@ -673,6 +717,7 @@ export function initViewport3d(){
       orbit.theta = target.theta * Math.PI / 180;
       orbit.phi = Math.min(Math.PI - 1e-6, Math.max(1e-6, target.phi * Math.PI / 180));
       orbit.exactPole = (target.d[0]===0 && target.d[2]===0) ? Math.sign(target.d[1]) : 0;
+      orbit.twoPoint = false;
       orbit.apply(); markStale(); clearActiveView();
     });
     gizmoSvg.appendChild(g);
@@ -752,8 +797,14 @@ export function initViewport3d(){
       orbit.theta = v.theta * Math.PI / 180;
       orbit.phi = v.phi * Math.PI / 180;
       orbit.exactPole = 0;
+      orbit.twoPoint = false;
       orbit.apply(); markStale(); clearActiveView();
     });
+  });
+  $('twoPointBtn').addEventListener('click', () => {
+    if (!orbit.twoPoint && !twoPointAvailable()) return;
+    orbit.twoPoint = !orbit.twoPoint;
+    orbit.apply(); markStale(); clearActiveView();
   });
   $('recenter3dBtn').addEventListener('click', recenter3dView);
   // same reset via a double middle-click anywhere on the 3D canvas

@@ -12,7 +12,8 @@ import { $ } from '../main.js';
 import { makeNameEditable, markStale, refreshValLabel } from '../panel-controls.js';
 import { camera, orbit, orthoCam, setProjMode, updateLight, updateLightGizmo, updateModelRotation } from './viewport3d.js';
 /* ================= saved views =================
-   Captures camera (orbit theta/phi/radius/target, FOV, perspective/ortho),
+   Captures camera (orbit theta/phi/radius/target, FOV, Shift,
+   perspective/ortho, two-point perspective),
    light (azimuth/elevation), and model rotation (X/Y/Z sliders) —
    deliberately nothing else (no model, no layer styles, no paper settings),
    unlike the full .pen scene save. Names are hardcoded "View NN", never
@@ -27,7 +28,8 @@ import { camera, orbit, orthoCam, setProjMode, updateLight, updateLightGizmo, up
    .rowSelected style the Layout blocks list uses), set on activate/
    update, and cleared the moment ANY of those settings changes through
    any interaction path: orbit drag/pan, wheel zoom, projection toggle,
-   isometric presets, recenter, rotation sliders/resets, FOV, or light. See
+   isometric presets, recenter, two-point toggle, rotation sliders/resets,
+   FOV, or light. See
    clearActiveView() calls scattered through this file and the regen
    listener in panel-controls.js (entries flagged clearsView in
    settings.js) for the actual hookup. */
@@ -83,7 +85,8 @@ function captureCurrentViewState(){
   return {
     theta: orbit.theta, phi: orbit.phi, radius: orbit.radius,
     exactPole: orbit.exactPole,
-    target: [orbit.target.x, orbit.target.y, orbit.target.z],
+    twoPoint: orbit.twoPoint,
+    target:[orbit.target.x, orbit.target.y, orbit.target.z],
     fov: +$('fovDeg').value,
     shiftX: +$('camShiftX').value, shiftY: +$('camShiftY').value,
     ortho: camera === orthoCam,
@@ -112,6 +115,7 @@ function activateView(view){
   orbit.theta = view.theta;
   orbit.phi = view.phi;
   orbit.exactPole = view.exactPole || 0;   // fallback for views saved before this existed
+  orbit.twoPoint = !!view.twoPoint;        // likewise — older views are plain perspective
   orbit.radius = view.radius;
   orbit.target.set(view.target[0], view.target[1], view.target[2]);
   $('fovDeg').value = view.fov;
