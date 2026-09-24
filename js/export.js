@@ -37,7 +37,10 @@ import { modelName } from './viewport/viewport3d.js';
    for curves too: an affine map of a cubic's control points is that
    cubic's image. Subpaths are appended in paint order (Preview: fills
    first, silhouette last; Layout: blocks bottom to top, same layer order
-   within each), so that is also the plot order within a pen.
+   within each), so that is also the plot order within a pen. The pens'
+   paths follow paint order too, each at its topmost layer's depth, so the
+   file stacks like the screen (library order would invert it whenever a
+   top layer's pen sits early in the library).
    Coordinates are written with 3 decimals: page mm is a much coarser unit
    than the solver-px the ordinary export writes at 2.
    A pen's id is its 1-based library position (zero-padded to at least two
@@ -77,7 +80,8 @@ function buildPenPathsExport(isLayout, dims){
   }
   const trim = $('trimToMargins').checked;
   const byPen = new Map();   // pen object -> its subpaths in page mm, in paint order
-  for (const { g, root, pen } of sources){
+  const topmost = new Map(); // pen object -> index of the last (highest) source it has ink in
+  for (const [i, { g, root, pen }] of sources.entries()){
     const dash = g.getAttribute('stroke-dasharray');
     const pattern = dash ? dash.trim().split(/[\s,]+/).map(Number) : null;
     for (const p of g.querySelectorAll('path')){
@@ -93,6 +97,7 @@ function buildPenPathsExport(isLayout, dims){
       }
       if (!d) continue;                        // dashed or trimmed away entirely
       if (!byPen.has(pen)) byPen.set(pen, []);
+      topmost.set(pen, i);
       const out = byPen.get(pen);
       // A plain loop rather than push(...array): a hatch layer can hold far
       // more subpaths than a spread argument list is allowed to.
@@ -112,9 +117,12 @@ function buildPenPathsExport(isLayout, dims){
   svg.setAttribute('width',  dims.paperW.toFixed(2) + 'mm');
   svg.setAttribute('height', dims.paperH.toFixed(2) + 'mm');
   svg.setAttribute('viewBox', '0 0 ' + dims.paperW.toFixed(3) + ' ' + dims.paperH.toFixed(3));
-  for (const pen of PEN_LIBRARY){
-    const subpaths = byPen.get(pen);
-    const d = subpaths ? emitPathD(subpaths, 3) : '';
+  // Paths go out in paint order, NOT library order, so the file stacks the
+  // same way the screen does. A pen is one path and so has one depth: it
+  // sits at its highest layer's, so that layer still covers the pens below.
+  const pens = [...byPen.keys()].sort((a, b) => topmost.get(a) - topmost.get(b));
+  for (const pen of pens){
+    const d = emitPathD(byPen.get(pen), 3);
     if (!d) continue;                          // this pen has no visible ink — no path at all
     const path = svgEl('path');
     path.setAttribute('id', penExportId(pen));
