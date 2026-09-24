@@ -15,7 +15,7 @@ import { camera, modelMesh, modelName, onLoaded, onSmoothAngleResult, orbit, ort
 import { renderSavedViews, savedViewCounter, savedViews, setSavedViews } from './viewport/saved-views.js';
 import { renderResult, refreshStatusR } from './render-result.js';
 import { computePaperLayout } from './paper-layout.js';
-import { addDashSlot, buildLayerRows, refreshDashPreview } from './layer-rows.js';
+import { addDashSlot, buildLayerRows, refreshDashPreview, syncCurveLayers } from './layer-rows.js';
 import { activeTab, buildCamMessage, doGenerate, generateFailed, lastResult, refreshValLabel, syncLineLayerUI } from './panel-controls.js';
 import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncPenLibraryUI } from './pen-library.js';
 import { blockCounter, blocks, replaceBlocks, renderLayoutCanvas } from './layout/layout-model.js';
@@ -265,6 +265,9 @@ export function applyImportedScene(data){
   // event, so the sliders that fade with their own layer group and the
   // Circles gizmo need the same explicit nudge the toggles above get.
   syncLineLayerUI();
+  // The file's layers may switch Curves on for a model that has none (every
+  // scene saved before curves existed has them at their default, on).
+  syncCurveLayers();
   updateTextureGizmo();
   const cs = data.camera || {};
   setProjMode(cs.ortho ? 'ortho' : 'persp');

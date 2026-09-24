@@ -12,6 +12,7 @@
    ================================================================ */
 import { $, onMiddleDblClick, positionSegPill, svgEl, worker } from '../main.js';
 import { activeTab, doGenerate, markStale, refreshValLabel } from '../panel-controls.js';
+import { syncCurveLayers } from '../layer-rows.js';
 import { computePaperLayout } from '../paper-layout.js';
 import { applyPaperView } from '../paper-preview.js';
 import { applyImportedScene, takePendingSceneImport } from '../scene-io.js';
@@ -62,6 +63,11 @@ export function updateFrustum(){
 }
 const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
 export let modelMesh = null, gridHelper = null, groundCatcher = null;
+// The OBJ file's curves (`l` polylines), null when it has none. A sibling of
+// modelMesh under modelPivot, so it turns with the model. Never casts or
+// receives a shadow (castShadow stays at three's default false — only
+// modelMesh's flags are synced), and captureShadingBuffer hides it.
+export let curveLines = null;
 export let modelCenter = new THREE.Vector3(), modelRadius = 1, modelBboxMinY = 0, modelName = 'demo scene';
 // Rotate-model feature: modelMesh is a CHILD of modelPivot (not added to
 // `scene` directly), positioned at -modelCenter in the pivot's local space;
@@ -483,6 +489,21 @@ export function onLoaded(m){
   modelMesh.position.set(-modelCenter.x, -modelCenter.y, -modelCenter.z);
   modelPivot.position.copy(modelCenter);
   modelPivot.add(modelMesh);
+
+  if (curveLines){
+    modelPivot.remove(curveLines);
+    curveLines.geometry.dispose(); curveLines.material.dispose();
+    curveLines = null;
+  }
+  if (m.curves && m.curves.length){
+    const curveGeo = new THREE.BufferGeometry();
+    curveGeo.setAttribute('position', new THREE.BufferAttribute(m.curves, 3));
+    // a warm colour that reads against both the grey model and the dark background
+    curveLines = new THREE.LineSegments(curveGeo, new THREE.LineBasicMaterial({ color: 0xe0913a }));
+    curveLines.position.copy(modelMesh.position);
+    modelPivot.add(curveLines);
+  }
+  syncCurveLayers();                    // Curves rows shown/hidden (and switched off) to match
   // A freshly loaded model starts unrotated — unless this load is the
   // model-loading step of a .pen scene import, in which case
   // applyImportedScene (called below) restores the saved rotation right
@@ -523,7 +544,8 @@ export function onLoaded(m){
   const s = m.stats;
   $('modelStat').innerHTML = '<b>' + modelName + '</b><br>' +
     s.tris.toLocaleString() + ' tris · ' + s.verts.toLocaleString() + ' verts (welded) · ' +
-    s.shells.toLocaleString() + ' shell' + (s.shells!==1?'s':'');
+    s.shells.toLocaleString() + ' shell' + (s.shells!==1?'s':'') +
+    (s.curveSegs ? ' · ' + s.curveSegs.toLocaleString() + ' curve segment' + (s.curveSegs!==1?'s':'') : '');
   const warn = [];
   if (s.flips)       warn.push(s.flips + ' faces re-wound');
   if (s.reoriented)  warn.push(s.reoriented + ' shell' + (s.reoriented>1?'s':'') + ' re-oriented');

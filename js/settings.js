@@ -94,6 +94,8 @@ export const SETTINGS = [
   // A bare count of triangle steps — no unit, integral.
   range('contourMaxHops', { unit:'' }),
   range('creaseDeg', { unit:'°', decimals:1 }),
+  // A bare fraction of the model radius, like contourCleanup.
+  range('curveSurfTol', { unit:'', decimals:4 }),
   /* ---- shadows ---- */
   chk('softShadows',   { onRestore: [syncShadowUI, syncSoftShadowsUI] }),
   chk('invertShadows'),

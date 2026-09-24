@@ -399,6 +399,15 @@
         <input type="range" id="creaseDeg" min="0" max="120" step="0.1" value="1">
         <span class="val" id="creaseDegVal">1.0°</span>
       </div>
+      <!-- Hidden while the model has no curves (syncCurveLayers, layer-rows.js). -->
+      <div id="curvesGroup">
+        <div id="edgeRowsCurves"></div>
+        <div class="ctl" id="curveSurfTolCtl">
+          <label for="curveSurfTol" title="Curves are the polylines (l elements) in an OBJ file. A curve drawn on the model's surface would otherwise flicker between visible and hidden, because its straight segments dip slightly under a curved surface. A surface has to be in front of a curve by more than this distance to hide it, measured as a fraction of the model's size. Raise it if curves on the surface come out dashed; lower it if a curve just behind a surface shows through.">Surface tolerance</label>
+          <input type="range" id="curveSurfTol" min="0" max="0.05" step="0.0005" value="0.005">
+          <span class="val" id="curveSurfTolVal">0.0050</span>
+        </div>
+      </div>
     </div>
 
     <h2>Fill layers</h2>

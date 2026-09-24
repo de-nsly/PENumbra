@@ -189,7 +189,7 @@ function generate(cam, S, shadingBuffer){
   // depth key, affine in screen space, bigger = closer:
   //   perspective → 1/dist   ·   orthographic → view-space z (negative dist)
   const { nv, nt, tri } = M;
-  let { pos, fn } = M;
+  let { pos, fn, curvePos } = M;
   const nearZ = -near * 1.0001;
 
   /* 0.5 · Rotate-model panel — rotate a COPY of the vertex positions and
@@ -216,16 +216,22 @@ function generate(cam, S, shadingBuffer){
     // 9 matrix values.
     const rc = M._rotCache;
     if (rc && rc.m.every((v,i)=>v===R[i])){
-      pos = rc.pos; fn = rc.fn;
+      pos = rc.pos; fn = rc.fn; curvePos = rc.curvePos;
     } else {
       const cx=M.center[0], cy=M.center[1], cz=M.center[2];
-      const rp = new Float32Array(pos.length);
-      for (let i=0;i<nv;i++){
-        const dx=pos[i*3]-cx, dy=pos[i*3+1]-cy, dz=pos[i*3+2]-cz;
-        rp[i*3]   = cx + R[0]*dx + R[3]*dy + R[6]*dz;
-        rp[i*3+1] = cy + R[1]*dx + R[4]*dy + R[7]*dz;
-        rp[i*3+2] = cz + R[2]*dx + R[5]*dy + R[8]*dz;
-      }
+      // the curves turn with the mesh, around the mesh's own center
+      const rotatePoints = src => {
+        const rp = new Float32Array(src.length);
+        for (let i=0;i<src.length;i+=3){
+          const dx=src[i]-cx, dy=src[i+1]-cy, dz=src[i+2]-cz;
+          rp[i]   = cx + R[0]*dx + R[3]*dy + R[6]*dz;
+          rp[i+1] = cy + R[1]*dx + R[4]*dy + R[7]*dz;
+          rp[i+2] = cz + R[2]*dx + R[5]*dy + R[8]*dz;
+        }
+        return rp;
+      };
+      const rp = rotatePoints(pos);
+      const rcp = rotatePoints(curvePos);
       const rf = new Float32Array(fn.length);
       for (let i=0;i<fn.length;i+=3){
         const nx=fn[i], ny=fn[i+1], nz=fn[i+2];
@@ -233,25 +239,30 @@ function generate(cam, S, shadingBuffer){
         rf[i+1] = R[1]*nx + R[4]*ny + R[7]*nz;
         rf[i+2] = R[2]*nx + R[5]*ny + R[8]*nz;
       }
-      M._rotCache = { m: Array.from(R), pos: rp, fn: rf };
-      pos = rp; fn = rf;
+      M._rotCache = { m: Array.from(R), pos: rp, fn: rf, curvePos: rcp };
+      pos = rp; fn = rf; curvePos = rcp;
     }
   }
 
-  /* 1 · transform to view space, project to screen */
-  const vx=new Float32Array(nv), vy=new Float32Array(nv), vz=new Float32Array(nv);
-  const sx=new Float32Array(nv), sy=new Float32Array(nv), iz=new Float32Array(nv);
-  const ok=new Uint8Array(nv);                       // vertex strictly in front of near plane
-  for (let i=0;i<nv;i++){
-    const x=pos[i*3], y=pos[i*3+1], z=pos[i*3+2];
-    const a=V[0]*x+V[4]*y+V[8]*z+V[12], b=V[1]*x+V[5]*y+V[9]*z+V[13], c=V[2]*x+V[6]*y+V[10]*z+V[14];
-    vx[i]=a; vy[i]=b; vz[i]=c;
-    if (c < nearZ){
-      const cx=P[0]*a+P[4]*b+P[8]*c+P[12], cy=P[1]*a+P[5]*b+P[9]*c+P[13],
-            cw=P[3]*a+P[7]*b+P[11]*c+P[15];
-      sx[i]=(cx/cw*0.5+0.5)*W; sy[i]=(0.5-cy/cw*0.5)*H; iz[i]=ortho?c:1/(-c); ok[i]=1;
+  /* 1 · transform to view space, project to screen. A function because the
+     Curves (6.2b) project their own vertex list the same way. */
+  const projectPoints = (src, n) => {
+    const vx=new Float32Array(n), vy=new Float32Array(n), vz=new Float32Array(n);
+    const sx=new Float32Array(n), sy=new Float32Array(n), iz=new Float32Array(n);
+    const ok=new Uint8Array(n);                      // vertex strictly in front of near plane
+    for (let i=0;i<n;i++){
+      const x=src[i*3], y=src[i*3+1], z=src[i*3+2];
+      const a=V[0]*x+V[4]*y+V[8]*z+V[12], b=V[1]*x+V[5]*y+V[9]*z+V[13], c=V[2]*x+V[6]*y+V[10]*z+V[14];
+      vx[i]=a; vy[i]=b; vz[i]=c;
+      if (c < nearZ){
+        const cx=P[0]*a+P[4]*b+P[8]*c+P[12], cy=P[1]*a+P[5]*b+P[9]*c+P[13],
+              cw=P[3]*a+P[7]*b+P[11]*c+P[15];
+        sx[i]=(cx/cw*0.5+0.5)*W; sy[i]=(0.5-cy/cw*0.5)*H; iz[i]=ortho?c:1/(-c); ok[i]=1;
+      }
     }
-  }
+    return { vx, vy, vz, sx, sy, iz, ok };
+  };
+  const { vx, vy, vz, sx, sy, iz, ok } = projectPoints(pos, nv);
   const projView = (a,b,c) => {                      // project arbitrary view-space point
     const cx=P[0]*a+P[4]*b+P[8]*c+P[12], cy=P[1]*a+P[5]*b+P[9]*c+P[13],
           cw=P[3]*a+P[7]*b+P[11]*c+P[15];
@@ -623,7 +634,10 @@ function generate(cam, S, shadingBuffer){
   // skipA/skipB: the segment's own two faces, never treated as occluders.
   // va/vb: the segment's welded endpoint vertices when it IS a mesh edge —
   // their presence selects the far (token) slope bias, see EPS_SLOPE_FAR.
-  function occlude(x0,y0,z0,x1,y1,z1, skipA, skipB, va, vb){
+  // bias: a depth-key offset toward the camera the segment is tested at, so
+  // an occluder must be more than that in front to hide it — only the Curves
+  // pass (6.2b) sends one.
+  function occlude(x0,y0,z0,x1,y1,z1, skipA, skipB, va, vb, bias){
     occIv.length=0; gen++;
     const bx0=Math.min(x0,x1), bx1=Math.max(x0,x1), by0=Math.min(y0,y1), by1=Math.max(y0,y1);
     const fpEps=Math.abs(z0+z1)*0.5*EPS_FP_REL;
@@ -727,6 +741,10 @@ function generate(cam, S, shadingBuffer){
             g1 = A*(x0+dxs*tb)+B*(y0+dys*tb)+C-(z0+dzs*tb);
             eps = fpEps + slopeNear*oGrad[j];
           }
+          // The segment tested as if `bias` nearer the camera: occluders less
+          // than that in front don't count, and a hidden stretch starts where
+          // one gets that far in front, not where it first crosses.
+          if (bias){ g0 -= bias; g1 -= bias; }
           const gA2 = g0, gB2 = g1;
           // eps CLASSIFIES whether this occluder is genuinely in front anywhere;
           // the visible/hidden boundary itself is the exact g=0 crossing (the
@@ -808,6 +826,7 @@ function generate(cam, S, shadingBuffer){
   const groups={ sv:[], sh:[], cv:[], ch:[] };
   for (const p of hatchPasses) groups[p.id] = [];
   groups.so = []; groups.iv = []; groups.ih = [];
+  groups.kv = []; groups.kh = [];
   // Contour (sv/sh) chain identity. One runId/seq entry per segment pushed to
   // groups.sv/groups.sh, parallel to those arrays: runId names the Contour run
   // (6.7) a segment came from, seq its order within that run. No other layer
@@ -862,9 +881,10 @@ function generate(cam, S, shadingBuffer){
 
   // Edge e's screen-space endpoints [X0,Y0,Z0, X1,Y1,Z1] in its own ea→eb
   // direction, clipped at the near plane; null when it is entirely behind the
-  // camera.
-  const projectEdge = e => {
-    const a=ea[e], b=eb[e];
+  // camera. Built over a projectPoints() result, so the Curves (6.2b) get the
+  // same thing for their own segments.
+  const edgeProjector = (EA, EB, { vx, vy, vz, sx, sy, iz, ok }) => e => {
+    const a=EA[e], b=EB[e];
     if (ok[a]&&ok[b]) return [sx[a],sy[a],iz[a], sx[b],sy[b],iz[b]];
     let pa=[vx[a],vy[a],vz[a]], pb=[vx[b],vy[b],vz[b]];
     if (pa[2]>nearZ && pb[2]>nearZ) return null;                  // fully behind camera
@@ -874,6 +894,7 @@ function generate(cam, S, shadingBuffer){
     const A2=projView(pa[0],pa[1],pa[2]), B2=projView(pb[0],pb[1],pb[2]);
     return [A2[0],A2[1],A2[2], B2[0],B2[1],B2[2]];
   };
+  const projectEdge = edgeProjector(ea, eb, { vx, vy, vz, sx, sy, iz, ok });
   // occlude()'s hidden [t0,t1, ...] intervals → the edge's own ordered
   // ['v'|'h', t0, t1] pieces covering [0,1], in its ea→eb direction.
   const hiddenToStates = hid => {
@@ -945,6 +966,35 @@ function generate(cam, S, shadingBuffer){
      end up as flat [x0,y0,x1,y1,...] segment lists pushed in chain-adjacency
      order, which is what lets the client's SVG builder recognize touching
      segments and merge them into one pen stroke. */
+  // One chain's walk-ordered [state, p0, p1] pieces → same-state runs, pushed
+  // to arrV ('v') or arrH ('h'); a null array drops that state. Shared by
+  // Crease (here) and Curves (6.2b).
+  const emitChainRuns = (cycle, pieces, arrV, arrH) => {
+    if (!pieces.length) return;
+    // a fully/partly-visible CYCLE was walked from an arbitrary start edge —
+    // rotate to begin right after a genuine state change (if any exists) so
+    // an arc that wraps across the arbitrary seam isn't cut into two pieces
+    // purely because of where the walk happened to start
+    let ordered = pieces;
+    if (cycle && pieces.length>1){
+      let rotateAt=-1;
+      for (let i=0;i<pieces.length;i++){
+        const prev = pieces[(i-1+pieces.length)%pieces.length];
+        if (pieces[i][0] !== prev[0]){ rotateAt=i; break; }
+      }
+      if (rotateAt>0) ordered = pieces.slice(rotateAt).concat(pieces.slice(0,rotateAt));
+    }
+    let curState=null, runPts=[];
+    const flushRun = () => {
+      if (runPts.length>=2) emitRun(curState==='v' ? arrV : arrH, runPts);
+      runPts=[];
+    };
+    for (const [st,p0,p1] of ordered){
+      if (st!==curState){ flushRun(); curState=st; runPts=[p0]; }
+      runPts.push(p1);
+    }
+    flushRun();
+  };
   for (const chain of ccChains){
     const pieces = [];                  // flat list of [state, [x0,y0], [x1,y1]], in walk order
     for (const {e:ei, rev} of chain.edges){
@@ -956,38 +1006,52 @@ function generate(cam, S, shadingBuffer){
           [ccX0[ei]+(ccX1[ei]-ccX0[ei])*t1w, ccY0[ei]+(ccY1[ei]-ccY0[ei])*t1w]]);
       }
     }
-    if (!pieces.length) continue;
-    // a fully/partly-visible CYCLE was walked from an arbitrary start edge —
-    // rotate to begin right after a genuine state change (if any exists) so
-    // an arc that wraps across the arbitrary seam isn't cut into two pieces
-    // purely because of where the walk happened to start
-    let ordered = pieces;
-    if (chain.cycle && pieces.length>1){
-      let rotateAt=-1;
-      for (let i=0;i<pieces.length;i++){
-        const prev = pieces[(i-1+pieces.length)%pieces.length];
-        if (pieces[i][0] !== prev[0]){ rotateAt=i; break; }
-      }
-      if (rotateAt>0) ordered = pieces.slice(rotateAt).concat(pieces.slice(0,rotateAt));
-    }
-    let curState=null, runPts=[];
     // Gated per sub-layer's own checkbox, same as Contour's sv/sh emit. A
     // hidden-crease layer left off must not fill with geometry: a Layout block
     // only ever stores POST-ink-avoidance geometry, so stale ch data re-enabled
     // later on a block whose Silhouette visibility has since changed could be
     // silently wrong. Not computing it when off removes that trap entirely.
-    const flushRun = () => {
-      if (runPts.length>=2){
-        const arr = curState==='v' ? (layerOn.cv ? groups.cv : null) : (layerOn.ch ? groups.ch : null);
-        emitRun(arr, runPts);
+    emitChainRuns(chain.cycle, pieces, layerOn.cv ? groups.cv : null, layerOn.ch ? groups.ch : null);
+  }
+
+  /* 6.2b · Curves (kv/kh) — the OBJ file's `l` polylines, chained once at
+     load (buildEdgeChains over their shared vertex indices) and emitted
+     exactly like Crease above: occlude() per segment, same-state pieces
+     joined across segments into runs. Not mesh edges, so they have no faces
+     of their own to skip, and they never occlude, shade or cast anything
+     (they are not in tri).
+     A curve may lie ON the surface (drawn on it, snapped to it). Its chords
+     then dip under a convex surface by a sliver and graze it everywhere
+     else, which would chop it into visible/hidden flicker — so an occluder
+     must be in front by more than curveSurfTol (a fraction of the model
+     radius, the Lines section's "Surface tolerance") to hide it. That world
+     distance becomes a depth-key margin at the segment's own depth: 1:1 in
+     orthographic (the key is view z), key² in perspective (the key is
+     1/dist, and d(1/dist) = dist · dist⁻²). */
+  if ((layerOn.kv || layerOn.kh) && M.nce){
+    const surfTolW = (Number.isFinite(S.curveSurfTol) && S.curveSurfTol >= 0 ? S.curveSurfTol : 0.005) * M.radius;
+    const projectCurveSeg = edgeProjector(M.curveEA, M.curveEB, projectPoints(curvePos, curvePos.length / 3));
+    const arrV = layerOn.kv ? groups.kv : null, arrH = layerOn.kh ? groups.kh : null;
+    for (const chain of M.curveChains){
+      let pieces = [], cycle = chain.cycle;
+      for (const {e, rev} of chain.edges){
+        const p = projectCurveSeg(e);
+        if (!p){                        // behind the camera: the run must break here
+          emitChainRuns(false, pieces, arrV, arrH);
+          pieces = []; cycle = false;
+          continue;
+        }
+        const zm = (p[2]+p[5])*0.5;
+        const hid = occlude(p[0],p[1],p[2],p[3],p[4],p[5], -1, -1, undefined, undefined,
+                            ortho ? surfTolW : surfTolW*zm*zm);
+        for (const [st,t0,t1] of toWalkOrder(hiddenToStates(hid), rev)){
+          pieces.push([st,
+            [p[0]+(p[3]-p[0])*t0, p[1]+(p[4]-p[1])*t0],
+            [p[0]+(p[3]-p[0])*t1, p[1]+(p[4]-p[1])*t1]]);
+        }
       }
-      runPts=[];
-    };
-    for (const [st,p0,p1] of ordered){
-      if (st!==curState){ flushRun(); curState=st; runPts=[p0]; }
-      runPts.push(p1);
+      emitChainRuns(cycle, pieces, arrV, arrH);
     }
-    flushRun();
   }
 
   /* ================================================================
@@ -2709,8 +2773,9 @@ function generate(cam, S, shadingBuffer){
   /* Pass 2: cross-layer ink-avoidance across the FULL drawing-priority
      hierarchy (highest first): Silhouette > Silhouette individual >
      Silhouette individual hidden > Contour > Contour hidden > Crease >
-     Crease hidden > Hatch > Crosshatch > Deep shadow — i.e. HIER below
-     (so/iv/ih/sv/sh/cv/ch) plus the three hatch layers, which are still
+     Crease hidden > Curves > Curves hidden > Hatch > Crosshatch > Deep
+     shadow — i.e. HIER below (so/iv/ih/sv/sh/cv/ch/kv/kh) plus the three
+     hatch layers, which are still
      excluded from the cascade for the reason noted just after it.
      A lower-priority layer never re-strokes ink an enabled higher-priority
      layer already covers — applied as a sequential cascade (each layer
@@ -2741,7 +2806,10 @@ function generate(cam, S, shadingBuffer){
   // real output.
   const debugPreDedupSo = S.debugPreDedup ? groups.so.slice() : null;
   const debugPreDedupIv = S.debugPreDedup ? groups.iv.slice() : null;
-  const HIER = ['so','iv','ih','sv','sh','cv','ch'];
+  // Curves (kv/kh) come last among the edge layers: they give way to every
+  // mesh edge they happen to retrace. They stay out of the intra-layer
+  // dedupCollinear pass above — a curve's own chain never retraces itself.
+  const HIER = ['so','iv','ih','sv','sh','cv','ch','kv','kh'];
   for (let i=1;i<HIER.length;i++){
     const lo = HIER[i];
     for (let j=0;j<i;j++){
@@ -2938,7 +3006,22 @@ if (typeof self !== 'undefined' && typeof self.document === 'undefined'){
             parsed.soup[i+2] = -y;
           }
         }
+        if (m.zUp && parsed.curves) for (let i=0;i<parsed.curves.pos.length;i+=3){   // same flip for the curves
+          const y = parsed.curves.pos[i+1];
+          parsed.curves.pos[i+1] = parsed.curves.pos[i+2];
+          parsed.curves.pos[i+2] = -y;
+        }
         const mesh = buildMesh(parsed);
+        // Curve chains are pure topology (camera- and rotation-independent),
+        // so they're walked once here, the same way Crease chains mesh edges.
+        mesh.curveChains = buildEdgeChains(new Uint8Array(mesh.nce).fill(1), mesh.nce, mesh.curveEA, mesh.curveEB, mesh.curvePos);
+        // The curves as flat segment pairs for the viewport's LineSegments —
+        // a fresh array, so transferring it detaches nothing the solver uses.
+        const curveDisp = new Float32Array(mesh.nce * 6);
+        for (let i=0;i<mesh.nce;i++) for (let k=0;k<2;k++){
+          const vi = k ? mesh.curveEB[i] : mesh.curveEA[i];
+          curveDisp[i*6+k*3]=mesh.curvePos[vi*3]; curveDisp[i*6+k*3+1]=mesh.curvePos[vi*3+1]; curveDisp[i*6+k*3+2]=mesh.curvePos[vi*3+2];
+        }
         // expanded (non-indexed) copy for flat-shaded display
         const disp = new Float32Array(mesh.nt * 9);
         for (let t=0;t<mesh.nt;t++) for (let v=0;v<3;v++){
@@ -2955,8 +3038,8 @@ if (typeof self !== 'undefined' && typeof self.document === 'undefined'){
         const cnCopy = mesh.cn.slice();
         post({ type:'loaded', name: m.name||'demo scene', stats: mesh.stats,
                center: mesh.center, radius: mesh.radius, bboxMinY: mesh.bbox[1], display: disp,
-               cornerNormals: cnCopy },
-             [disp.buffer, cnCopy.buffer]);
+               cornerNormals: cnCopy, curves: curveDisp },
+             [disp.buffer, cnCopy.buffer, curveDisp.buffer]);
       } else if (m.type === 'generate'){
         generate(m.cam, m.settings, m.shadingBuffer);
       } else if (m.type === 'debugRawEdges'){

@@ -73,6 +73,8 @@
      sv / sh   CONTOUR, visible / hidden — "s" for silhouette, from when
                contour edges were part of that family
      cv / ch   Crease, visible / hidden
+     kv / kh   Curves (an OBJ file's `l` polylines), visible / hidden —
+               "k" because "c" was already Crease's
      h1 h2 h3  the first three Hatch layers (once Hatch, Crosshatch and
                Deep shadow, before fill layers became user-managed)
      cr        the first Circles layer
@@ -86,6 +88,10 @@ export const LAYER_TYPES = {
   sh: { kind:'edge', name:'· hidden',              chain:'contour',    geometry:'paths', host:'edgeRowsContour', listName:'Contour hidden' },
   cv: { kind:'edge', name:'Crease',                chain:'crease',     geometry:'paths', host:'edgeRowsCrease' },
   ch: { kind:'edge', name:'· hidden',              chain:'crease',     geometry:'paths', host:'edgeRowsCrease', listName:'Crease hidden' },
+  // The worker emits curves in chain-walk order exactly like Crease, so they
+  // chain the same way.
+  kv: { kind:'edge', name:'Curves',                chain:'crease',     geometry:'paths', host:'edgeRowsCurves' },
+  kh: { kind:'edge', name:'· hidden',              chain:'crease',     geometry:'paths', host:'edgeRowsCurves', listName:'Curves hidden' },
   hatch: { kind:'fill', name:'Hatch', geometry:'lines', host:'fillRows', pen:'p5', settings:[
     // A full turn, not the half a line family repeats over: the carrier
     // lines of 217° and of 37° are the same direction but anchored from
@@ -122,6 +128,8 @@ export function defaultLayers(){
     { id:'sh', type:'sh', on:false, pen:'p4', dash:'D1',    texture:[] },
     { id:'cv', type:'cv', on:true,  pen:'p3', dash:'solid', texture:[] },
     { id:'ch', type:'ch', on:false, pen:'p4', dash:'D1',    texture:[] },
+    { id:'kv', type:'kv', on:true,  pen:'p3', dash:'solid', texture:[] },
+    { id:'kh', type:'kh', on:false, pen:'p4', dash:'D1',    texture:[] },
     newFillLayer('hatch',   'h1', { on:true,  angleDeg:45,  threshold:0.92 }),
     newFillLayer('hatch',   'h2', { on:true,  angleDeg:135, threshold:0.45 }),
     //newFillLayer('hatch',   'h3', { on:false, angleDeg:90,  threshold:0.18 }),

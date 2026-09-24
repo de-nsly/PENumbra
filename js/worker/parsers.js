@@ -2,7 +2,8 @@
    worker/parsers.js — mesh input: STL, OBJ, demo scene
    Pure functions, no shared state: given raw file bytes (or nothing,
    for demoSoup) each returns a flat triangle soup for buildMesh to
-   weld — see mesh.js.
+   weld — see mesh.js. parseOBJ also returns the file's `l` polylines,
+   the Curves layers' input.
    ================================================================ */
 /* ---------------- file parsing ---------------- */
 export function parseSTL(buf){
@@ -38,9 +39,21 @@ export function parseSTL(buf){
   return new Float32Array(arr);
 }
 
+// Also returns the file's curves — its `l` polyline elements — as
+// `curves: { pos, edges }`: the positions of every vertex a curve uses
+// (compacted, three floats each) and one index pair per curve segment into
+// them, each undirected segment once. Kept apart from the triangle soup:
+// curves are drawn, never welded, occluding or shaded (see buildMesh).
 export function parseOBJ(buf){
   const text = new TextDecoder().decode(new Uint8Array(buf));
   const v = [], soup = [], objId = [];
+  const curveSegs = [], curveSeen = new Set();       // OBJ vertex index pairs
+  const toIndex = s => {                             // `v` of v/vt/vn → 0-based, or -1
+    let i = parseInt(s, 10);
+    if (!i && i !== 0) return -1;
+    i = i > 0 ? i - 1 : v.length / 3 + i;
+    return i >= 0 && i < v.length / 3 ? i : -1;
+  };
   // Tracks which source OBJ object (`o` line) each emitted triangle came
   // from — buildMesh uses this to weld vertices PER OBJECT rather than
   // globally, so touching-but-distinct manifold objects (e.g. a mosaic of
@@ -64,19 +77,42 @@ export function parseOBJ(buf){
       const p = line.slice(2).trim().split(/\s+/);
       const idx = [];
       for (let t = 0; t < p.length; t++){
-        let i = parseInt(p[t], 10);                        // takes v of v/vt/vn
-        if (!i && i !== 0) continue;
-        i = i > 0 ? i - 1 : v.length / 3 + i;
-        if (i >= 0 && i < v.length / 3) idx.push(i);
+        const i = toIndex(p[t]);
+        if (i >= 0) idx.push(i);
       }
       for (let k = 2; k < idx.length; k++){                // fan-triangulate n-gons
         const a = idx[0], b = idx[k-1], c = idx[k];
         soup.push(v[a*3],v[a*3+1],v[a*3+2], v[b*3],v[b*3+1],v[b*3+2], v[c*3],v[c*3+1],v[c*3+2]);
         objId.push(curObj);
       }
+    } else if (c0 === 108 && (c1 === 32 || c1 === 9)){     // "l " — a polyline (curve)
+      // Exporters write a curve either as one long `l` or as one `l a b` per
+      // segment (Blender's loose edges); both come out as the same segment
+      // list here, and buildEdgeChains rejoins them through the shared
+      // vertex indices.
+      const p = line.slice(2).trim().split(/\s+/);
+      let prev = -1;
+      for (let t = 0; t < p.length; t++){
+        const i = toIndex(p[t]);
+        if (i < 0) continue;
+        if (prev >= 0 && prev !== i){
+          const key = prev < i ? prev + ',' + i : i + ',' + prev;
+          if (!curveSeen.has(key)){ curveSeen.add(key); curveSegs.push(prev, i); }
+        }
+        prev = i;
+      }
     }
   }
-  return { soup: new Float32Array(soup), objId: new Uint32Array(objId) };
+  // compact: only the vertices a curve actually uses
+  const cmap = new Map(), cpos = [], edges = new Uint32Array(curveSegs.length);
+  for (let k = 0; k < curveSegs.length; k++){
+    const i = curveSegs[k];
+    let ci = cmap.get(i);
+    if (ci === undefined){ ci = cpos.length / 3; cpos.push(v[i*3], v[i*3+1], v[i*3+2]); cmap.set(i, ci); }
+    edges[k] = ci;
+  }
+  return { soup: new Float32Array(soup), objId: new Uint32Array(objId),
+           curves: { pos: new Float32Array(cpos), edges } };
 }
 
 /* ---------------- demo mesh: torus on a pedestal ---------------- */

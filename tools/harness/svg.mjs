@@ -4,7 +4,7 @@
    segment arrays into the actual <path> data that gets exported. For
    Contour (sv/sh) that is chainByRun -> mergeContourRunSplits ->
    splitSelfTouching -> simplifyCollinear; Silhouette (so/iv/ih) and
-   Crease (cv/ch) each have their own chain path. All of those are pure
+   Crease (cv/ch, and Curves kv/kh with it) each have their own chain path. All of those are pure
    geometry functions imported straight from the real module — if the
    app's chaining changes, the harness changes with it.
 
@@ -31,7 +31,7 @@ export {
 };
 
 const CHAIN_LAYERS = { so:1, iv:1, ih:1 };
-const SEQ_CHAIN_LAYERS = { cv:1, ch:1 };
+const SEQ_CHAIN_LAYERS = { cv:1, ch:1, kv:1, kh:1 };   // Crease, and Curves (chained like it)
 
 /* The per-layer branch of renderResult's LAYERS loop, for one layer key —
    calling the same per-layer builders renderResult calls. Returns the layer's

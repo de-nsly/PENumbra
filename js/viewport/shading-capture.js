@@ -12,7 +12,7 @@
    this — it is the one path with no headless equivalent.
    ================================================================ */
 import { $ } from '../main.js';
-import { camera, gridHelper, modelMesh, renderer, scene, vp } from './viewport3d.js';
+import { camera, curveLines, gridHelper, modelMesh, renderer, scene, vp } from './viewport3d.js';
 /* ================= shading-buffer capture =================
    Renders the model once more into an offscreen float target with a
    material that outputs only max(0,N·L)·shadowFactor (R channel) plus a
@@ -119,6 +119,10 @@ export function captureShadingBuffer(){
   // shadow buffer. Hide it for this one render, restore right after.
   const prevGridVisible = gridHelper ? gridHelper.visible : null;
   if (gridHelper) gridHelper.visible = false;
+  // The curves likewise: drawn, they would write their own colour into the
+  // N·L channel and set the geometry mask along every curve. Curves take no
+  // part in shading.
+  if (curveLines) curveLines.visible = false;
   // Swaps each mesh's own material for a clone of itself (see
   // makeShadingMaterialFrom) — modelMesh may be a Group of multiple
   // shells, so this walks every Mesh found under it and clones each one's
@@ -138,6 +142,7 @@ export function captureShadingBuffer(){
   for (const [o, mat] of swapped) o.material = mat;   // restore originals
   scene.background = prevBackground;
   if (gridHelper) gridHelper.visible = prevGridVisible;
+  if (curveLines) curveLines.visible = true;
   if (!shadingMaterialVerified){
     console.warn('[shadingCapture] proceeding despite the shader-injection check above failing — treat this buffer as unverified.');
   }

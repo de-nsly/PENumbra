@@ -282,6 +282,16 @@ export function buildMesh(input){
   // why this is a separate, re-runnable function rather than inline here.
   const cn = computeCornerNormals(nv, nt, tri, pos, fn, ea, eb, et0, et1, eang, DEFAULT_HARD_EDGE_DEG);
 
+  // Curves (parseOBJ's `l` polylines): carried through untouched and kept
+  // out of everything above — no weld, no adjacency, no bbox/center/radius.
+  // They are drawn (Curves layers), never occlude, shade or cast anything.
+  // Segment i runs curveEA[i] → curveEB[i], indices into curvePos.
+  const curves = input.curves;
+  const curvePos = curves ? curves.pos : new Float32Array(0);
+  const nce = curves ? curves.edges.length / 2 : 0;
+  const curveEA = new Uint32Array(nce), curveEB = new Uint32Array(nce);
+  for (let i = 0; i < nce; i++){ curveEA[i] = curves.edges[i*2]; curveEB[i] = curves.edges[i*2+1]; }
+
   M = {
     nv, nt,
     pos: new Float32Array(pos),
@@ -293,7 +303,9 @@ export function buildMesh(input){
     et0: new Int32Array(et0), et1: new Int32Array(et1),
     eang: new Float32Array(eang),
     faceAdjStart, faceAdjList,
-    stats: { trisIn: nIn, tris: nt, verts: nv, boundary, nonManifold, flips, reoriented, shells: nComp },
+    curvePos, nce, curveEA, curveEB,
+    curveChains: null,                 // buildEdgeChains over the curve segments — set by solver.js at load
+    stats: { trisIn: nIn, tris: nt, verts: nv, boundary, nonManifold, flips, reoriented, shells: nComp, curveSegs: nce },
     bbox: [x0, y0, z0, x1, y1, z1],
     center: [(x0+x1)/2, (y0+y1)/2, (z0+z1)/2],
     radius: diag / 2

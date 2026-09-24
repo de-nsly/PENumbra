@@ -172,6 +172,8 @@ The layer list, top to bottom, **is** the drawing-priority order:
 | · hidden | occluded contour |
 | **Crease** | Sharp folds between faces, past the crease-angle threshold |
 | · hidden | occluded crease |
+| **Curves** | The polylines (`l` elements) in an OBJ file — shown in the 3D view, never shaded or shadowed |
+| · hidden | occluded curves |
 | **Hatch** | Parallel shading lines |
 | **Crosshatch** | A second hatch set crossing the first, in darker areas |
 | **Deep shadow** | A denser fill for the darkest areas |
@@ -198,6 +200,12 @@ too.
 when it is a triangulation artifact: a stretch is removed only if the surface behind it is both
 depth-similar (Cleanup, a fraction of the model's size) and within Max hops triangle steps across the
 surface.
+
+**Surface tolerance** (Lines tab) is for curves drawn on the model's surface: their straight segments
+dip slightly under a curved surface, which would chop them into visible/hidden dashes. A surface has to
+be in front of a curve by more than this (a fraction of the model's size) to hide it. Raise it if curves
+on the surface come out broken — coarsely segmented curves need more; lower it if a curve just behind a
+surface shows through.
 
 **Dedup** (General tab) cleans up the raw solver output, where the same physical edge can be traced by
 two nearly-coincident segments, or a single edge can be broken by an occlusion gap:

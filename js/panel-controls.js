@@ -224,6 +224,9 @@ export function gatherSettings(){
     contourMaxHops: +$('contourMaxHops').value,
     smoothShading: $('smoothShading').checked,
     creaseDeg: +$('creaseDeg').value,
+    // Curves' "Surface tolerance": how far in front of a curve (fraction of
+    // the model radius) a surface must be to hide it — see 6.2b in the worker.
+    curveSurfTol: +$('curveSurfTol').value,
     light: lightVec(),
     // Edge layers' draw state, keyed by layer id — the full-hierarchy cascade
     // needs to know whether EVERY individual layer will actually put ink on
@@ -329,14 +332,15 @@ export function syncShadowUI(){
   $('invertShadowsRow').classList.toggle('ctlDisabled', !anyShadow);
   $('invertShadows').disabled = !anyShadow;
 }
-// The three Lines-section sliders that belong to one layer group each, faded
+// The Lines-section sliders that belong to one layer group each, faded
 // out while that group draws nothing at all — the same treatment (and the same
 // .ctlDisabled class) the shadow controls above get. Each condition mirrors
 // the solver's own gate exactly, so a disabled slider is genuinely inert
 // rather than merely hidden: Contour Cleanup and Max hops feed
 // buildContourDrops, which does nothing unless layerOn.sv || layerOn.sh, and
 // Crease angle is only read inside the worker's own `wantCrease` guard, which is
-// this same cv || ch test on gatherSettings' layerOn.
+// this same cv || ch test on gatherSettings' layerOn. Surface tolerance is
+// read only inside the worker's kv || kh guard (6.2b).
 //
 // Never clears or rewrites a slider's value — re-enabling a layer resumes
 // whatever was set before, exactly as syncShadowUI leaves Invert shadows
@@ -350,6 +354,7 @@ export function syncLineLayerUI(){
   $('contourCleanupCtl').classList.toggle('ctlDisabled', !contourOn);
   $('contourMaxHopsCtl').classList.toggle('ctlDisabled', !contourOn);
   $('creaseDegCtl').classList.toggle('ctlDisabled', !creaseOn);
+  $('curveSurfTolCtl').classList.toggle('ctlDisabled', !(isLayerOn('kv') || isLayerOn('kh')));
 }
 // A circles layer's Center X/Y are offsets from the page's own center, so
 // the natural range is exactly half the page in each direction: reaching a

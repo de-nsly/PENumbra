@@ -132,12 +132,21 @@ soft-shadow sampling -> per-face/per-edge visibility via ray occlusion (`occlude
 classify edges into silhouette/contour/crease, each split into visible/hidden -> generate hatch/crosshatch/
 circle fill patterns for shaded faces -> post back flat segment arrays per layer.
 
+**Curves** (`kv`/`kh`): an OBJ's `l` polylines, parsed by `parseOBJ` and carried on `M` apart from the
+triangles (`curvePos`/`curveEA`/`curveEB`, chained once at load by `buildEdgeChains`). They are drawn and
+hidden-line-removed (`generate()` step 6.2b, `occlude()` with a `bias` from the "Surface tolerance" slider
+so curves lying on the surface don't flicker) but never occlude, shade or cast — they are not in `tri`, and
+the viewport's `curveLines` is hidden during `captureShadingBuffer`. A model must still have triangles.
+With no curves in the model, `syncCurveLayers` (`layer-rows.js`) hides their rows and slider and switches
+both layers off, handing their on-states back when a model with curves loads.
+
 **Layer model** (`layers` in `layers.js`): an ordered array of layer instances `{id, type, on, pen, dash,
 texture, …fill settings}`. The ids are **persisted** (the layer list, every Layout block's
 `layerPaths`/`layerVisible`/`overrideStyle`, clipboard payloads), so several of them no longer read like
 what they draw — the same decoder table is on `LAYER_TYPES` in `layers.js`: `so` silhouette, `iv`/`ih`
 silhouette individual, `sv`/`sh` **contour** (the "s" is from when contour edges were part of the
-silhouette family), `cv`/`ch` crease, `h1`/`h2`/`h3` the first three hatch layers (once
+silhouette family), `cv`/`ch` crease, `kv`/`kh` curves (an OBJ file's `l` polylines — see below),
+`h1`/`h2`/`h3` the first three hatch layers (once
 Hatch/Crosshatch/Deep shadow), `cr` the first circles layer; layers the user adds get `f1`, `f2`, …
 (`nextFillId`, never reused in a session). Edge layers are fixed singletons; fill layers can be added,
 duplicated, deleted and reordered among themselves, any number of each type. Every fill setting is the

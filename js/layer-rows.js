@@ -22,6 +22,7 @@ import { renderTextureStack, setTextureLayer } from './texture-stack.js';
 import { refreshAllBlockStyles, scheduleOverlayRender } from './layout/layout-model.js';
 import { layoutOverlayOn } from './layout/layout-list.js';
 import { updateTextureGizmo } from './paper-preview.js';
+import { curveLines } from './viewport/viewport3d.js';
 
 // Pen widths are mm values entered to plotter-nib precision (0.15, 0.25,
 // 0.35mm etc.) — display up to 2 decimals, trimming trailing zeros rather
@@ -484,11 +485,36 @@ export function buildLayerRows(){
   syncFillRowSoftState();
 }
 
+/* The Curves layers (kv/kh) only mean something when the loaded model has
+   curves (an OBJ's `l` polylines — curveLines in viewport3d.js). Without
+   any, their rows and the Surface tolerance slider (#curvesGroup) are
+   hidden and both layers are switched off, so the Texture tab doesn't offer
+   them either. Their on-states are set aside meanwhile and handed back when
+   a model with curves loads. Called after every model load, and after a
+   scene import rebuilds the layers (which may switch them back on). */
+let curveOnStash = null;                // { id: on } while the model has no curves
+export function syncCurveLayers(){
+  const has = !!curveLines;
+  $('curvesGroup').hidden = !has;
+  const curveLayers = layers.filter(L => layerType(L).host === 'edgeRowsCurves');
+  if (!has){
+    if (!curveOnStash) curveOnStash = Object.fromEntries(curveLayers.map(L => [L.id, L.on]));
+    for (const L of curveLayers) L.on = false;
+  } else if (curveOnStash){
+    for (const L of curveLayers) if (L.id in curveOnStash) L.on = curveOnStash[L.id];
+    curveOnStash = null;
+  }
+  for (const L of curveLayers) applyLayerStyle(L.id);
+  syncLineLayerUI();
+  renderTextureStack();
+}
+
 /* ================= init =================
    Everything above only declares. This wires the DOM and starts the
    module's live behaviour — called once by app.js, in script order. */
 export function initLayerRows(){
   buildLayerRows();
+  syncCurveLayers();                    // no model yet: no curves
   // "+ Add layer": one option per fill type, and back to the placeholder
   // after each pick (it is an action, not a stored choice).
   const addSel = $('addLayerSelect');
