@@ -728,7 +728,11 @@ export function arcToBezierSegments(cx, cy, radius, u0, u1){
    step (applyHatchTexture), run where the first of them sits in the stack:
    they share per-carrier random draws and are applied rotate → shift →
    overshoot per segment, so running them as three separate passes would
-   change the output. The editor keeps them adjacent (texture-stack.js). */
+   change the output. The editor keeps them adjacent (texture-stack.js).
+   Disabled entries (on:false, the editor's eye toggle) are dropped from the
+   stack up front, not skipped in the loop: the combined step reads its
+   three entries from the stack it is handed, so a disabled one must not be
+   in it. */
 function segmentsToPolylines(st){
   const polylines = [];
   for (let i = 0; i < st.segs.length; i += 4) polylines.push([st.segs[i], st.segs[i+1], st.segs[i+2], st.segs[i+3]]);
@@ -799,9 +803,10 @@ const TEXTURE_IMPL = {
 // ctx: { geometry ('lines' | 'arcs' | 'paths'), mmToPx,
 // familyAngleDeg (lines: the hatch family's angle) }
 export function applyTextureStack(input, stack, ctx){
+  const active = stack.filter(f => f.on !== false);
   let st = input;
   let lineJitterDone = false;
-  for (const f of stack){
+  for (const f of active){
     const impl = TEXTURE_IMPL[f.type];
     if (!impl || !filterSupports(f.type, ctx.geometry)) continue;
     if (LINE_JITTER_TYPES[f.type] && st.rep === 'segments'){
@@ -811,7 +816,7 @@ export function applyTextureStack(input, stack, ctx){
     let run = impl[st.rep];
     if (!run && st.rep === 'segments' && impl.polylines){ st = segmentsToPolylines(st); run = impl.polylines; }
     if (!run) continue;
-    st = run(st, f, ctx, stack);
+    st = run(st, f, ctx, active);
   }
   return st.rep === 'segments' ? segmentsToPolylines(st) : st;
 }

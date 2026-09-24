@@ -3,7 +3,8 @@
    Edits one layer's texture stack (layers.js: the instance's `texture`
    array, entries typed by TEXTURE_FILTERS): pick a layer from the button
    list, add a filter from the types its geometry supports, edit each
-   entry's parameters, remove an entry. Every enabled layer is offered,
+   entry's parameters, switch an entry off (it stays in the stack) or
+   remove it. Every enabled layer is offered,
    edge and fill alike, in two columns (textureLayers(), buildLayerList);
    the Filter menu offers what that layer's geometry supports (refactor
    plan §10).
@@ -58,12 +59,13 @@ function setParam(entry, key, value){
 }
 // A new entry of one type for L's stack: with sync on, a copy of the first
 // entry of that type on another layer (layer order), so it starts in step;
-// otherwise, or when no layer has one, the schema defaults.
+// otherwise, or when no layer has one, the schema defaults. Either way it
+// starts enabled — on/off is the entry's own, never synced.
 function filterToAdd(L, type){
   if (syncOn()){
     for (const O of layers){
       const src = O !== L && stackEntry(O.texture, type);
-      if (src) return { ...src };
+      if (src) return { ...src, on: true };
     }
   }
   return newFilter(type);
@@ -81,9 +83,9 @@ function selectedLayer(){
    always shown with its heading (a hint when none of its layers is
    enabled). One block button per enabled layer, in layer order, under its
    list name (layerListName: "Contour hidden", "Silhouette ind."). Each
-   shows how many filters its stack holds on the right, or nothing when the
-   stack is empty; every add/remove re-renders the list, so the count is
-   never stale. A click picks that layer; clicking the one already picked
+   shows how many enabled filters its stack holds on the right, or nothing
+   when none is; every add/remove/toggle re-renders the list, so the count
+   is never stale. A click picks that layer; clicking the one already picked
    does nothing, since this tab always edits some layer. */
 function buildLayerList(current){
   const list = $('texLayerList');
@@ -113,7 +115,7 @@ function buildLayerList(current){
       name.className = 'texLayerName';
       name.textContent = layerListName(L);
       btn.appendChild(name);
-      const n = L.texture.length;
+      const n = L.texture.filter(f => f.on !== false).length;
       if (n){
         const filters = n + (n === 1 ? ' filter' : ' filters');
         const count = document.createElement('span');
@@ -134,24 +136,40 @@ function buildLayerList(current){
   }
 }
 
-// One stack entry: a header row with the filter's name and a delete
-// button, then a control row per parameter.
+// One stack entry: a header row with the filter's name, an enable toggle
+// and a delete button, then a control row per parameter. A disabled entry
+// (on:false) stays in the stack, dimmed and still editable, and is skipped
+// when the stack is applied (applyTextureStack) — like a Blender modifier
+// switched off. A missing `on` reads as on (see newFilter, layers.js).
 function buildEntry(L, entry, index){
   const def = TEXTURE_FILTERS[entry.type];
+  const on = entry.on !== false;
   const group = document.createElement('div');
-  group.className = 'textureGroup';
+  group.className = 'textureGroup' + (on ? '' : ' rowHidden');
   const head = document.createElement('div');
   head.className = 'dashGroupLabel';
-  head.innerHTML = '<span></span><button type="button" class="rowBtn rowDelete" title="Remove filter">&#10005;</button>';
-  head.firstChild.textContent = def.name;
-  head.lastChild.setAttribute('aria-label', 'Remove ' + def.name);
-  head.lastChild.addEventListener('click', () => {
+  head.innerHTML = '<span class="texFilterName"></span>' +
+    '<button type="button" class="rowBtn rowEye">' + (on ? '&#9673;' : '&#9675;') + '</button>' +
+    '<button type="button" class="rowBtn rowDelete" title="Remove filter">&#10005;</button>';
+  const [name, eye, del] = head.children;
+  name.textContent = def.name;
+  eye.title = on ? 'Disable filter' : 'Enable filter';
+  eye.setAttribute('aria-label', (on ? 'Disable ' : 'Enable ') + def.name);
+  eye.setAttribute('aria-pressed', String(on));
+  eye.addEventListener('click', () => {
+    entry.on = !on;
+    renderTextureStack();
+    markStale();
+  });
+  del.setAttribute('aria-label', 'Remove ' + def.name);
+  del.addEventListener('click', () => {
     L.texture.splice(index, 1);
     renderTextureStack();
     markStale();
   });
   group.appendChild(head);
   const fields = document.createElement('div');
+  fields.className = 'texFilterFields';
   for (const p of def.params){
     const idBase = 'tex_' + L.id + '_' + entry.type + '_' + p.key;
     if (p.kind === 'checkbox'){

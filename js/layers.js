@@ -244,9 +244,12 @@ export function filterSupports(type, geometry){
   const f = TEXTURE_FILTERS[type];
   return !!f && f.geometry.includes(geometry);
 }
-// A fresh stack entry of one type at the schema's defaults.
+// A fresh stack entry of one type at the schema's defaults. `on` is the
+// entry's disable toggle (the Texture tab's eye button): an entry switched
+// off stays in the stack but applyTextureStack skips it. A missing `on`
+// reads as on, so stacks from before the toggle load unchanged.
 export function newFilter(type){
-  const entry = { type };
+  const entry = { type, on: true };
   for (const p of TEXTURE_FILTERS[type].params) entry[p.key] = p.def;
   return entry;
 }
@@ -265,7 +268,7 @@ function sanitizeStack(src, geometry){
   for (const f of src){
     if (!f || typeof f !== 'object' || !filterSupports(f.type, geometry)) continue;
     if (out.some(e => e.type === f.type)) continue;
-    const entry = { type: f.type };
+    const entry = { type: f.type, on: f.on !== false };
     for (const p of TEXTURE_FILTERS[f.type].params){
       entry[p.key] = p.kind === 'checkbox' ? !!f[p.key] : (Number.isFinite(+f[p.key]) && f[p.key] !== '' && f[p.key] !== null ? +f[p.key] : p.def);
     }
@@ -322,7 +325,7 @@ function v1TextureStack(settings, layerId, geometry){
     if (!filterSupports(type, geometry)) continue;
     const ids = V1_TEXTURE_IDS[type];
     if (!settings[ids.on + suffix]) continue;
-    const entry = { type };
+    const entry = { type, on: true };
     for (const p of TEXTURE_FILTERS[type].params){
       const v = settings[ids.params[p.key] + suffix];
       entry[p.key] = p.kind === 'checkbox' ? !!v : (Number.isFinite(+v) ? +v : 0);

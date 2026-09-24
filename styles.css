@@ -343,7 +343,7 @@ body.blocksPanelOpen #reset2dBtn{transform:translate(calc(12px + var(--blocks-fl
 .rowBtn.rowDelete:hover{border-color:var(--warn);color:var(--warn)}
 .rowBtn.rowLockActive{color:var(--accent)}
 .rowBtn svg{display:block}
-.listRow.rowHidden .rowName{opacity:.45}
+.listRow.rowHidden .rowName,.textureGroup.rowHidden .texFilterName,.textureGroup.rowHidden .texFilterFields{opacity:.45}
 .listRow.rowSelected{background:rgba(88,184,214,.1);border-radius:4px}
 
 /* Layout canvas — margin guide (paper reference, bottom layer, same
@@ -652,8 +652,10 @@ input[type=number]{width:58px}
    layer being edited), then the Filter picker, then
    that layer's stack. The picker sits between the two so "add a filter"
    stays in one fixed place however many are already applied. Each filter
-   in the stack is a .textureGroup: a .dashGroupLabel header, then its
-   parameter controls. Both are drawn as panel blocks (surface, hover and
+   in the stack is a .textureGroup: a .dashGroupLabel header (name, then
+   the enable eye and delete .rowBtns packed at the right), then its
+   parameter controls; a disabled filter is .rowHidden, dimmed like a
+   hidden Layout block row. Both are drawn as panel blocks (surface, hover and
    selected states: see the fill layer rows below). The button's name is
    set like a layer row's (.gridRow .nm) and truncates first; the filter
    count on the right is the muted mono readout .stat uses, minus its tall
@@ -664,6 +666,8 @@ input[type=number]{width:58px}
 .texLayerName{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .texLayerCount{flex:none;font-family:var(--mono);font-size:var(--fs-data);color:var(--muted)}
 .textureGroup{margin:6px 0;padding:8px}
+.textureGroup .dashGroupLabel{gap:4px}
+.texFilterName{flex:1}
 
 /* layer rows — pen swatch style. #fillRows holds the fill rows and anchors
    the drag-reorder insertion line; #fillSettings below it holds every fill
