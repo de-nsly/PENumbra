@@ -536,8 +536,8 @@ export function onLoaded(m){
   if (m.curves && m.curves.length){
     const curveGeo = new THREE.BufferGeometry();
     curveGeo.setAttribute('position', new THREE.BufferAttribute(m.curves, 3));
-    // a warm colour that reads against both the grey model and the dark background
-    curveLines = new THREE.LineSegments(curveGeo, new THREE.LineBasicMaterial({ color: 0xe0913a }));
+    // black, like ink: reads against the grey model even where it is shaded
+    curveLines = new THREE.LineSegments(curveGeo, new THREE.LineBasicMaterial({ color: 0x000000 }));
     curveLines.position.copy(modelMesh.position);
     modelPivot.add(curveLines);
   }
