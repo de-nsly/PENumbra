@@ -3,7 +3,7 @@
    The core of the Layout tab: the block list itself, each block's DOM,
    and the sheet they are arranged on. The panels around it are
    layout-list.js, the gestures layout-interaction.js, copy/paste
-   layout-clipboard.js.
+   layout-clipboard.js, undo/redo layout-history.js.
    A fixed-order stack of frozen blocks, each one a full snapshot of a past
    generation's geometry, arranged on the same paper sheet the live
    preview uses. A block's GEOMETRY is frozen at the moment it's added
@@ -35,6 +35,7 @@ import { activeTab, setActiveTab, lastResult, markStale } from '../panel-control
 import { setActiveSheet, applyPaperView, resetPaperViewFit } from '../paper-preview.js';
 import { clearSelection, resetHoverCursor, selectedBlocks, selectionFrame, setSelection, setSelectionAnchor, updateSelectionOverlay } from './layout-interaction.js';
 import { closeBlockContextMenu, contextMenuBlock, layoutOverlayFront, layoutOverlayOn, layoutOverlayOpacity, renderBlocksList, syncBlocksFloatVisibility } from './layout-list.js';
+import { commitLayoutChange, resetLayoutHistory } from './layout-history.js';
 
 
 export let blocks = [];
@@ -325,6 +326,9 @@ export function freezeCurrentGeneration(){
   refreshStatusR();
   $('statusL').textContent = 'saved ' + block.name;
   showAddToLayoutMsg(block.name + ' added to layout');
+  // A Layout undo step even though this runs from the Preview tab — Ctrl+Z
+  // there does nothing, but switching to Layout and undoing takes it back out.
+  commitLayoutChange('Add ' + block.name);
 }
 let addToLayoutMsgTimer = null;
 function showAddToLayoutMsg(text){
@@ -390,16 +394,18 @@ export function duplicateBlocks(list){
   if (!sources.length) return [];
   const dups = addBlocks(sources.map(cloneBlock), 'duplicated');
   showAddToLayoutMsg(blockCountLabel(dups) + ' added to layout');
+  commitLayoutChange('Duplicate ' + blockCountLabel(sources));
   return dups;
 }
 // The one delete path — the row's own X button, the Delete/Backspace key,
 // and anything added later all route through here, so the bookkeeping (DOM
 // teardown, context menu, surviving selection, stats, list refresh) can't
 // drift between them. No confirmation, deliberately: this only ever touches
-// blocks explicitly aimed at, unlike Delete All, which does confirm.
+// blocks explicitly aimed at, and it's one undo step (layout-history.js).
 export function deleteBlocks(list){
   const doomed = new Set(list);
   if (!doomed.size) return;
+  const label = 'Delete ' + blockCountLabel([...doomed]);
   for (const b of doomed){
     const i = blocks.indexOf(b);
     if (i >= 0) blocks.splice(i, 1);
@@ -414,6 +420,7 @@ export function deleteBlocks(list){
   setSelection(blocks.filter(b => selectedBlocks.has(b)));
   refreshStatusR();
   renderBlocksList();
+  commitLayoutChange(label);
 }
 // Shown only once there's something to duplicate at all, disabled unless
 // at least one block is selected — a multi-selection duplicates as a whole
@@ -527,7 +534,8 @@ export function blockLayerPenId(block, key){
 export function removeBlockDom(block){
   if (block.dom){ block.dom.outer.remove(); block.dom = null; }
 }
-// Scene import: the incoming list REPLACES every block. The outgoing blocks'
+// Scene import: the incoming list REPLACES every block (and the caller
+// starts the Layout undo history over — see scene-io.js). The outgoing blocks'
 // persistent DOM and any selection referencing them are torn down first —
 // reassigning `blocks` alone would orphan their <g> trees in
 // #layoutBlocksLayer (renderLayoutCanvas creates DOM for blocks that lack
@@ -721,6 +729,10 @@ function rotateBlocksForOrientationFlip(){
   // at stale coordinates relative to the blocks it's supposed to enclose.
   if (selectionFrame) selectionFrame.corners = selectionFrame.corners.map(([x,y]) => rotatePoint(x,y));
   updateSelectionOverlay();
+  // Orientation isn't part of the Layout history, so undoing past this
+  // would put every block back at its pre-flip coordinates on a page of
+  // the other shape — the history starts over here instead.
+  resetLayoutHistory();
 }
 
 /* ================= geometry helpers =================

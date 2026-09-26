@@ -15,6 +15,7 @@ import { layerById, layers } from './layers.js';
 import { applyLayerStyle, fillPenSelect, fmtWidth, layerEls } from './layer-rows.js';
 import { makeNameEditable } from './panel-controls.js';
 import { blocks } from './layout/layout-model.js';
+import { rebaseLayoutHistory } from './layout/layout-history.js';
 
 
 // Next pen id — only ever climbs (see newPenId), replaced wholesale by a
@@ -132,6 +133,10 @@ function deletePen(pen){
   PEN_LIBRARY.splice(i, 1);
   for (const L of usedLayers) L.pen = fallback.id;
   for (const ov of usedOverrides) ov.pen = fallback.id;
+  // The pen library isn't part of the Layout undo history: the moved
+  // overrides are just the current state now, and older undo snapshots that
+  // still name this pen are remapped the same way when restored.
+  if (usedOverrides.length) rebaseLayoutHistory();
   syncPenLibraryUI();
   restyleAllLayers();
 }

@@ -20,6 +20,7 @@ import { initLayoutModel } from './layout/layout-model.js';
 import { initLayoutList } from './layout/layout-list.js';
 import { initLayoutInteraction } from './layout/layout-interaction.js';
 import { initLayoutClipboard } from './layout/layout-clipboard.js';
+import { initLayoutHistory } from './layout/layout-history.js';
 import { initSceneIO } from './scene-io.js';
 
 initSegPills();
@@ -37,4 +38,5 @@ initLayoutModel();
 initLayoutList();
 initLayoutInteraction();
 initLayoutClipboard();
+initLayoutHistory();
 initSceneIO();

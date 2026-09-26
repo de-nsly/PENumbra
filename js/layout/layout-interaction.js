@@ -16,7 +16,8 @@ import { $, isFormControlTarget, isTextEntryTarget, svgEl } from '../main.js';
 import { refreshStatusR } from '../render-result.js';
 import { activeTab } from '../panel-controls.js';
 import { updateRuler } from '../paper-preview.js';
-import { MIN_BLOCK_SCALE, addBlocks, blockCorners, blocks, canvasMmToScreen, cloneBlock, computeLayoutPaperDims, deleteBlocks, gridGuidePositions, localToWorld, mmPerScreenPx, screenToCanvasMm, syncDuplicateBlockBtn, updateBlockStyle, updateBlockTransform, worldEnvelope, worldToLocal } from './layout-model.js';
+import { MIN_BLOCK_SCALE, addBlocks, blockCorners, blockCountLabel, blocks, canvasMmToScreen, cloneBlock, computeLayoutPaperDims, deleteBlocks, gridGuidePositions, localToWorld, mmPerScreenPx, screenToCanvasMm, syncDuplicateBlockBtn, updateBlockStyle, updateBlockTransform, worldEnvelope, worldToLocal } from './layout-model.js';
+import { commitLayoutChange, noteSelectionChanged } from './layout-history.js';
 // Session-only multi-select — a Set, not a persistent named group. Single
 // selection is just the size===1 case throughout, not a separate code
 // path, EXCEPT where noted (rotate/scale hit-testing and math keep an
@@ -174,6 +175,14 @@ export function setSelection(blocksArr){
   updateSelectionOverlay();
   refreshSelectionHighlight();
   syncDuplicateBlockBtn();
+  noteSelectionChanged();   // selection isn't a step, but the next step's "before" should carry it — see layout-history.js
+}
+// Undo/redo (layout-history.js) puts back the group box as it was, rotated
+// or not, right after its setSelection above has seeded a fresh axis-aligned one.
+export function setSelectionFrameCorners(corners){
+  if (!selectionFrame) return;
+  selectionFrame.corners = corners.map(c => c.slice());
+  updateSelectionOverlay();
 }
 export function clearSelection(){ if (selectedBlocks.size) setSelection([]); }
 // Ctrl/Cmd+click: add or remove one block, leaving the rest of the
@@ -806,12 +815,26 @@ function endInteraction(e){
     }
     updateSelectionOverlay();   // wipe the marquee rect itself — nothing else clears it once dragging stops
   }
+  const label = gestureLabel(interaction);
   interaction = null;
   clearSnapGuides();
   clearAxisLockGuide();
   hideRotateLabel();
   hideDimensionLabels();
   if (hadInteraction) refreshStatusR();
+  // One undo step per gesture, however many frames it took — and none at all
+  // for a click that never moved anything (commitLayoutChange compares).
+  // An Alt+drag is one "Duplicate" step, not a duplicate plus a move.
+  if (label) commitLayoutChange(label);
+}
+// The undo-step label for a finished gesture, or null for the marquee
+// (which only ever changes the selection).
+function gestureLabel(it){
+  if (it.mode === 'marquee') return null;
+  const what = it.members ? blockCountLabel(it.members.map(m => m.block)) : it.block.name;
+  if (it.mode === 'move') return (it.altDone ? 'Duplicate ' : 'Move ') + what;
+  if (it.mode === 'rotate' || it.mode === 'rotateGroup') return 'Rotate ' + what;
+  return 'Scale ' + what;
 }
 
 const NUDGE_KEYS = { ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0] };
@@ -1128,6 +1151,11 @@ export function initLayoutInteraction(){
           selectionFrame.corners = selectionFrame.corners.map(([x, y]) => [x + dx * amount, y + dy * amount]);
         }
         updateSelectionOverlay();
+        // A burst of presses on the same selection is one undo step (the
+        // 'nudge' merge key — see commitLayoutChange), so holding an arrow
+        // down doesn't flood the history. Mid-drag, the drag's own step on
+        // pointerup takes it along instead.
+        if (!interaction) commitLayoutChange('Nudge ' + blockCountLabel(interactiveSelection()), 'nudge');
       }
     }
     if ((e.key === 'Delete' || e.key === 'Backspace') && activeTab === 'layout' && selectedBlocks.size){

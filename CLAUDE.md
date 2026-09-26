@@ -82,6 +82,7 @@ js/layout/
   layout-list.js        - the Layout tab: block list rows, context menu, the floating buttons + overlay state
   layout-interaction.js - the Layout tab: selection, hit testing, move/rotate/scale gestures, snapping, guides
   layout-clipboard.js   - the Layout tab: copy / paste of blocks
+  layout-history.js     - the Layout tab: undo / redo (whole-list snapshots; every block mutation ends with commitLayoutChange)
 js/debug/*.js        - console-only diagnostics, dynamically imported by scene-io.js only when the URL has ?debug
 ```
 
@@ -195,6 +196,10 @@ loader now. A version-2 file written before fill settings moved onto the layers 
   name that isn't exported fails at module link time (the browser console and `node
   tools/harness/verify-golden.mjs` both report it). New module-level state that another module must
   *assign* needs an exported setter function.
+- Anything new that changes a Layout block (or the block list) must end with
+  `commitLayoutChange(label)` (`layout-history.js`), or it won't be its own undo step. A change
+  that shouldn't be a step calls `rebaseLayoutHistory()`; one that invalidates old snapshots calls
+  `resetLayoutHistory()`.
 - The worker and the main thread each have their own copies of some logic (e.g. mesh math) and communicate
   only via `postMessage`/structured clone — the worker cannot touch DOM or main-thread globals directly.
 - When a typed array needs to be reused by the sender after posting (e.g. the worker's own mesh buffers),

@@ -15,8 +15,9 @@ import { refreshStatusR } from '../render-result.js';
 import { dashOptionsHtml, fillPenSelect } from '../layer-rows.js';
 import { activeTab, makeNameEditable } from '../panel-controls.js';
 import { saveCurrentView } from '../viewport/saved-views.js';
-import { blocks, deleteBlocks, duplicateBlocks, freezeCurrentGeneration, removeBlockDom, renderPreviewLayoutOverlay, screenToCanvasMm, setBlocks, syncDuplicateBlockBtn, updateBlockStyle, updateBlockTransform } from './layout-model.js';
-import { LAYOUT_UI_CHROME_SELECTOR, blockForRow, clearSelection, extendSelectionTo, hitTestBlockBody, multiSelectKey, refreshInteractiveSelection, refreshSelectionHighlight, rowActionScope, selectOnly, selectedBlocks, toggleSelection } from './layout-interaction.js';
+import { blockCountLabel, blocks, deleteBlocks, duplicateBlocks, freezeCurrentGeneration, removeBlockDom, renderPreviewLayoutOverlay, screenToCanvasMm, setBlocks, syncDuplicateBlockBtn, updateBlockStyle, updateBlockTransform } from './layout-model.js';
+import { LAYOUT_UI_CHROME_SELECTOR, blockForRow, clearSelection, extendSelectionTo, hitTestBlockBody, interaction, multiSelectKey, refreshInteractiveSelection, refreshSelectionHighlight, rowActionScope, selectOnly, selectedBlocks, toggleSelection } from './layout-interaction.js';
+import { commitLayoutChange, rebaseLayoutHistory } from './layout-history.js';
 /* ================= per-block layer visibility context menu =================
    Right-clicking a block overrides the browser's default context menu with
    a small list of just that block's OWN layers (only the ones it actually
@@ -78,14 +79,24 @@ function openBlockContextMenu(block, clientX, clientY){
       updateBlockStyle(block);
       refreshStatusR();
       openBlockContextMenu(block, clientX, clientY);   // cheap full rebuild — refreshes the toggled icon
+      commitLayoutChange((block.layerVisible[L.id] ? 'Show ' : 'Hide ') + name + ' in ' + block.name);
     });
     if (block.override){
       const st = block.overrideStyle[L.id];
       const penSelect = row.children[3], dashSelect = row.children[4];
       fillPenSelect(penSelect, st.pen);
       dashSelect.value = st.dash;
-      penSelect.addEventListener('change', () => { st.pen = penSelect.value; updateBlockStyle(block); });
-      dashSelect.addEventListener('change', () => { st.dash = dashSelect.value; updateBlockStyle(block); refreshStatusR(); });
+      penSelect.addEventListener('change', () => {
+        st.pen = penSelect.value;
+        updateBlockStyle(block);
+        commitLayoutChange('Override pen of ' + name + ' in ' + block.name);
+      });
+      dashSelect.addEventListener('change', () => {
+        st.dash = dashSelect.value;
+        updateBlockStyle(block);
+        refreshStatusR();
+        commitLayoutChange('Override dash of ' + name + ' in ' + block.name);
+      });
     }
     list.appendChild(row);
   }
@@ -122,7 +133,7 @@ export function closeBlockContextMenu(){
    rule the eye/lock/delete buttons follow. Dragged blocks land as one
    contiguous run in their existing relative order, so a group reorder can
    move a stack around without also shuffling it internally. */
-let blockDragState = null;
+export let blockDragState = null;   // read by the undo shortcut, which waits out a drag in progress
 function startBlockDrag(e, block, row){
   e.preventDefault();
   e.stopPropagation();
@@ -223,8 +234,10 @@ export function renderBlocksList(){
       else selectOnly(block);
     });
     makeNameEditable(row.querySelector('.rowName'), () => block.name, newName => {
+      const oldName = block.name;
       block.name = newName;
       renderBlocksList();
+      commitLayoutChange('Rename ' + oldName);   // a cancel or an unchanged name commits nothing
     });
     // All three row buttons act on the whole selection when this row is part
     // of it, and on this row alone otherwise (see rowActionScope) — the
@@ -236,7 +249,8 @@ export function renderBlocksList(){
       // selection uniform, rather than flipping each block independently and
       // just re-scrambling it.
       const visible = !block.visible;
-      for (const b of rowActionScope(block)){
+      const scope = rowActionScope(block);
+      for (const b of scope){
         b.visible = visible;
         updateBlockTransform(b);
       }
@@ -245,12 +259,15 @@ export function renderBlocksList(){
       refreshInteractiveSelection();
       refreshStatusR();
       renderBlocksList();
+      commitLayoutChange((visible ? 'Show ' : 'Hide ') + blockCountLabel(scope));
     });
     row.querySelector('.rowLock').addEventListener('click', () => {
       const locked = !block.locked;
-      for (const b of rowActionScope(block)) b.locked = locked;
+      const scope = rowActionScope(block);
+      for (const b of scope) b.locked = locked;
       refreshInteractiveSelection();   // same as the eye button — see there
       renderBlocksList();
+      commitLayoutChange((locked ? 'Lock ' : 'Unlock ') + blockCountLabel(scope));
     });
     row.querySelector('.rowDelete').addEventListener('click', () => deleteBlocks(rowActionScope(block)));
     list.appendChild(row);
@@ -297,6 +314,8 @@ export function initLayoutList(){
     updateBlockStyle(contextMenuBlock);
     refreshStatusR();   // switches which dash (live panel vs. this block's own override) governs the ink length
     openBlockContextMenu(contextMenuBlock, contextMenuPos.x, contextMenuPos.y);   // rebuild to show/hide the expanded controls
+    // After the rebuild, so any override entries it filled in are part of this step.
+    commitLayoutChange('Override ' + (contextMenuBlock.override ? 'on' : 'off') + ' for ' + contextMenuBlock.name);
   });
   $('paperPane').addEventListener('contextmenu', e => {
     if (activeTab !== 'layout') return;
@@ -309,6 +328,10 @@ export function initLayoutList(){
     // whichever block is under the cursor, independent of a broader multi-
     // selection, so you can peek at one layer's overrides without losing it.
     openBlockContextMenu(hit, e.clientX, e.clientY);
+    // Opening with Override on may have filled in override entries (see
+    // openBlockContextMenu) — not a step of its own, just the state now.
+    // Not mid-drag, though: that would fold half the drag in with them.
+    if (!interaction) rebaseLayoutHistory();
   }, { capture: true });
   document.addEventListener('pointerdown', e => {
     if (contextMenuBlock && !$('blockContextMenu').contains(e.target)) closeBlockContextMenu();
@@ -380,6 +403,7 @@ export function initLayoutList(){
     const blocksLayer = $('layoutBlocksLayer');
     for (const b of blocks) if (b.dom) blocksLayer.appendChild(b.dom.outer);
     renderBlocksList();
+    commitLayoutChange('Reorder ' + blockCountLabel(lifted));   // dropped back in place: no step
   });
   renderBlocksList();   // sets the panel's initial hidden/shown state — no other call site runs unconditionally at load
   $('addToLayoutSaveViewBtn').addEventListener('click', () => {
@@ -406,15 +430,16 @@ export function initLayoutList(){
     $('layoutOverlayOpacityVal').textContent = $('layoutOverlayOpacity').value + '%';
     renderPreviewLayoutOverlay();
   });
+  // No confirmation — Ctrl+Z brings the whole list back (layout-history.js).
   $('clearBlocksBtn').addEventListener('click', () => {
     if (!blocks.length) return;
-    if (!confirm('Delete all ' + blocks.length + ' block(s)? This cannot be undone.')) return;
     for (const b of blocks) removeBlockDom(b);
     setBlocks([]);
     clearSelection();
     closeBlockContextMenu();
     refreshStatusR();
     renderBlocksList();
+    commitLayoutChange('Delete all blocks');
   });
   ['pointerdown','wheel'].forEach(t => {
     $('blocksFloat').addEventListener(t, e => e.stopPropagation());

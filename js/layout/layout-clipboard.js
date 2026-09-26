@@ -12,6 +12,7 @@ import { activeTab } from '../panel-controls.js';
 import { resolveOverridePen, syncPenLibraryUI } from '../pen-library.js';
 import { MIN_BLOCK_SCALE, addBlocks, blockCountLabel, blocks, nextBlockId } from './layout-model.js';
 import { interaction, interactiveSelection } from './layout-interaction.js';
+import { commitLayoutChange } from './layout-history.js';
 /* ================= clipboard (copy / paste layers) =================
    Ctrl/Cmd+C copies the interactive part of the selection to the SYSTEM
    clipboard as JSON; Ctrl/Cmd+V rebuilds those layers from it. The payload
@@ -169,5 +170,6 @@ export function initLayoutClipboard(){
     // copy exactly on top of the original; addBlocks selects it, which is what
     // makes it immediately draggable (or nudgeable) off.
     addBlocks(pasted, 'pasted');
+    commitLayoutChange('Paste ' + blockCountLabel(pasted));
   });
 }

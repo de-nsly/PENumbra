@@ -315,6 +315,11 @@ several views — or several models — on one sheet.
   even if the original has since been moved, restyled or deleted, and you can carry a block between two
   PENumbra tabs or into a different scene. Locked and hidden blocks aren't copied, and pasting anything
   that isn't a PENumbra block does nothing.
+- **Undo / redo** block changes with Ctrl/⌘+Z and Ctrl/⌘+Y (or Ctrl/⌘+Shift+Z): moves, rotations,
+  scaling, nudges, adds, duplicates, pastes, deletes (Delete All included), reordering, renaming,
+  visibility, locking and per-block overrides. A drag is one step, and so is a run of arrow-key nudges.
+  Undo also puts the selection back. The history lasts for the session (100 steps) and starts over
+  when you load a scene or flip the page with **Rotate blocks with page** on.
 - Each block has its own **layer visibility** and optional per-layer **style overrides** (right-click a
   block).
 - **Rotate layers with page** rotates every block when you flip portrait/landscape, as if you'd

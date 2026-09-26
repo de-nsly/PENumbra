@@ -20,6 +20,7 @@ import { activeTab, buildCamMessage, doGenerate, generateFailed, lastResult, ref
 import { penIdCounter, refreshPenSelects, resolveOverridePen, resolvePen, setPenLibrary, splitDashChoice, syncPenLibraryUI } from './pen-library.js';
 import { blockCounter, blocks, replaceBlocks, renderLayoutCanvas } from './layout/layout-model.js';
 import { renderBlocksList } from './layout/layout-list.js';
+import { resetLayoutHistory } from './layout/layout-history.js';
 import { resetPaperViewFit, updateTextureGizmo } from './paper-preview.js';
 import { renderTextureStack } from './texture-stack.js';
 
@@ -314,6 +315,9 @@ export function applyImportedScene(data){
       b.overrideStyle[key] = { pen: resolveOverridePen(ov, key, null), dash: ov.dash };
     }
   }
+  // Every block is a new object with a new id — nothing in the old history
+  // points at anything that exists any more.
+  resetLayoutHistory();
   syncPenLibraryUI();
   renderBlocksList();
   if (activeTab === 'layout') renderLayoutCanvas();
