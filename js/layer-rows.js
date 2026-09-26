@@ -101,11 +101,13 @@ function buildDashFields(key){
    MAX_DASH_SLOTS. New slot starts at a plain, visibly non-solid default
    ([2,2,0,0,0,0]) purely so it's not all-zeros (which scaledDash would
    otherwise silently render as solid) until the user actually customizes
-   it via the sliders buildDashFields just built. */
-export function addDashSlot(){
-  if (DASH_KEYS.length >= MAX_DASH_SLOTS) return;
+   it via the sliders buildDashFields just built — unless the caller brings
+   its own pattern (a Layout paste importing a dash, layout-clipboard.js).
+   Returns the new slot's key, or null when every slot is taken. */
+export function addDashSlot(ratios = [2, 2, 0, 0, 0, 0]){
+  if (DASH_KEYS.length >= MAX_DASH_SLOTS) return null;
   const newKey = 'D' + (DASH_KEYS.length + 1);
-  DASH_RATIOS[newKey] = [2, 2, 0, 0, 0, 0];
+  DASH_RATIOS[newKey] = ratios.slice();
   DASH_KEYS.push(newKey);
 
   const group = document.createElement('div');
@@ -126,6 +128,7 @@ export function addDashSlot(){
     layerEls[L.id].dash.appendChild(opt);
   }
   if (DASH_KEYS.length >= MAX_DASH_SLOTS) $('addDashBtn').disabled = true;
+  return newKey;
 }
 // The layer instance's on/pen/dash with color/width resolved through its
 // pen (see PEN_LIBRARY in main.js) — callers keep seeing the same flat
@@ -535,6 +538,6 @@ export function initLayerRows(){
   document.addEventListener('pointercancel', endFillRowDrag);
   buildDashFields('D1');
   buildDashFields('D2');
-  $('addDashBtn').addEventListener('click', addDashSlot);
+  $('addDashBtn').addEventListener('click', () => addDashSlot());   // not passed directly: the click event would arrive as `ratios`
   if (DASH_KEYS.length >= MAX_DASH_SLOTS) $('addDashBtn').disabled = true;   // defensive — e.g. a restored scene that already has all 9
 }

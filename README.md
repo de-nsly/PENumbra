@@ -313,8 +313,12 @@ several views — or several models — on one sheet.
 - **Copy / paste** blocks with Ctrl/⌘+C and Ctrl/⌘+V. The clipboard carries the whole block — geometry,
   position, rotation, scale, per-layer visibility and style overrides — so a paste restores it exactly,
   even if the original has since been moved, restyled or deleted, and you can carry a block between two
-  PENumbra tabs or into a different scene. Locked and hidden blocks aren't copied, and pasting anything
-  that isn't a PENumbra block does nothing.
+  PENumbra tabs or into a different scene. The pens and dash patterns a block was drawn with come along
+  too: any the other scene doesn't have in identical form (same name, colour and width, or the same dash
+  pattern) are added to its Pen library, and a block whose look would otherwise change gets its Override
+  turned on (the status line says so — switch it off to follow that scene's layers instead). If all 9
+  dash slots are already taken, the first one is used. Locked and hidden blocks aren't copied, and
+  pasting anything that isn't a PENumbra block does nothing.
 - **Undo / redo** block changes with Ctrl/⌘+Z and Ctrl/⌘+Y (or Ctrl/⌘+Shift+Z): moves, rotations,
   scaling, nudges, adds, duplicates, pastes, deletes (Delete All included), reordering, renaming,
   visibility, locking and per-block overrides. A drag is one step, and so is a run of arrow-key nudges.

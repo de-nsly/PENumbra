@@ -144,7 +144,7 @@ function deletePen(pen){
 /* ================= pen data from outside the library =================
    Old scenes (saved before pens existed) carry a colour + width per layer
    and per Layout override; clipboard pastes carry the definitions of the
-   pens their overrides used in the SOURCE document, whose library may
+   pens their blocks drew with in the SOURCE document, whose library may
    differ. Both are matched into this library rather than blindly added. */
 function normPenColor(c){
   return (typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c)) ? c.toLowerCase() : null;
@@ -153,19 +153,24 @@ function normPenWidth(w){
   return (typeof w === 'number' && Number.isFinite(w) && w > 0) ? w : null;
 }
 // Returns the id of the pen matching `src` ({id?, name?, color, width}),
-// appending a new pen when nothing matches. Match order: same id AND same
-// values (the very pen it was copied from, unchanged), then the first pen
-// with the same values. Widths compare exactly, not rounded, so a migrated
-// layer renders with precisely the width it was saved with. A missing or
-// invalid color/width takes fallbackPen's.
+// appending a new pen when nothing matches. A match is the SAME pen — same
+// name, colour and width — so a pen renamed or restyled in the scene it was
+// copied from arrives as a pen of its own (keeping its name even if that
+// repeats one already here; the user can rename it), never as a lookalike
+// that happens to share its colour and width. Match order: same id too (the
+// very pen it was copied from, unchanged), then the first such pen. Data
+// from before pens existed has no name, and matches on colour and width
+// alone. Widths compare exactly, not rounded, so a migrated layer renders
+// with precisely the width it was saved with. A missing or invalid
+// color/width takes fallbackPen's.
 export function resolvePen(src, fallbackPen){
   const color = normPenColor(src.color) || fallbackPen.color;
   const width = normPenWidth(src.width) ?? fallbackPen.width;
-  const same = p => p.color === color && p.width === width;
+  const name = (typeof src.name === 'string' && src.name.trim()) ? src.name.trim() : null;
+  const same = p => p.color === color && p.width === width && (name === null || p.name.trim() === name);
   const hit = PEN_LIBRARY.find(p => p.id === src.id && same(p)) || PEN_LIBRARY.find(same);
   if (hit) return hit.id;
-  const name = (typeof src.name === 'string' && src.name.trim()) ? src.name.trim() : color + ' ' + fmtWidth(width);
-  const pen = { id: newPenId(), name, color, width };
+  const pen = { id: newPenId(), name: name || color + ' ' + fmtWidth(width), color, width };
   PEN_LIBRARY.push(pen);
   return pen.id;
 }
